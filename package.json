@@ -1,0 +1,13 @@
+{
+  "name": "az-2026-campaign",
+  "version": "1.0.0",
+  "description": "Arizona 2026 Campaign",
+  "main": "index.js",
+  "scripts": {
+    "build": "npm install"
+  },
+  "dependencies": {
+    "googleapis": "^118.0.0",
+    "@anthropic-ai/sdk": "^0.20.0"
+  }
+}
