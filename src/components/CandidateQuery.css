@@ -1,0 +1,294 @@
+.candidate-query {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+  font-family: 'Atkinson Hyperlegible', sans-serif;
+}
+
+.query-header {
+  margin-bottom: 30px;
+}
+
+.query-header h2 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  color: #111;
+}
+
+.query-header p {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.query-form {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.query-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 2px solid #ddd;
+  border-radius: 6px;
+  font-size: 16px;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.query-input:focus {
+  outline: none;
+  border-color: #0044cc;
+}
+
+.query-input:disabled {
+  background-color: #f5f5f5;
+  color: #999;
+}
+
+.query-button {
+  padding: 12px 24px;
+  background-color: #0044cc;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.query-button:hover:not(:disabled) {
+  background-color: #0033aa;
+}
+
+.query-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.filter-controls {
+  margin-bottom: 25px;
+}
+
+.filter-controls label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.filter-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-button {
+  padding: 8px 14px;
+  border: 1px solid #ddd;
+  background-color: white;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filter-button:hover:not(:disabled) {
+  border-color: #0044cc;
+  color: #0044cc;
+}
+
+.filter-button.active {
+  background-color: #0044cc;
+  color: white;
+  border-color: #0044cc;
+}
+
+.filter-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error-message {
+  padding: 12px 16px;
+  background-color: #fee;
+  border-left: 4px solid #c41e1e;
+  color: #8b0000;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.results-section {
+  margin-top: 30px;
+}
+
+.results-header {
+  margin-bottom: 20px;
+}
+
+.results-header h3 {
+  margin: 0 0 6px 0;
+  font-size: 18px;
+  color: #111;
+}
+
+.results-subtext {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.candidate-card {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.candidate-card:hover {
+  border-color: #0044cc;
+  box-shadow: 0 2px 8px rgba(0, 68, 204, 0.1);
+}
+
+.candidate-header {
+  padding: 16px;
+  background-color: #f9f9f9;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.candidate-info {
+  flex: 1;
+}
+
+.candidate-header h4 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  color: #111;
+}
+
+.candidate-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.party-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+}
+
+.party-D {
+  background-color: #0055aa;
+}
+
+.party-R {
+  background-color: #c41e1e;
+}
+
+.party-I {
+  background-color: #666;
+}
+
+.office-badge,
+.district-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  font-size: 12px;
+  color: #666;
+  background-color: white;
+}
+
+.expand-icon {
+  font-size: 12px;
+  color: #999;
+  margin-left: 12px;
+}
+
+.candidate-facts {
+  padding: 16px;
+  background-color: #fafafa;
+  border-top: 1px solid #eee;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fact-item {
+  padding: 12px;
+  background-color: white;
+  border-left: 3px solid #0044cc;
+  border-radius: 3px;
+}
+
+.fact-type-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  background-color: #e6f0ff;
+  color: #0044cc;
+  border-radius: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.fact-category {
+  font-size: 12px;
+  color: #666;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.fact-text {
+  font-size: 14px;
+  color: #222;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.fact-source {
+  font-size: 11px;
+  color: #999;
+  font-style: italic;
+  margin-bottom: 10px;
+}
+
+.use-in-post-button {
+  padding: 6px 12px;
+  background-color: #145214;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.use-in-post-button:hover {
+  background-color: #0d3d0d;
+}
+
+.no-facts {
+  color: #999;
+  font-size: 14px;
+  margin: 0;
+}
