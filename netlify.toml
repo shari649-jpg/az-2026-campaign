@@ -1,0 +1,7 @@
+[build]
+  command = "npm install"
+  functions = "netlify/functions"
+
+[functions]
+  directory = "netlify/functions"
+  external_node_modules = ["googleapis"]
