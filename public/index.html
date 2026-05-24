@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arizona 2026 Candidate Research</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Atkinson Hyperlegible', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    #root {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+      color: #111;
+    }
+
+    .header h1 {
+      font-size: 36px;
+      margin-bottom: 8px;
+    }
+
+    .header p {
+      font-size: 16px;
+      color: #666;
+    }
+
+    .candidate-query {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 30px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .query-header {
+      margin-bottom: 30px;
+    }
+
+    .query-header h2 {
+      margin: 0 0 8px 0;
+      font-size: 24px;
+      color: #111;
+    }
+
+    .query-header p {
+      margin: 0;
+      color: #666;
+      font-size: 14px;
+    }
+
+    .query-form {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .query-input {
+      flex: 1;
+      padding: 12px 16px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      font-size: 16px;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+
+    .query-input:focus {
+      outline: none;
+      border-color: #0044cc;
+    }
+
+    .query-input:disabled {
+      background-color: #f5f5f5;
+      color: #999;
+    }
+
+    .query-button {
+      padding: 12px 24px;
+      background-color: #0044cc;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .query-button:hover:not(:disabled) {
+      background-color: #0033aa;
+    }
+
+    .query-button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+
+    .filter-controls {
+      margin-bottom: 25px;
+    }
+
+    .filter-controls label {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .filter-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .filter-button {
+      padding: 8px 14px;
+      border: 1px solid #ddd;
+      background-color: white;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .filter-button:hover:not(:disabled) {
+      border-color: #0044cc;
+      color: #0044cc;
+    }
+
+    .filter-button.active {
+      background-color: #0044cc;
+      color: white;
+      border-color: #0044cc;
+    }
+
+    .filter-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .error-message {
+      padding: 12px 16px;
+      background-color: #fee;
+      border-left: 4px solid #c41e1e;
+      color: #8b0000;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    .loading {
+      padding: 12px 16px;
+      background-color: #e8f4ff;
+      border-left: 4px solid #0044cc;
+      color: #003a99;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    .results-section {
+      margin-top: 30px;
+    }
+
+    .results-header {
+      margin-bottom: 20px;
+    }
+
+    .results-header h3 {
+      margin: 0 0 6px 0;
+      font-size: 18px;
+      color: #111;
+    }
+
+    .results-subtext {
+      margin: 0;
+      font-size: 13px;
+      color: #666;
+    }
+
+    .results-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .candidate-card {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .candidate-card:hover {
+      border-color: #0044cc;
+      box-shadow: 0 2px 8px rgba(0, 68, 204, 0.1);
+    }
+
+    .candidate-header {
+      padding: 16px;
+      background-color: #f9f9f9;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .candidate-info {
+      flex: 1;
+    }
+
+    .candidate-header h4 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      color: #111;
+    }
+
+    .candidate-meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .party-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-weight: 600;
+      color: white;
+    }
+
+    .party-D {
+      background-color: #0055aa;
+    }
+
+    .party-R {
+      background-color: #c41e1e;
+    }
+
+    .party-I {
+      background-color: #666;
+    }
+
+    .office-badge,
+    .district-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      font-size: 12px;
+      color: #666;
+      background-color: white;
+    }
+
+    .expand-icon {
+      font-size: 12px;
+      color: #999;
+      margin-left: 12px;
+    }
+
+    .candidate-facts {
+      padding: 16px;
+      background-color: #fafafa;
+      border-top: 1px solid #eee;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .fact-item {
+      padding: 12px;
+      background-color: white;
+      border-left: 3px solid #0044cc;
+      border-radius: 3px;
+    }
+
+    .fact-type-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      background-color: #e6f0ff;
+      color: #0044cc;
+      border-radius: 2px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .fact-category {
+      font-size: 12px;
+      color: #666;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .fact-text {
+      font-size: 14px;
+      color: #222;
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+
+    .fact-source {
+      font-size: 11px;
+      color: #999;
+      font-style: italic;
+      margin-bottom: 10px;
+    }
+
+    .no-facts {
+      color: #999;
+      font-size: 14px;
+      margin: 0;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div class="header">
+      <h1>🗳️ Arizona 2026 Candidate Research</h1>
+      <p>Query candidate profiles and generate social media posts</p>
+    </div>
+
+    <div class="candidate-query">
+      <div class="query-header">
+        <h2>Candidate Research Query</h2>
+        <p>Search candidate profiles by issue, accomplishment, vulnerability, or quote</p>
+      </div>
+
+      <form id="queryForm" class="query-form">
+        <input
+          type="text"
+          id="queryInput"
+          placeholder="e.g., 'What has Hobbs done on housing?' or 'Bolick vulnerabilities'"
+          class="query-input"
+        />
+        <button type="submit" id="queryButton" class="query-button">
+          Search
+        </button>
+      </form>
+
+      <div class="filter-controls">
+        <label>Filter by type:</label>
+        <div class="filter-buttons">
+          <button type="button" class="filter-button active" data-filter="all">All Results</button>
+          <button type="button" class="filter-button" data-filter="accomplishment">Accomplishments</button>
+          <button type="button" class="filter-button" data-filter="vulnerability">Vulnerabilities</button>
+          <button type="button" class="filter-button" data-filter="strength">Strengths</button>
+          <button type="button" class="filter-button" data-filter="quote">Quotes</button>
+          <button type="button" class="filter-button" data-filter="background">Background</button>
+        </div>
+      </div>
+
+      <div id="statusArea"></div>
+      <div id="resultsArea"></div>
+    </div>
+  </div>
+
+  <script>
+    const queryForm = document.getElementById('queryForm');
+    const queryInput = document.getElementById('queryInput');
+    const queryButton = document.getElementById('queryButton');
+    const statusArea = document.getElementById('statusArea');
+    const resultsArea = document.getElementById('resultsArea');
+    const filterButtons = document.querySelectorAll('.filter-button');
+
+    let currentResults = [];
+    let currentFilter = 'all';
+
+    // Filter button handlers
+    filterButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        filterButtons.forEach(b => b.classList.remove('active'));
+        button.classList.add('active');
+        currentFilter = button.dataset.filter;
+        if (currentResults.length > 0) {
+          displayResults(currentResults);
+        }
+      });
+    });
+
+    // Form submission
+    queryForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const query = queryInput.value.trim();
+
+      if (!query) {
+        statusArea.innerHTML = '<div class="error-message">Please enter a search query</div>';
+        return;
+      }
+
+      queryButton.disabled = true;
+      queryButton.textContent = 'Searching...';
+      statusArea.innerHTML = '<div class="loading">Searching candidate research...</div>';
+      resultsArea.innerHTML = '';
+
+      try {
+        const response = await fetch('/.netlify/functions/query-candidates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: query,
+            filterType: currentFilter !== 'all' ? currentFilter : null,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          statusArea.innerHTML = `<div class="error-message">Error: ${data.error || 'Query failed'}</div>`;
+          return;
+        }
+
+        if (data.results.length === 0) {
+          statusArea.innerHTML = '<div class="error-message">No results found. Try a different search.</div>';
+          resultsArea.innerHTML = '';
+          return;
+        }
+
+        currentResults = data.results;
+        statusArea.innerHTML = '';
+        displayResults(currentResults);
+
+      } catch (err) {
+        statusArea.innerHTML = `<div class="error-message">Error: ${err.message}</div>`;
+        resultsArea.innerHTML = '';
+      } finally {
+        queryButton.disabled = false;
+        queryButton.textContent = 'Search';
+      }
+    });
+
+    function displayResults(results) {
+      let html = `
+        <div class="results-section">
+          <div class="results-header">
+            <h3>Results (${results.length} candidate${results.length !== 1 ? 's' : ''})</h3>
+            <p class="results-subtext">Click a candidate card to expand and see facts</p>
+          </div>
+          <div class="results-list">
+      `;
+
+      results.forEach((candidate, idx) => {
+        const partyClass = `party-${candidate.party || 'I'}`;
+        const partyLabel = {
+          'D': 'Democrat',
+          'R': 'Republican',
+          'I': 'Independent'
+        }[candidate.party] || 'Independent';
+
+        // Filter facts
+        let facts = candidate.facts || [];
+        if (currentFilter !== 'all') {
+          facts = facts.filter(f => f.type === currentFilter);
+        }
+
+        html += `
+          <div class="candidate-card" data-candidate="${idx}">
+            <div class="candidate-header">
+              <div class="candidate-info">
+                <h4>${candidate.candidate_name}</h4>
+                <div class="candidate-meta">
+                  <span class="party-badge ${partyClass}">${partyLabel}</span>
+                  <span class="office-badge">${candidate.office || 'Unknown'}</span>
+                  ${candidate.district ? `<span class="district-badge">${candidate.district}</span>` : ''}
+                </div>
+              </div>
+              <div class="expand-icon">▶</div>
+            </div>
+          </div>
+        `;
+      });
+
+      html += `
+          </div>
+        </div>
+      `;
+
+      resultsArea.innerHTML = html;
+
+      // Add click handlers
+      document.querySelectorAll('.candidate-card').forEach((card, idx) => {
+        card.addEventListener('click', () => toggleCandidate(idx, results[idx]));
+      });
+    }
+
+    function toggleCandidate(idx, candidate) {
+      const card = document.querySelector(`[data-candidate="${idx}"]`);
+      const expandIcon = card.querySelector('.expand-icon');
+      
+      // Check if already expanded
+      const existingFacts = card.querySelector('.candidate-facts');
+      if (existingFacts) {
+        existingFacts.remove();
+        expandIcon.textContent = '▶';
+        return;
+      }
+
+      // Filter facts
+      let facts = candidate.facts || [];
+      if (currentFilter !== 'all') {
+        facts = facts.filter(f => f.type === currentFilter);
+      }
+
+      let factsHtml = '<div class="candidate-facts">';
+      
+      if (facts.length > 0) {
+        facts.forEach(fact => {
+          factsHtml += `
+            <div class="fact-item">
+              <div class="fact-type-badge">${fact.type}</div>
+              <div class="fact-category">${fact.category || 'General'}</div>
+              <div class="fact-text">${fact.text}</div>
+              <div class="fact-source">${fact.source_section || 'Candidate Profile'}</div>
+            </div>
+          `;
+        });
+      } else {
+        factsHtml += '<p class="no-facts">No facts found for this candidate in this category</p>';
+      }
+
+      factsHtml += '</div>';
+      card.insertAdjacentHTML('afterend', factsHtml);
+      expandIcon.textContent = '▼';
+    }
+  </script>
+</body>
+</html>
