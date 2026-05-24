@@ -5,8 +5,3 @@
 [functions]
   directory = "netlify/functions"
   external_node_modules = ["googleapis"]
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
