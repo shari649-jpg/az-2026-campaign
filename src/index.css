@@ -1,0 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=DM+Serif+Display:ital@0;1&display=swap');
+
+:root {
+  --gold:           #F5C842;
+  --gold-dark:      #d4a820;
+  --gold-light:     #fdf3c0;
+  --teal:           #1D5C4A;
+  --teal-mid:       #2a7a62;
+  --teal-light:     #e0f2ec;
+  --charcoal:       #4A4558;
+  --charcoal-dark:  #2e2b3a;
+  --turquoise:      #3ECFB2;
+  --turquoise-light:#d0f7f0;
+  --terracotta:     #C1673A;
+  --terracotta-light:#f7e0d4;
+
+  --bg:             #ffffff;
+  --surface:        #fafaf8;
+  --surface-alt:    #f2f0eb;
+  --border:         #c8c4b8;
+  --border-strong:  var(--charcoal);
+  --text:           var(--charcoal-dark);
+  --text-mid:       var(--charcoal);
+  --text-mute:      #7a7690;
+
+  --primary:        var(--teal);
+  --primary-dark:   var(--teal-mid);
+  --accent:         var(--gold);
+  --accent-dark:    var(--gold-dark);
+  --highlight:      var(--turquoise);
+  --warm:           var(--terracotta);
+
+  --font-body:    'Atkinson Hyperlegible', Georgia, serif;
+  --font-display: 'DM Serif Display', Georgia, serif;
+
+  --nav-height:   68px;
+  --max-width:    1200px;
+  --radius:       10px;
+  --radius-lg:    16px;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  background: var(--bg);
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--teal);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button, input, textarea, select {
+  font-family: var(--font-body);
+}
+
+textarea:focus, input:focus, select:focus {
+  outline: 3px solid var(--teal);
+  outline-offset: 2px;
+}
+
+button:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 3px;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.25s ease both;
+}
