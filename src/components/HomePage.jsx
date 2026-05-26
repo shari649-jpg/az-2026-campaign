@@ -59,7 +59,6 @@ export default function HomePage() {
 
   return (
     <div>
-      {/* Hero band */}
       <div style={{
         background: "var(--teal)",
         padding: "52px 24px 48px",
@@ -105,8 +104,6 @@ export default function HomePage() {
       </div>
 
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "44px 24px 64px" }}>
-
-        {/* Tool cards */}
         <div style={{ marginBottom: 56 }}>
           <SectionLabel>Tools</SectionLabel>
           <div style={{
@@ -120,8 +117,6 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-
-        {/* Workflow chains */}
         <div style={{ marginBottom: 56 }}>
           <SectionLabel>Combined Workflows</SectionLabel>
           <div style={{
@@ -136,17 +131,16 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Quick links */}
         <div>
           <SectionLabel>Quick Links</SectionLabel>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
             {[
-              { label: "AZ SOS Elections",   href: "https://azsos.gov/elections" },
-              { label: "AZ Legislature",     href: "https://www.azleg.gov" },
-              { label: "Ballotpedia AZ",     href: "https://ballotpedia.org/Arizona" },
-              { label: "My Arizona Vote",    href: "https://my.arizona.vote" },
-              { label: "E-Qual Petitions",   href: "https://apps.arizona.vote/equal" },
-              { label: "All Resources →",    path: "/resources" },
+              { label: "AZ SOS Elections", href: "https://azsos.gov/elections" },
+              { label: "AZ Legislature", href: "https://www.azleg.gov" },
+              { label: "Ballotpedia AZ", href: "https://ballotpedia.org/Arizona" },
+              { label: "My Arizona Vote", href: "https://my.arizona.vote" },
+              { label: "E-Qual Petitions", href: "https://apps.arizona.vote/equal" },
+              { label: "All Resources →", path: "/resources" },
             ].map(link => (
               link.href
                 ? <a key={link.href} href={link.href} target="_blank" rel="noreferrer" style={quickLinkStyle}>{link.label} ↗</a>
@@ -193,7 +187,6 @@ function SectionLabel({ children }) {
 
 function ToolCard({ tool, onNavigate }) {
   const isLive = tool.status === "live";
-
   return (
     <div
       onClick={() => isLive && onNavigate(tool.path)}
@@ -211,4 +204,102 @@ function ToolCard({ tool, onNavigate }) {
       }}
       onMouseEnter={e => {
         if (!isLive) return;
-        e.currentTarget.style.borderColor = t
+        e.currentTarget.style.borderColor = tool.color;
+        e.currentTarget.style.boxShadow = "0 4px 20px rgba(29,92,74,0.12)";
+        e.currentTarget.style.transform = "translateY(-2px)";
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = "var(--border)";
+        e.currentTarget.style.boxShadow = "none";
+        e.currentTarget.style.transform = "none";
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: "0.14em",
+          textTransform: "uppercase",
+          color: tool.color,
+          background: tool.bg,
+          padding: "3px 9px",
+          borderRadius: 4,
+        }}>
+          {tool.eyebrow}
+        </span>
+        <span style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          color: isLive ? "var(--teal)" : "var(--charcoal)",
+        }}>
+          {isLive ? "● Live" : "◌ Coming soon"}
+        </span>
+      </div>
+      <div>
+        <h2 style={{
+          fontFamily: "var(--font-display)",
+          fontSize: 21,
+          color: "var(--text)",
+          lineHeight: 1.2,
+          marginBottom: 8,
+        }}>
+          {tool.label}
+        </h2>
+        <p style={{ fontSize: 14, color: "var(--text-mid)", lineHeight: 1.65 }}>
+          {tool.desc}
+        </p>
+      </div>
+      {isLive && (
+        <div style={{ marginTop: "auto", paddingTop: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: tool.color, letterSpacing: "0.03em" }}>
+            Open →
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WorkflowCard({ wf }) {
+  return (
+    <div style={{
+      border: "2px solid var(--border)",
+      borderLeft: `4px solid ${wf.color}`,
+      borderRadius: "var(--radius-lg)",
+      padding: "20px 22px",
+      background: "var(--surface)",
+    }}>
+      <h3 style={{
+        fontFamily: "var(--font-display)",
+        fontSize: 18,
+        color: wf.color,
+        marginBottom: 8,
+      }}>
+        {wf.title}
+      </h3>
+      <p style={{ fontSize: 14, color: "var(--text-mid)", lineHeight: 1.6, marginBottom: 14 }}>
+        {wf.desc}
+      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {wf.steps.map((step, i) => (
+          step === "→"
+            ? <span key={i} style={{ fontSize: 16, color: "var(--text-mute)" }}>→</span>
+            : <span key={i} style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.05em",
+                color: wf.color,
+                background: wf.color + "18",
+                padding: "4px 10px",
+                borderRadius: 6,
+                textTransform: "uppercase",
+              }}>
+                {step}
+              </span>
+        ))}
+      </div>
+    </div>
+  );
+}
