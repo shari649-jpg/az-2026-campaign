@@ -182,7 +182,7 @@ export default function RebuttalGenerator() {
   const [showShare,   setShowShare]   = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
 
-  const effectiveCount = count ?? 3;
+  const effectiveCount = count 1;
 
   // Load library on mount
   useEffect(() => { loadLibrary(); }, []);
@@ -289,7 +289,7 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
   const saveToLibrary = async () => {
     const id = `campaign-${Date.now()}`;
     const profileLabels = profiles.map(k => PROFILES.find(p => p.key === k)?.label).filter(Boolean);
-    const entry = { id, narrative: narrative.trim(), output, activistCount: effectiveCount, profiles: profileLabels, tone: tone ?? null, savedAt: new Date().toISOString() };
+    const entry = { id, narrative: narrative.trim(), output, activistCount: 1, profiles: profileLabels, tone: tone ?? null, savedAt: new Date().toISOString() };
     try {
       await window.storage.set(id, JSON.stringify(entry));
       setSaved(true);
@@ -411,24 +411,6 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
         {/* ── Optional controls ── */}
         {showOptions && (
           <>
-        {/* Activist count */}
-        <label style={S.lbl}>
-          Number of activists
-          <span style={S.optTag}>optional</span>
-        </label>
-        <div style={S.pillRow}>
-          {[1, 2, 3].map(n => (
-            <button key={n} style={pill(count === n)} onClick={() => {
-              setCount(count === n ? null : n);
-              setProfiles(prev => prev.slice(0, count === n ? 3 : n));
-            }}>{n}</button>
-          ))}
-          {count !== null && (
-            <button style={{ ...btnSmall(), marginLeft: "4px", alignSelf: "center" }}
-              onClick={() => { setCount(null); setProfiles([]); }}>Clear</button>
-          )}
-        </div>
-
         {/* Profile picker */}
         <label style={S.lbl}>
           Activist profiles
@@ -450,9 +432,7 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
           })}
         </div>
         <p style={S.hint}>
-          {profiles.length === 0
-            ? "Skip to let the AI choose voices, or select up to " + effectiveCount + "."
-            : `${profiles.length} of ${effectiveCount} selected${profiles.length < effectiveCount ? " — AI will fill the rest." : "."}`}
+          Select your activist profile, or skip to let the AI choose a voice for you.
         </p>
 
         {/* Tone modifier */}
