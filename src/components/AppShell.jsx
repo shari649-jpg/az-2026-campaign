@@ -198,7 +198,7 @@ export default function AppShell() {
           alignItems: "flex-start",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <img src="/azc-logo.png" alt="Arizona Coalition" style={{ height: 58, width: 58, objectFit: "contain" }} />
+            <img src="/azc-logo-teal.png" alt="Arizona Coalition" style={{ height: 58, width: 58, objectFit: "contain" }} />
             <div>
               <div style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--gold)", marginBottom: 4 }}>
                 Arizona Coalition
