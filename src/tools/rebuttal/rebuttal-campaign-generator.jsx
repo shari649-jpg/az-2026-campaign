@@ -228,12 +228,12 @@ export default function RebuttalGenerator() {
 Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : ""}: derive the anchor phrase, identify 3 rebuttal lenses, then write platform-specific posts (Facebook, Instagram, Threads, BlueSky, Twitter/X, TikTok) for each activist with each post's first comment paired directly beneath it.`;
 
     try {
-      const res = await fetch("/.netlify/functions/generate-message", {
+      const res = await fetch("/.netlify/functions/generate-rebuttal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-5",
-          max_tokens: 4000,
+          max_tokens: 2000,
           system: buildPrompt(n, profiles, TONES.find(t => t.key === tone) ?? null),
           messages: [{ role: "user", content: userPrompt }],
         }),
