@@ -66,7 +66,7 @@ export default function HomePage() {
       }}>
         <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", display: "flex", alignItems: "center", gap: 32, flexWrap: "wrap" }}>
           <img
-            src="/azc-logo.png"
+            src="/azc-logo-teal.png"
             alt="Arizona Coalition"
             style={{ height: 100, width: 100, objectFit: "contain", flexShrink: 0 }}
           />
