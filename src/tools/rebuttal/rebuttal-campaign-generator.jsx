@@ -182,7 +182,7 @@ export default function RebuttalGenerator() {
   const [showShare,   setShowShare]   = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
 
-  const effectiveCount = count 1;
+const effectiveCount = 1;
 
   // Load library on mount
   useEffect(() => { loadLibrary(); }, []);
