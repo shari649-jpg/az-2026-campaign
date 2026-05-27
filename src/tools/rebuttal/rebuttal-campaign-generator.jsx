@@ -476,14 +476,88 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
         )}
 
         {/* Output */}
+       {/* Output */}
         {output && (
           <>
             <hr style={S.divider} />
             <label style={S.lbl}>Your campaign</label>
-            <div style={S.outBox}>{output}</div>
+
+            {/* Anchor Phrase + Lenses */}
+            {(() => {
+              const anchorMatch = output.match(/## Anchor Phrase\n([\s\S]*?)(?=## Rebuttal Lenses|## Activist)/);
+              const lensesMatch = output.match(/## Rebuttal Lenses\n([\s\S]*?)(?=## Activist)/);
+              return (
+                <>
+                  {anchorMatch && (
+                    <div style={{ background:"#1A1A1A", border:"3px solid #1A1A1A", borderRadius:4, padding:"20px 24px", marginBottom:16 }}>
+                      <div style={{ fontSize:11, letterSpacing:"0.15em", textTransform:"uppercase", color:"#aaa", marginBottom:10 }}>Anchor Phrase</div>
+                      <div style={{ color:"#fff", fontSize:16, lineHeight:1.7, whiteSpace:"pre-wrap", fontFamily:"Georgia,serif" }}>{anchorMatch[1].trim()}</div>
+                    </div>
+                  )}
+                  {lensesMatch && (
+                    <div style={{ background:"#2a1a1a", border:"2px solid #8b0000", borderRadius:4, padding:"20px 24px", marginBottom:24 }}>
+                      <div style={{ fontSize:11, letterSpacing:"0.15em", textTransform:"uppercase", color:"#e88", marginBottom:10 }}>Rebuttal Lenses</div>
+                      <div style={{ color:"#f5f5f5", fontSize:15, lineHeight:1.8, whiteSpace:"pre-wrap", fontFamily:"Georgia,serif" }}>{lensesMatch[1].trim()}</div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+
+            {/* Platform Cards */}
+            {(() => {
+              const platforms = [
+                { name:"Facebook",   abbr:"FB", color:"#0a4fa8" },
+                { name:"Instagram",  abbr:"IG", color:"#7b1a6e" },
+                { name:"Threads",    abbr:"TH", color:"#111111" },
+                { name:"BlueSky",    abbr:"BS", color:"#0055bb" },
+                { name:"Twitter/X",  abbr:"X",  color:"#0369a1" },
+                { name:"TikTok",     abbr:"TK", color:"#b91c1c" },
+              ];
+              return platforms.map(p => {
+                const regex = new RegExp(`### ${p.name}\\n([\\s\\S]*?)(?=### |## Activist|$)`);
+                const match = output.match(regex);
+                if (!match) return null;
+                const block = match[1].trim();
+                const postMatch = block.match(/POST:\s*([\s\S]*?)(?=FIRST COMMENT:|$)/);
+                const commentMatch = block.match(/FIRST COMMENT:\s*([\s\S]*?)$/);
+                const postText = postMatch ? postMatch[1].trim() : block;
+                const commentText = commentMatch ? commentMatch[1].trim() : null;
+
+                return (
+                  <div key={p.name} style={{ border:`2px solid ${p.color}`, borderRadius:4, marginBottom:14, overflow:"hidden" }}>
+                    {/* Platform header */}
+                    <div style={{ background:p.color, padding:"10px 16px", display:"flex", alignItems:"center", gap:12 }}>
+                      <span style={{ background:"rgba(255,255,255,0.2)", color:"#fff", fontWeight:900, fontSize:12, padding:"4px 10px", borderRadius:3, fontFamily:"Georgia,serif" }}>{p.abbr}</span>
+                      <span style={{ color:"#fff", fontWeight:700, fontSize:15, fontFamily:"Georgia,serif" }}>{p.name}</span>
+                    </div>
+                    {/* Post */}
+                    <div style={{ padding:"16px 20px", background:"#FDFCFA" }}>
+                      <div style={{ fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"#888", marginBottom:8 }}>Post</div>
+                      <div style={{ fontSize:14, lineHeight:1.8, color:"#1A1A1A", whiteSpace:"pre-wrap", fontFamily:"Georgia,serif", marginBottom:12 }}>{postText}</div>
+                      <button
+                        onClick={() => copyText(postText).then(() => { setCopied(true); setTimeout(()=>setCopied(false),2000); })}
+                        style={{ padding:"6px 16px", background:"#1A1A1A", color:"#F7F5F0", border:"none", borderRadius:3, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase", fontFamily:"Georgia,serif", cursor:"pointer" }}
+                      >
+                        Copy Post
+                      </button>
+                    </div>
+                    {/* First Comment */}
+                    {commentText && (
+                      <div style={{ padding:"14px 20px", background:"#f0ede8", borderTop:`1px solid ${p.color}33` }}>
+                        <div style={{ fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"#888", marginBottom:8 }}>First Comment</div>
+                        <div style={{ fontSize:13, lineHeight:1.7, color:"#333", whiteSpace:"pre-wrap", fontFamily:"Georgia,serif" }}>{commentText}</div>
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+
+            {/* Action buttons */}
             <div style={S.actRow}>
               <button style={btnOutline(copied)} onClick={handleCopy}>
-                {copied ? "✓ Copied" : "Copy All"}
+                {copied ? "✓ Copied All" : "Copy All"}
               </button>
               <button style={btnOutline(saved)} onClick={saved ? undefined : saveToLibrary}>
                 {saved ? "✓ Saved" : "Save to Library"}
