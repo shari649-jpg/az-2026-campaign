@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { saveCampaign, loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
 
 // ── 9 activist profile choices ────────────────────────────────────────────
 const PROFILES = [
@@ -187,16 +188,11 @@ const effectiveCount = 1;
   // Load library on mount
   useEffect(() => { loadLibrary(); }, []);
 
-  async function loadLibrary() {
+ async function loadLibrary() {
     try {
-      const result = await window.storage.list("campaign-");
-      if (!result?.keys?.length) return;
-      const items = await Promise.all(result.keys.map(async k => {
-        try { const r = await window.storage.get(k); return r ? JSON.parse(r.value) : null; }
-        catch { return null; }
-      }));
-      setLibrary(items.filter(Boolean).sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt)));
-    } catch { /* no saved items */ }
+      const all = await loadAllCampaigns();
+      setLibrary(all.filter(c => c.tool === "rebuttal"));
+    } catch { /* silently fail */ }
   }
 
   // ── Reset ───────────────────────────────────────────────────────────────
@@ -286,16 +282,22 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
   };
 
   // ── Save to library ─────────────────────────────────────────────────────
-  const saveToLibrary = async () => {
-    const id = `campaign-${Date.now()}`;
+ const saveToLibrary = async () => {
     const profileLabels = profiles.map(k => PROFILES.find(p => p.key === k)?.label).filter(Boolean);
-    const entry = { id, narrative: narrative.trim(), output, activistCount: 1, profiles: profileLabels, tone: tone ?? null, savedAt: new Date().toISOString() };
     try {
-      await window.storage.set(id, JSON.stringify(entry));
+      const id = await saveCampaign("rebuttal", {
+        narrative: narrative.trim(),
+        output,
+        activistCount: 1,
+        profiles: profileLabels,
+        tone: tone ?? null,
+        savedAt: new Date().toISOString(),
+      });
+      const entry = { id, tool:"rebuttal", narrative: narrative.trim(), output, activistCount: 1, profiles: profileLabels, tone: tone ?? null, savedAt: new Date().toISOString() };
       setSaved(true);
       setLibrary(prev => [entry, ...prev]);
     } catch {
-      setError({ heading: "Save failed.", body: "Unable to save to library. Storage may be full or unavailable." });
+      setError({ heading: "Save failed.", body: "Unable to save to shared library. Please try again." });
     }
   };
 
@@ -313,11 +315,10 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
   const deleteEntry = async (id, e) => {
     e.stopPropagation();
     try {
-      await window.storage.delete(id);
+      await deleteCampaign(id);
       setLibrary(prev => prev.filter(c => c.id !== id));
     } catch { /* ignore */ }
   };
-
   // ── Edit & regenerate ───────────────────────────────────────────────────
   const editAndRegenerate = () => {
     setOutput(""); setStatus(""); setSaved(false); setCopied(false);
