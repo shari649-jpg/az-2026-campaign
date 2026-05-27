@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { saveCampaign, loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
 
 const PLATFORMS = [
   { id: "facebook", name: "Facebook", abbr: "FB", maxChars: 63206, bg: "#0a4fa8", text: "#fff" },
@@ -228,14 +228,11 @@ export default function App() {
 
   useEffect(() => { loadCampaigns(); }, []);
 
-  const loadCampaigns = async () => {
+ const loadCampaigns = async () => {
     try {
-      const r = await window.storage.get("activist_campaigns");
-      if (r) setCampaigns(JSON.parse(r.value));
-      // if r is null/undefined, key doesn't exist yet — leave state as-is
-    } catch {
-      // storage error — do NOT wipe in-memory list
-    }
+      const all = await loadAllCampaigns();
+      setCampaigns(all.filter(c => c.tool === "message-machine"));
+    } catch {}
   };
 
   const notify = (msg, type="ok") => { setNotif({msg,type}); setTimeout(()=>setNotif(null),3500); };
@@ -331,22 +328,28 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
   const copyHashtags = async (tags) => { await navigator.clipboard.writeText(tags.join(" ")); notify("Hashtags copied!"); };
 
-  const saveCampaign = async () => {
+  const handleSaveCampaign = async () => {
     if (!campName.trim()) return;
-    const c = { id:Date.now(), name:campName.trim(), date:new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}), formData:{...formData}, messages:{...messages} };
-    const updated = [c,...campaigns];
-    setCampaigns(updated);
-    try { await window.storage.set("activist_campaigns", JSON.stringify(updated)); } catch {}
-    setSaveModal(false); setCampName(""); notify("Campaign saved!");
+    try {
+      const id = await saveCampaign("message-machine", {
+        name: campName.trim(),
+        date: new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),
+        formData: { ...formData },
+        messages: { ...messages },
+      });
+      setCampaigns(prev => [{ id, tool:"message-machine", name:campName.trim(), formData:{...formData}, messages:{...messages} }, ...prev]);
+      setSaveModal(false); setCampName(""); notify("Campaign saved to shared library!");
+    } catch { notify("Save failed — please try again.","err"); }
   };
 
   const loadCampaign = (c) => { setFormData(c.formData); setMessages(c.messages); setHashtags(null); setView("results"); notify(`Loaded: ${c.name}`); };
 
-  const deleteCampaign = async (id) => {
-    const updated = campaigns.filter(c=>c.id!==id);
-    setCampaigns(updated);
-    try { await window.storage.set("activist_campaigns", JSON.stringify(updated)); } catch {}
-    notify("Campaign deleted.");
+ const handleDeleteCampaign = async (id) => {
+    try {
+      await deleteCampaign(id);
+      setCampaigns(prev => prev.filter(c => c.id !== id));
+      notify("Campaign deleted.");
+    } catch { notify("Delete failed — please try again.","err"); }
   };
 
   const startNewCampaign = () => {
@@ -699,7 +702,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                     </div>
                     <div style={{ display:"flex", flexDirection:"column", gap:10, flexShrink:0 }}>
                       <button onClick={()=>loadCampaign(c)} style={{ ...S.btnPrimary, padding:"12px 24px", fontSize:17 }}>Load</button>
-                      <button onClick={()=>deleteCampaign(c.id)}
+                      <button onClick={()=>handleDeleteCampaign(c.id)}
                         style={{ padding:"12px 24px", fontSize:17, fontWeight:700, background:T.surface, color:T.red, border:`2px solid ${T.red}`, borderRadius:8, cursor:"pointer", fontFamily:"inherit" }}>
                         Delete
                       </button>
@@ -725,7 +728,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               value={campName} onChange={e=>setCampName(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&saveCampaign()} autoFocus />
             <div style={{ display:"flex", gap:14 }}>
-              <button onClick={saveCampaign} disabled={!campName.trim()}
+              <button onClick={handleSaveCampaign} disabled={!campName.trim()}
                 style={{ ...S.btnPrimary, flex:1, fontSize:19, padding:"15px", opacity:campName.trim()?1:0.5, cursor:campName.trim()?"pointer":"not-allowed" }}>
                 Save
               </button>
