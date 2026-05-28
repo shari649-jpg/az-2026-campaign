@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { saveCampaign, loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
 
 const PLATFORMS = [
@@ -227,7 +228,18 @@ export default function App() {
   const [hashtags, setHashtags]     = useState(null);
   const [hashLoading, setHashLoading] = useState(false);
 
-  useEffect(() => { loadCampaigns(); }, []);
+ const location = useLocation();
+
+useEffect(() => { fetchCampaigns(); }, []);
+
+useEffect(() => {
+  if (location.state?.loadCampaign) {
+    const c = location.state.loadCampaign;
+    setFormData(c.formData);
+    setMessages(c.messages);
+    setView("results");
+  }
+}, [location.state]);
 
  const loadCampaigns = async () => {
     try {
