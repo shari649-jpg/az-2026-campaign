@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { saveCampaign, loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
 
 // ── 9 activist profile choices ────────────────────────────────────────────
@@ -186,7 +187,20 @@ export default function RebuttalGenerator() {
 const effectiveCount = 1;
 
   // Load library on mount
-  useEffect(() => { loadLibrary(); }, []);
+const location = useLocation();
+
+useEffect(() => { loadLibrary(); }, []);
+
+useEffect(() => {
+  if (location.state?.loadCampaign) {
+    const c = location.state.loadCampaign;
+    setNarrative(c.narrative || "");
+    setOutput(c.output || "");
+    setTone(c.tone ?? null);
+    setSaved(true);
+    setStatus("Campaign loaded from library.");
+  }
+}, [location.state]);
 
  async function loadLibrary() {
     try {
