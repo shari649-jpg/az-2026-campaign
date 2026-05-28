@@ -230,7 +230,7 @@ export default function App() {
 
  const location = useLocation();
 
-useEffect(() => { fetchCampaigns(); }, []);
+useEffect(() => { loadCampaigns(); }, []);
 
 useEffect(() => {
   if (location.state?.loadCampaign) {
