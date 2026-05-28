@@ -179,14 +179,17 @@ export default function App() {
 
   useEffect(() => { loadCampaigns(); }, []);
 
-  useEffect(() => {
-    if (location.state?.loadCampaign) {
-      const c = location.state.loadCampaign;
-      setFormData(c.formData);
-      setMessages(c.messages);
-      setView("results");
-    }
-  }, [location.state]);
+ useEffect(() => {
+  if (location.state?.loadCampaign) {
+    const c = location.state.loadCampaign;
+    setFormData(c.formData);
+    setMessages(c.messages);
+    setView("results");
+  } else if (location.state?.prefillIssue) {
+    setFormData(prev => ({ ...prev, issue: location.state.prefillIssue }));
+    setView("form");
+  }
+}, [location.state]);
 
   const loadCampaigns = async () => {
     try {
