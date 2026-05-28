@@ -18,7 +18,6 @@ exports.handler = async (event) => {
   try {
     const { action, url, text, manualMeta } = JSON.parse(event.body);
 
-    // ── ACTION: fetch URL then analyze ─────────────────────────────────────
     if (action === "fetch_and_analyze") {
       let pageText = "";
       let fetchOk = false;
@@ -35,7 +34,6 @@ exports.handler = async (event) => {
 
         if (pageRes.ok) {
           const html = await pageRes.text();
-          // Strip HTML tags, scripts, styles — get readable text
           pageText = html
             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
             .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
@@ -65,7 +63,6 @@ exports.handler = async (event) => {
         };
       }
 
-      // Now analyze the fetched text
       const analysisRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -108,7 +105,6 @@ Format:
       };
     }
 
-    // ── ACTION: analyze pasted text ────────────────────────────────────────
     if (action === "analyze_text") {
       const meta = manualMeta || {};
       const analysisRes = await fetch("https://api.anthropic.com/v1/messages", {
