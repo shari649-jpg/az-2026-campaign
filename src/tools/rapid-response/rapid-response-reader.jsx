@@ -585,80 +585,26 @@ const fetchAndAnalyze = async (targetUrl) => {
   }
 };
 
-  const analyzeText = async ({ text, url: srcUrl, title, pub, date, reporter, isManual }) => {
-    setLoading(true);
-    setLoadingMsg("Analyzing article...");
-
-    const manualMeta = isManual ? `
-Known publication info (use if provided, otherwise extract from text):
-Title: ${title || "extract from text"}
-Publication: ${pub || "extract from text"}
-Date: ${date || "extract from text"}
-Reporter: ${reporter || "extract from text"}` : "";
-
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2000,
-          messages: [{
-            role: "user",
-            content: `You are a political research analyst. Analyze this article and extract structured information.
-${manualMeta}
-
-Article text:
-${text.substring(0, 8000)}
-
-RESPOND ONLY WITH VALID JSON. No markdown, no backticks, no explanation.
-Format:
-{
-  "title": "article headline",
-  "publication": "outlet name",
-  "date": "publication date",
-  "reporter": "reporter name or names",
-  "summary": "2-3 sentence summary of the article",
-  "keyPoints": ["point 1", "point 2", "point 3", "point 4", "point 5"],
-  "people": [{"name": "Full Name", "role": "title or role"}],
-  "quotes": [{"text": "exact quote text without attribution", "speaker": "name"}],
-  "issueArea": "one of: education/vouchers, utility rates, housing, water, elections, healthcare, economy/jobs, immigration, other"
-}`
-          }],
-        }),
-      });
-
-      const data = await res.json();
-      const raw = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
-      const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
-
-      setArticle({ ...parsed, url: srcUrl, id: `article_${Date.now()}`, isManual });
-      setLoading(false);
-    } catch {
-      setLoading(false);
-      setError("parse");
-      notify("Could not analyze article. Please try again.", "err");
-    }
-  };
-
-  // ── Save to library ─────────────────────────────────────────────────────────
-  const saveToLibrary = async () => {
-    if (!article) return;
-    const entry = {
-      ...article,
-      savedBy: profile?.name || "Anonymous",
-      savedByEmail: profile?.email || "",
-      savedByOrg: profile?.org || "",
-      savedByCounty: profile?.county || "",
-      savedAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-      linkedCampaigns: [],
-    };
-    const updated = [entry, ...library.filter(x => x.id !== entry.id)];
-    setLibrary(updated);
-    setSaved(true);
-    try { await window.storage.set("rr_library", JSON.stringify(updated)); } catch {}
-    notify("Article saved to library!");
-  };
+const analyzeText = async ({ text, url: srcUrl, title, pub, date, reporter, isManual }) => {
+  setLoading(true);
+  setLoadingMsg("Analyzing article...");
+  try {
+    const res = await fetch("/.netlify/functions/rapid-response", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "analyze_text", text, manualMeta: { title, pub, date, reporter } }),
+    });
+    const data = await res.json();
+    const raw = data.result?.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
+    const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+    setArticle({ ...parsed, url: srcUrl, id: `article_${Date.now()}`, isManual });
+    setLoading(false);
+  } catch {
+    setLoading(false);
+    setError("parse");
+    notify("Could not analyze article. Please try again.", "err");
+  }
+};
 
   // ── Push to Message Machine ─────────────────────────────────────────────────
   const pushToMachine = async () => {
