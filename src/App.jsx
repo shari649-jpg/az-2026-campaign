@@ -6,6 +6,7 @@ import MessagingPage from "./tools/messaging/MessagingPage";
 import RebuttalPage from "./tools/rebuttal/RebuttalPage";
 import RapidResponsePage from "./tools/rapid-response/RapidResponsePage";
 import ResourcesPage from "./tools/resources/ResourcesPage";
+import LibraryPage from "./tools/library/LibraryPage";
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/rebuttal" element={<RebuttalPage />} />
           <Route path="/rapid-response" element={<RapidResponsePage />} />
           <Route path="/resources" element={<ResourcesPage />} />
+          <Route path="/library" element={<LibraryPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
