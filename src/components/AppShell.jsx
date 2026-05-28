@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { path: "/rebuttal",       short: "Rebuttal" },
   { path: "/rapid-response", short: "Rapid Response" },
   { path: "/resources",      short: "Resources" },
+  { path: "/library",        short: "Library" },
 ];
 
 export default function AppShell() {
@@ -210,12 +211,13 @@ export default function AppShell() {
           </div>
 
           <div style={{ display: "flex", gap: 48, flexWrap: "wrap" }}>
-            <FooterLinkGroup title="Tools" links={[
-              { label: "Candidate Research",  path: "/research" },
-              { label: "Message Machine",     path: "/messaging" },
-              { label: "Rebuttal Generator",  path: "/rebuttal" },
-              { label: "Rapid Response",      path: "/rapid-response" },
-            ]} />
+        <FooterLinkGroup title="Tools" links={[
+  { label: "Candidate Research",  path: "/research" },
+  { label: "Message Machine",     path: "/messaging" },
+  { label: "Rebuttal Generator",  path: "/rebuttal" },
+  { label: "Rapid Response",      path: "/rapid-response" },
+  { label: "Shared Library",      path: "/library" },
+]} />
             <FooterLinkGroup title="Resources" links={[
               { label: "All Resources",       path: "/resources" },
               { label: "AZ SOS Elections",    href: "https://azsos.gov/elections" },
