@@ -560,53 +560,30 @@ export default function RapidResponseReader() {
   };
 
   // ── Fetch + parse ───────────────────────────────────────────────────────────
-  const fetchAndAnalyze = async (targetUrl) => {
-    setLoading(true);
-    setError(null);
-    setArticle(null);
-    setSaved(false);
-    setPushed(false);
-    setLoadingMsg("Fetching article...");
-
-    let rawText = "";
-    let fetchOk = false;
-
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{
-            role: "user",
-            content: `Fetch the full text content of this URL and return ONLY the article body text, no navigation or ads: ${targetUrl}`
-          }],
-          tools: [{
-            type: "web_search_20250305",
-            name: "web_search"
-          }]
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const textBlocks = data.content?.filter(b => b.type === "text").map(b => b.text).join("\n") || "";
-        if (textBlocks.length > 200) {
-          rawText = textBlocks;
-          fetchOk = true;
-        }
-      }
-    } catch {}
-
-    if (!fetchOk) {
-      setLoading(false);
-      setError("scrape");
-      return;
-    }
-
-    await analyzeText({ text: rawText, url: targetUrl, isManual: false });
-  };
+const fetchAndAnalyze = async (targetUrl) => {
+  setLoading(true);
+  setError(null);
+  setArticle(null);
+  setSaved(false);
+  setPushed(false);
+  setLoadingMsg("Fetching article...");
+  try {
+    const res = await fetch("/.netlify/functions/rapid-response", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "fetch_and_analyze", url: targetUrl }),
+    });
+    if (res.status === 422) { setLoading(false); setError("scrape"); return; }
+    const data = await res.json();
+    const raw = data.result?.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
+    const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+    setArticle({ ...parsed, url: targetUrl, id: `article_${Date.now()}`, isManual: false });
+    setLoading(false);
+  } catch {
+    setLoading(false);
+    setError("scrape");
+  }
+};
 
   const analyzeText = async ({ text, url: srcUrl, title, pub, date, reporter, isManual }) => {
     setLoading(true);
