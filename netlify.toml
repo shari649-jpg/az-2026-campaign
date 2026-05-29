@@ -4,8 +4,12 @@
 
 [functions]
   node_bundler = "esbuild"
+  external_node_modules = ["googleapis"]
 
-[functions.generate-rebuttal]
+[functions."query-candidates"]
+  timeout = 26
+
+[functions."generate-rebuttal"]
   timeout = 26
 
 [[redirects]]
