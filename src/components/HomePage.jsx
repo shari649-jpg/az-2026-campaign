@@ -32,10 +32,10 @@ const TOOLS = [
     path: "/rapid-response",
     label: "Rapid Response",
     eyebrow: "Monitoring",
-    desc: "Track breaking narratives, flag emerging attacks, and route them to the right response tool fast.",
-    status: "coming",
-    color: "#4A4558",
-    bg: "#eeecf4",
+    desc: "Read any article, extract key facts and quotes, and push directly to Message Machine — with a full article library.",
+    status: "live",
+    color: "#1D5C4A",
+    bg: "#e0f2ec",
   },
 ];
 
