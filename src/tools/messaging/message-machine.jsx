@@ -216,6 +216,7 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
 export default function App() {
   const [view, setView]             = useState("form");
   const [formData, setFormData]     = useState({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", regenOption:"", platforms:[] });
+  const [fromResearch, setFromResearch] = useState(false);
   const [messages, setMessages]     = useState({});
   const [generating, setGenerating] = useState(false);
   const [platLoad, setPlatLoad]     = useState({});
@@ -228,12 +229,13 @@ export default function App() {
 
   useEffect(() => {
     loadCampaigns();
-    // Check if Rapid Response pushed an article
+    // Check if Rapid Response or Research pushed content
     try {
       const pending = localStorage.getItem("rr_pending_article");
       if (pending) {
         const p = JSON.parse(pending);
-        setFormData(f => ({ ...f, issue: p.issueText || "", focalPoint: p.focalPoint || "" }));
+        setFormData(f => ({ ...f, issue: p.issueText || "", focalPoint: "" }));
+        setFromResearch(true);
         localStorage.removeItem("rr_pending_article");
       }
     } catch {}
@@ -358,7 +360,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
   };
 
   const startNewCampaign = () => {
-    setFormData({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", regenOption:"", platforms:[] });
+    setFormData({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", regenOption:"", platforms:[] }); setFromResearch(false);
     setMessages({});
     setHashtags(null);
     setView("form");
@@ -444,12 +446,18 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               </section>
 
               {/* Focal Point */}
-              <section style={S.card}>
-                <label htmlFor="focal" style={S.label}>Focal Point</label>
-                <input id="focal" type="text" style={S.input}
-                  placeholder='e.g. "Hobbs fights for rural Arizona" or "Local school funding at stake"'
-                  value={formData.focalPoint} onChange={e=>upd("focalPoint",e.target.value)} />
-                <p style={S.hint}>The core angle or frame you want emphasized in every message</p>
+              <section style={{...S.card, ...(fromResearch && !formData.focalPoint ? { border:"2px solid #F5C842", background:"#fffdf0" } : {})}}>
+                <label htmlFor="focal" style={{...S.label, ...(fromResearch && !formData.focalPoint ? { color:"#1D5C4A" } : {})}}>
+                  Focal Point{fromResearch && !formData.focalPoint ? " ← Add your key message here" : ""}
+                </label>
+                <input id="focal" type="text"
+                  style={{...S.input, ...(fromResearch && !formData.focalPoint ? { borderColor:"#F5C842", boxShadow:"0 0 0 3px rgba(245,200,66,0.25)" } : {})}}
+                  placeholder={fromResearch && !formData.focalPoint ? 'What's the key message you want to emphasize?' : 'e.g. "Hobbs fights for rural Arizona" or "Local school funding at stake"'}
+                  value={formData.focalPoint}
+                  onChange={e=>{ upd("focalPoint",e.target.value); if(e.target.value) setFromResearch(false); }}
+                  autoFocus={fromResearch && !formData.focalPoint}
+                />
+                <p style={S.hint}>{fromResearch && !formData.focalPoint ? "Content has been loaded from Research — add a focal point to frame your message before generating." : "The core angle or frame you want emphasized in every message"}</p>
               </section>
 
               {/* Audience + Voice */}
