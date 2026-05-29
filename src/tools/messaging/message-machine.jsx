@@ -460,7 +460,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </label>
                 <input id="focal" type="text"
                   style={{...S.input, ...(fromResearch && !formData.focalPoint ? { borderColor:"#F5C842", boxShadow:"0 0 0 3px rgba(245,200,66,0.25)" } : {})}}
-                  placeholder={fromResearch && !formData.focalPoint ? 'What's the key message you want to emphasize?' : 'e.g. "Hobbs fights for rural Arizona" or "Local school funding at stake"'}
+                  placeholder={fromResearch && !formData.focalPoint ? 'What is the key message you want to emphasize?' : 'e.g. "Hobbs fights for rural Arizona" or "Local school funding at stake"'}
                   value={formData.focalPoint}
                   onChange={e=>{ upd("focalPoint",e.target.value); if(e.target.value) setFromResearch(false); }}
                   autoFocus={fromResearch && !formData.focalPoint}
