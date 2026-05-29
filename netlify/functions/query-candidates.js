@@ -112,7 +112,7 @@ JSON format:
 Be thorough. Include all relevant candidates and all relevant facts for each.`;
 
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 3000,
     messages: [{ role: 'user', content: prompt }],
   });
