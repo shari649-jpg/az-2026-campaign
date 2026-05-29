@@ -84,6 +84,17 @@ export default function CandidateQuery() {
   const selectedList = Object.values(selected);
   const hasSelected  = selectedList.length > 0;
 
+  // Client-side filter applied to already-loaded results
+  const filteredResults = useMemo(() => {
+    if (!results) return [];
+    if (filter === 'all') return results;
+    return results
+      .map(c => ({ ...c, facts: (c.facts || []).filter(f => f.type === filter) }))
+      .filter(c => c.facts.length > 0);
+  }, [results, filter]);
+
+  const seatGroupsFiltered = useMemo(() => groupByseat(filteredResults), [filteredResults]);
+
   async function handleSearch(e) {
     e.preventDefault();
     if (!query.trim()) return;
@@ -148,8 +159,6 @@ export default function CandidateQuery() {
       setPushed(true);
     } catch {}
   }
-
-  const seatGroups = useMemo(() => results ? groupByseat(results) : [], [results]);
 
   // ── Styles ──────────────────────────────────────────────────────────────
   const S = {
@@ -231,7 +240,7 @@ export default function CandidateQuery() {
           {/* Results header + push button */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
             <p style={{ fontSize: 15, color: B.textMid, fontWeight: 700 }}>
-              {results.length} candidate{results.length !== 1 ? 's' : ''} found
+              {filteredResults.length} candidate{filteredResults.length !== 1 ? 's' : ''} found{filter !== 'all' ? ` (filtered: ${filter})` : ''}
               {hasSelected && <span style={{ color: B.teal }}> · {selectedList.length} selected</span>}
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -253,7 +262,7 @@ export default function CandidateQuery() {
           </div>
 
           {/* Seat groups */}
-          {seatGroups.map((group, gi) => {
+          {seatGroupsFiltered.map((group, gi) => {
             const isContrast = group.length > 1;
             const seat = `${group[0].office || ''}${group[0].district ? ' · ' + group[0].district : ''}`;
 
@@ -331,9 +340,28 @@ export default function CandidateQuery() {
                                         <span style={{ fontSize: 11, fontWeight: 700, color: fc.text, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{fact.type}</span>
                                         {fact.category && <span style={{ fontSize: 11, color: fc.text, opacity: 0.8 }}>· {fact.category}</span>}
                                       </div>
-                                      <p style={{ fontSize: 14, color: B.text, lineHeight: 1.6, margin: 0, fontStyle: fact.type === 'quote' ? 'italic' : 'normal' }}>
+                                      <p style={{ fontSize: 14, color: B.text, lineHeight: 1.6, margin: '0 0 10px 0', fontStyle: fact.type === 'quote' ? 'italic' : 'normal' }}>
                                         {fact.type === 'quote' ? `"${fact.text}"` : fact.text}
                                       </p>
+                                      <button
+                                        onClick={() => {
+                                          const label = `── ${candidateLabel(candidate)} ──`;
+                                          const tag = fact.type ? `[${fact.type.toUpperCase()}${fact.category ? ' – ' + fact.category : ''}] ` : '';
+                                          const issueText = `${label}\n• ${tag}${fact.text}`;
+                                          const payload = {
+                                            sourceArticleId: null,
+                                            sourceTitle: `${candidate.candidate_name} – ${fact.category || fact.type}`,
+                                            sourcePublication: 'AZ 2026 Candidate Research',
+                                            issueText,
+                                            focalPoint: fact.text,
+                                            pushedAt: new Date().toISOString(),
+                                          };
+                                          try { localStorage.setItem('rr_pending_article', JSON.stringify(payload)); setPushed(true); } catch {}
+                                        }}
+                                        style={{ fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 6, border: `1px solid ${fc.border}`, background: 'transparent', color: fc.text, cursor: 'pointer', fontFamily: 'inherit' }}
+                                      >
+                                        Use in Message Machine →
+                                      </button>
                                     </div>
                                   );
                                 })
