@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { saveCampaign as fbSave, loadAllCampaigns, deleteCampaign as fbDelete } from "../../lib/campaignLibrary";
 
 const PLATFORMS = [
@@ -233,22 +234,19 @@ export default function App() {
   const [hashtags, setHashtags]     = useState(null);
   const [hashLoading, setHashLoading] = useState(false);
 
+  const location = useLocation();
+
   useEffect(() => {
     loadCampaigns();
-    // Check if Library pushed a campaign to load
-    try {
-      const pendingLoad = localStorage.getItem("pending_load_campaign");
-      if (pendingLoad) {
-        const c = JSON.parse(pendingLoad);
-        if (c.tool === "message-machine") {
-          setFormData(c.formData || {});
-          setMessages(c.messages || {});
-          setHashtags(null);
-          setView("results");
-        }
-        localStorage.removeItem("pending_load_campaign");
-      }
-    } catch {}
+    // Check if Library navigated here with a campaign to load
+    if (location.state?.loadCampaign) {
+      const c = location.state.loadCampaign;
+      setFormData(c.formData || {});
+      setMessages(c.messages || {});
+      setHashtags(null);
+      setView("results");
+      return;
+    }
     // Check if Rapid Response or Research pushed content
     try {
       const pending = localStorage.getItem("rr_pending_article");
