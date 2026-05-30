@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { saveArticle, loadArticles, deleteArticle } from "../../lib/articleLibrary";
 
 // ── Brand Colors ─────────────────────────────────────────────────────────────
@@ -537,10 +538,20 @@ export default function RapidResponseReader() {
   const [notif, setNotif]           = useState(null);
   const [profile, setProfile]       = useState(null);
 
+  const location = useLocation();
+
   useEffect(() => { loadAll(); }, []);
 
   const loadAll = async () => {
     try { const p = localStorage.getItem("rr_profile"); if (p) setProfile(JSON.parse(p)); } catch {}
+    // Check if Library navigated here with an article to load
+    if (location.state?.loadArticle) {
+      const a = location.state.loadArticle;
+      setArticle(a);
+      setSaved(true);
+      setPushed(false);
+      setView("reader");
+    }
     try {
       const articles = await loadArticles();
       setLibrary(articles);
