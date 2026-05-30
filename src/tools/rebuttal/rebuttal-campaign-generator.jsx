@@ -377,7 +377,23 @@ export default function RebuttalGenerator() {
   const [shareCopied, setShareCopied] = useState(false);
 
   // Load library on mount
-  useEffect(() => { loadLibrary(); }, []);
+  useEffect(() => {
+    loadLibrary();
+    // Check if Library pushed a campaign to load
+    try {
+      const pendingLoad = localStorage.getItem("pending_load_campaign");
+      if (pendingLoad) {
+        const c = JSON.parse(pendingLoad);
+        if (c.tool === "rebuttal") {
+          setNarrative(c.narrative || "");
+          setOutput(c.output || "");
+          setTone(c.tone || null);
+          setSaved(true);
+        }
+        localStorage.removeItem("pending_load_campaign");
+      }
+    } catch {}
+  }, []);
 
   async function loadLibrary() {
     try {
