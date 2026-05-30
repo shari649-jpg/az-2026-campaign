@@ -440,14 +440,14 @@ function LibraryPanel({ items, onLoad, onDelete }) {
         <div key={item.id} style={{ ...S.card, display: "flex", alignItems: "flex-start", gap: 16 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
-              <p style={{ fontSize: 17, fontWeight: 700, color: B.text }}>{item.title || "Untitled"}</p>
-              <span style={{ fontSize: 13, color: B.textMute }}>{item.date || ""}</span>
+              <p style={{ fontSize: 17, fontWeight: 700, color: B.text }}>{String(item.title || "Untitled")}</p>
+              <span style={{ fontSize: 13, color: B.textMute }}>{String(item.date || "")}</span>
             </div>
             <p style={{ fontSize: 13, color: B.textMid, marginBottom: 8 }}>
-              {item.publication}{item.reporter ? ` · ${item.reporter}` : ""}
+              {String(item.publication || "")}{item.reporter ? ` · ${String(item.reporter)}` : ""}
             </p>
             <p style={{ fontSize: 14, color: B.textMute, lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-              {item.summary}
+              {String(item.summary || "")}
             </p>
             {item.linkedCampaigns?.length > 0 && (
               <p style={{ fontSize: 12, color: B.teal, fontWeight: 700, marginTop: 8 }}>
@@ -456,7 +456,7 @@ function LibraryPanel({ items, onLoad, onDelete }) {
             )}
             {item.savedBy && (
               <p style={{ fontSize: 12, color: B.textMute, marginTop: 4 }}>
-                Saved by {item.savedBy} · {item.savedAt}
+                Saved by {String(item.savedBy)}{item.savedAt ? ` · ${String(item.savedAt)}` : ""}
               </p>
             )}
           </div>
@@ -542,9 +542,32 @@ export default function RapidResponseReader() {
 
   useEffect(() => { loadAll(); }, []);
 
+  const toStr = (v) => {
+    if (v === null || v === undefined) return "";
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    if (v && typeof v.toDate === "function") return v.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    if (v && typeof v.seconds === "number") return new Date(v.seconds * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    return "";
+  };
+
+  const normalizeArticle = (a) => ({
+    ...a,
+    id:          String(a.id || ""),
+    title:       toStr(a.title),
+    publication: toStr(a.publication),
+    reporter:    toStr(a.reporter),
+    date:        toStr(a.date),
+    savedAt:     toStr(a.savedAt),
+    summary:     toStr(a.summary),
+    url:         toStr(a.url),
+    savedBy:     toStr(a.savedBy),
+    linkedCampaigns: Array.isArray(a.linkedCampaigns) ? a.linkedCampaigns : [],
+    keyPoints:   Array.isArray(a.keyPoints) ? a.keyPoints.map(toStr) : [],
+  });
+
   const loadAll = async () => {
     try { const p = localStorage.getItem("rr_profile"); if (p) setProfile(JSON.parse(p)); } catch {}
-    // Check if Library navigated here with an article to load
     if (location.state?.loadArticle) {
       const a = location.state.loadArticle;
       setArticle(a);
@@ -554,7 +577,7 @@ export default function RapidResponseReader() {
     }
     try {
       const articles = await loadArticles();
-      setLibrary(articles);
+      setLibrary((articles || []).map(normalizeArticle));
     } catch {}
   };
 
