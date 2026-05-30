@@ -91,12 +91,23 @@ export default function LibraryPage() {
     }
   };
 
-  // Combine everything for the "all" view
+  // Combine and sort everything by most recent first
   const allCampaigns = [
     ...campaigns.map(c => ({ ...c, _type: "campaign" })),
   ];
 
   const allArticles = rrArticles.map(a => ({ ...a, _type: "article", tool: "rapid-response" }));
+
+  // Helper to extract a sortable date from any item
+  function sortKey(item) {
+    // Try savedAt ISO string first (rebuttal), then date string (message-machine), then 0
+    if (item.savedAt) return new Date(item.savedAt).getTime();
+    if (item.date) {
+      const d = new Date(item.date);
+      return isNaN(d.getTime()) ? 0 : d.getTime();
+    }
+    return 0;
+  }
 
   // Filter
   const showCampaigns = filter === "all" || filter === "message-machine" || filter === "rebuttal";
@@ -122,10 +133,13 @@ export default function LibraryPage() {
 
   const totalShown = (showCampaigns ? filteredCampaigns.length : 0) + (showArticles ? filteredArticles.length : 0);
   const totalPages = Math.ceil(totalShown / PAGE_SIZE);
+
+  // Merge all visible items and sort most-recent first
   const allItems = [
     ...(showCampaigns ? filteredCampaigns.map(c => ({ ...c, _itemType: "campaign" })) : []),
     ...(showArticles  ? filteredArticles.map(a => ({ ...a, _itemType: "article" }))   : []),
-  ];
+  ].sort((a, b) => sortKey(b) - sortKey(a));
+
   const pageItems   = allItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const pageCampaigns = pageItems.filter(x => x._itemType === "campaign");
   const pageArticles  = pageItems.filter(x => x._itemType === "article");
@@ -203,35 +217,39 @@ export default function LibraryPage() {
           </div>
         )}
 
-        {/* ── Campaign cards (Message Machine + Rebuttal) ── */}
-        {showCampaigns && filteredCampaigns.length > 0 && (
-          <div style={{ marginBottom: 40 }}>
-            {(filter === "all") && (
-              <h2 style={{ fontSize: 18, fontWeight: 700, color: TEAL, marginBottom: 16, paddingBottom: 8, borderBottom: `2px solid ${GOLD}`, display: "inline-block" }}>
-                Campaigns
-              </h2>
-            )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {pageCampaigns.map(c => {
+        {/* ── All items in one sorted list ── */}
+        {!loading && pageItems.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 40 }}>
+            {pageItems.map(item => {
+              if (item._itemType === "campaign") {
+                const c = item;
                 const meta = TOOL_META[c.tool] || { label: c.tool, color: CHARCOAL, emoji: "📄" };
+                // Preview text: rebuttal uses narrative, message-machine uses issue
+                const preview = c.narrative || c.formData?.issue || "";
+                // Tags: rebuttal uses tone, message-machine uses audience+modifier+platforms
                 return (
                   <div key={c.id} style={{ background: "#fafaf8", border: `1.5px solid ${BORDER}`, borderLeft: `5px solid ${meta.color}`, borderRadius: 10, padding: "20px 22px", display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
                     <div style={{ flex: 1, minWidth: 200 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
                         <span style={{ fontSize: 20 }}>{meta.emoji}</span>
                         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: meta.color }}>{meta.label}</span>
+                        {c.date && <span style={{ fontSize: 13, color: "#888" }}>{c.date}</span>}
+                        {c.savedAt && !c.date && <span style={{ fontSize: 13, color: "#888" }}>{new Date(c.savedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</span>}
                       </div>
                       <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 6 }}>{c.name || "Untitled Campaign"}</p>
-                      {c.date && <p style={{ fontSize: 13, color: "#888" }}>Saved {c.date}</p>}
-                      {c.formData?.audience && (
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-                          {c.formData.audience && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.formData.audience}</span>}
-                          {c.formData.modifier  && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.formData.modifier}</span>}
-                          {(c.formData.platforms || []).map(pid => (
-                            <span key={pid} style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: meta.color + "22", color: meta.color, borderRadius: 12, border: `1px solid ${meta.color}` }}>{pid}</span>
-                          ))}
-                        </div>
+                      {preview && (
+                        <p style={{ fontSize: 14, color: "#666", lineHeight: 1.6, marginBottom: 8, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                          {preview.substring(0, 240)}{preview.length > 240 ? "…" : ""}
+                        </p>
                       )}
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+                        {c.formData?.audience && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.formData.audience}</span>}
+                        {c.formData?.modifier  && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.formData.modifier}</span>}
+                        {c.tone && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.tone}</span>}
+                        {(c.formData?.platforms || []).map(pid => (
+                          <span key={pid} style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: meta.color + "22", color: meta.color, borderRadius: 12, border: `1px solid ${meta.color}` }}>{pid}</span>
+                        ))}
+                      </div>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
                       <button onClick={() => loadCampaign(c)} style={btnStyle("#fff", TEAL)}>Load →</button>
@@ -239,47 +257,37 @@ export default function LibraryPage() {
                     </div>
                   </div>
                 );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ── Rapid Response articles ── */}
-        {showArticles && filteredArticles.length > 0 && (
-          <div style={{ marginBottom: 40 }}>
-            {(filter === "all") && (
-              <h2 style={{ fontSize: 18, fontWeight: 700, color: TEAL, marginBottom: 16, paddingBottom: 8, borderBottom: `2px solid ${GOLD}`, display: "inline-block" }}>
-                📡 Rapid Response Articles
-              </h2>
-            )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {pageArticles.map(a => (
-                <div key={a.id} style={{ background: "#fafaf8", border: `1.5px solid ${BORDER}`, borderLeft: `5px solid ${TEAL}`, borderRadius: 10, padding: "20px 22px", display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, minWidth: 200 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                      <span style={{ fontSize: 20 }}>📡</span>
-                      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: TEAL }}>Rapid Response</span>
+              } else {
+                // Rapid Response article
+                const a = item;
+                return (
+                  <div key={a.id} style={{ background: "#fafaf8", border: `1.5px solid ${BORDER}`, borderLeft: `5px solid ${TEAL}`, borderRadius: 10, padding: "20px 22px", display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                        <span style={{ fontSize: 20 }}>📡</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: TEAL }}>Rapid Response</span>
+                        {(a.savedAt || a.date) && <span style={{ fontSize: 13, color: "#888" }}>{a.savedAt ? new Date(a.savedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : a.date}</span>}
+                      </div>
+                      <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 4 }}>{a.title || "Untitled Article"}</p>
+                      <p style={{ fontSize: 13, color: "#888", marginBottom: 8 }}>
+                        {a.publication}{a.date ? ` · ${a.date}` : ""}{a.reporter ? ` · ${a.reporter}` : ""}
+                      </p>
+                      {a.summary && (
+                        <p style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.6, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{a.summary}</p>
+                      )}
+                      {a.linkedCampaigns?.length > 0 && (
+                        <p style={{ fontSize: 12, color: TEAL, fontWeight: 700, marginTop: 8 }}>🔗 {a.linkedCampaigns.length} campaign{a.linkedCampaigns.length !== 1 ? "s" : ""} created from this article</p>
+                      )}
                     </div>
-                    <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 4 }}>{a.title || "Untitled Article"}</p>
-                    <p style={{ fontSize: 13, color: "#888", marginBottom: 8 }}>
-                      {a.publication}{a.date ? ` · ${a.date}` : ""}{a.reporter ? ` · ${a.reporter}` : ""}
-                    </p>
-                    {a.summary && (
-                      <p style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.6, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{a.summary}</p>
-                    )}
-                    {a.linkedCampaigns?.length > 0 && (
-                      <p style={{ fontSize: 12, color: TEAL, fontWeight: 700, marginTop: 8 }}>🔗 {a.linkedCampaigns.length} campaign{a.linkedCampaigns.length !== 1 ? "s" : ""} created from this article</p>
-                    )}
-                    {a.savedBy && <p style={{ fontSize: 12, color: "#888", marginTop: 6 }}>Saved by {a.savedBy}{a.savedAt ? ` · ${a.savedAt}` : ""}</p>}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+                      <button onClick={() => navigate("/rapid-response")} style={btnStyle("#fff", TEAL)}>Open in Rapid Response</button>
+                      <button onClick={() => pushArticleToMachine(a)} style={btnStyle(TEAL)}>Push to Message Machine →</button>
+                      <button onClick={() => deleteArticle(a.id)} style={btnStyle(RED)}>Delete</button>
+                    </div>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
-                    <button onClick={() => navigate("/rapid-response")} style={btnStyle("#fff", TEAL)}>Open in Rapid Response</button>
-                    <button onClick={() => pushArticleToMachine(a)} style={btnStyle(TEAL)}>Push to Message Machine →</button>
-                    <button onClick={() => deleteArticle(a.id)} style={btnStyle(RED)}>Delete</button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                );
+              }
+            })}
           </div>
         )}
 
