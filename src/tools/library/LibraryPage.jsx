@@ -68,6 +68,7 @@ export default function LibraryPage() {
   });
 
   const normalizeArticle = (a) => ({
+    ...a,  // preserve ALL fields from Firebase (people, quotes, keyPoints, etc.)
     id:          String(a.id || ""),
     title:       toStr(a.title),
     publication: toStr(a.publication),
