@@ -235,6 +235,20 @@ export default function App() {
 
   useEffect(() => {
     loadCampaigns();
+    // Check if Library pushed a campaign to load
+    try {
+      const pendingLoad = localStorage.getItem("pending_load_campaign");
+      if (pendingLoad) {
+        const c = JSON.parse(pendingLoad);
+        if (c.tool === "message-machine") {
+          setFormData(c.formData || {});
+          setMessages(c.messages || {});
+          setHashtags(null);
+          setView("results");
+        }
+        localStorage.removeItem("pending_load_campaign");
+      }
+    } catch {}
     // Check if Rapid Response or Research pushed content
     try {
       const pending = localStorage.getItem("rr_pending_article");
@@ -736,43 +750,4 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                     <div style={{ display:"flex", flexDirection:"column", gap:10, flexShrink:0 }}>
                       <button onClick={()=>loadCampaign(c)} style={{ ...S.btnPrimary, padding:"12px 24px", fontSize:17 }}>Load</button>
                       <button onClick={()=>deleteCampaign(c.id)}
-                        style={{ padding:"12px 24px", fontSize:17, fontWeight:700, background:T.surface, color:"#b91c1c", border:`2px solid #b91c1c`, borderRadius:8, cursor:"pointer", fontFamily:"inherit" }}>
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </main>
-
-      {/* SAVE MODAL */}
-      {saveModal && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}
-          onClick={e=>{ if(e.target===e.currentTarget){setSaveModal(false);setCampName("");} }}>
-          <div style={{ background:T.surface, border:`3px solid ${T.borderStrong}`, borderRadius:16, padding:36, maxWidth:500, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,0.35)" }}>
-            <h3 style={{ fontSize:28, fontWeight:900, color:T.text, marginBottom:10 }}>Save Campaign</h3>
-            <p style={{ color:T.textMid, fontSize:18, marginBottom:22 }}>Give this campaign a name so you can reload it later.</p>
-            <label htmlFor="campName" style={S.label}>Campaign Name</label>
-            <input id="campName" type="text" style={{ ...S.input, marginBottom:22 }}
-              placeholder='e.g. "Education Funding — May 2026"'
-              value={campName} onChange={e=>setCampName(e.target.value)}
-              onKeyDown={e=>e.key==="Enter"&&saveCampaign()} autoFocus />
-            <div style={{ display:"flex", gap:14 }}>
-              <button onClick={saveCampaign} disabled={!campName.trim()}
-                style={{ ...S.btnPrimary, flex:1, fontSize:19, padding:"15px", opacity:campName.trim()?1:0.5, cursor:campName.trim()?"pointer":"not-allowed" }}>
-                Save
-              </button>
-              <button onClick={()=>{setSaveModal(false);setCampName("");}}
-                style={{ ...S.btnSecondary, flex:1, fontSize:19, padding:"15px", justifyContent:"center" }}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                        style={{ padding:"12px 24px", fontSize:17, fontWeight:700, background:T.surface, color:"#b91c1c", border:`2px solid #b91c1c`, borderRadius:8
