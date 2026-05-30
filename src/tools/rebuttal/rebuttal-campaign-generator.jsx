@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { saveCampaign, loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
 
 // ── 9 activist profile choices ────────────────────────────────────────────
@@ -377,22 +378,18 @@ export default function RebuttalGenerator() {
   const [shareCopied, setShareCopied] = useState(false);
 
   // Load library on mount
+  const location = useLocation();
+
   useEffect(() => {
     loadLibrary();
-    // Check if Library pushed a campaign to load
-    try {
-      const pendingLoad = localStorage.getItem("pending_load_campaign");
-      if (pendingLoad) {
-        const c = JSON.parse(pendingLoad);
-        if (c.tool === "rebuttal") {
-          setNarrative(c.narrative || "");
-          setOutput(c.output || "");
-          setTone(c.tone || null);
-          setSaved(true);
-        }
-        localStorage.removeItem("pending_load_campaign");
-      }
-    } catch {}
+    // Check if Library navigated here with a campaign to load
+    if (location.state?.loadCampaign) {
+      const c = location.state.loadCampaign;
+      setNarrative(c.narrative || "");
+      setOutput(c.output || "");
+      setTone(c.tone || null);
+      setSaved(true);
+    }
   }, []);
 
   async function loadLibrary() {
