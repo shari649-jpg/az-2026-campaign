@@ -33,15 +33,63 @@ export default function LibraryPage() {
 
   useEffect(() => { loadAll(); }, []);
 
+  // Normalize a value from Firestore to a plain JS primitive or safe type
+  const toStr = (v) => {
+    if (v === null || v === undefined) return "";
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    // Firestore Timestamp
+    if (v && typeof v.toDate === "function") return v.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    if (v && typeof v.seconds === "number") return new Date(v.seconds * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    // Any other object — don't render it
+    return "";
+  };
+
+  const normalizeCampaign = (c) => ({
+    ...c,
+    id:       String(c.id || ""),
+    tool:     String(c.tool || ""),
+    name:     toStr(c.name),
+    date:     toStr(c.date),
+    savedAt:  toStr(c.savedAt),
+    narrative:toStr(c.narrative),
+    tone:     toStr(c.tone),
+    output:   toStr(c.output),
+    formData: c.formData ? {
+      issue:    toStr(c.formData.issue),
+      audience: toStr(c.formData.audience),
+      modifier: toStr(c.formData.modifier),
+      voice:    toStr(c.formData.voice),
+      style:    toStr(c.formData.style),
+      platforms: Array.isArray(c.formData.platforms)
+        ? c.formData.platforms.map(p => String(p))
+        : [],
+    } : {},
+  });
+
+  const normalizeArticle = (a) => ({
+    id:          String(a.id || ""),
+    title:       toStr(a.title),
+    publication: toStr(a.publication),
+    reporter:    toStr(a.reporter),
+    date:        toStr(a.date),
+    savedAt:     toStr(a.savedAt),
+    summary:     toStr(a.summary),
+    url:         toStr(a.url),
+    savedBy:     toStr(a.savedBy),
+    linkedCampaigns: Array.isArray(a.linkedCampaigns) ? a.linkedCampaigns : [],
+    keyPoints:   Array.isArray(a.keyPoints) ? a.keyPoints.map(toStr) : [],
+  });
+
   const loadAll = async () => {
     setLoading(true);
     try {
       const all = await loadAllCampaigns();
-      setCampaigns(all);
+      setCampaigns((all || []).map(normalizeCampaign));
     } catch {}
     try {
       const articles = await loadArticles();
-      setRrArticles(articles);
+      setRrArticles((articles || []).map(normalizeArticle));
     } catch {}
     setLoading(false);
   };
@@ -120,15 +168,13 @@ export default function LibraryPage() {
     return 0;
   }
 
-  // Safe date display — handles ISO strings, formatted strings, or missing
+  // Safe date display — fields are already normalized strings by this point
   function fmtDate(item) {
     const raw = item.savedAt || item.date || "";
     if (!raw) return "";
-    // Try ISO first
     const d = new Date(raw);
     if (!isNaN(d.getTime())) return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    // Already a formatted string — return as-is
-    return raw;
+    return raw; // already a formatted string
   }
 
   // Filter
@@ -245,14 +291,7 @@ export default function LibraryPage() {
             {pageItems.map(item => {
               if (item._itemType === "campaign") {
                 const c = item;
-                const meta = TOOL_META[c.tool] || { label: String(c.tool || ""), color: CHARCOAL, emoji: "📄" };
-                // Safely coerce all fields to strings
-                const name     = String(c.name || "Untitled Campaign");
-                const preview  = String(c.narrative || c.formData?.issue || "");
-                const audience = String(c.formData?.audience || "");
-                const modifier = String(c.formData?.modifier || "");
-                const tone     = String(c.tone || "");
-                const platforms = Array.isArray(c.formData?.platforms) ? c.formData.platforms : [];
+                const meta = TOOL_META[c.tool] || { label: c.tool, color: CHARCOAL, emoji: "📄" };
                 return (
                   <div key={c.id} style={{ background: "#fafaf8", border: `1.5px solid ${BORDER}`, borderLeft: `5px solid ${meta.color}`, borderRadius: 10, padding: "20px 22px", display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
                     <div style={{ flex: 1, minWidth: 200 }}>
@@ -261,18 +300,18 @@ export default function LibraryPage() {
                         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: meta.color }}>{meta.label}</span>
                         {fmtDate(c) && <span style={{ fontSize: 13, color: "#888" }}>{fmtDate(c)}</span>}
                       </div>
-                      <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 6 }}>{name}</p>
-                      {preview && (
+                      <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 6 }}>{c.name || "Untitled Campaign"}</p>
+                      {(c.narrative || c.formData?.issue) && (
                         <p style={{ fontSize: 14, color: "#666", lineHeight: 1.6, marginBottom: 8, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-                          {preview.substring(0, 240)}{preview.length > 240 ? "…" : ""}
+                          {(c.narrative || c.formData?.issue || "").substring(0, 240)}
                         </p>
                       )}
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
-                        {audience && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{audience}</span>}
-                        {modifier && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{modifier}</span>}
-                        {tone     && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{tone}</span>}
-                        {platforms.map(pid => (
-                          <span key={pid} style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: meta.color + "22", color: meta.color, borderRadius: 12, border: `1px solid ${meta.color}` }}>{String(pid)}</span>
+                        {c.formData?.audience && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.formData.audience}</span>}
+                        {c.formData?.modifier  && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.formData.modifier}</span>}
+                        {c.tone                && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.tone}</span>}
+                        {(c.formData?.platforms || []).map(pid => (
+                          <span key={pid} style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: meta.color + "22", color: meta.color, borderRadius: 12, border: `1px solid ${meta.color}` }}>{pid}</span>
                         ))}
                       </div>
                     </div>
@@ -283,13 +322,7 @@ export default function LibraryPage() {
                   </div>
                 );
               } else {
-                // Rapid Response article — coerce all fields to strings
                 const a = item;
-                const title       = String(a.title || "Untitled Article");
-                const publication = String(a.publication || "");
-                const reporter    = String(a.reporter || "");
-                const summary     = String(a.summary || "");
-                const artDate     = String(a.date || "");
                 return (
                   <div key={a.id} style={{ background: "#fafaf8", border: `1.5px solid ${BORDER}`, borderLeft: `5px solid ${TEAL}`, borderRadius: 10, padding: "20px 22px", display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
                     <div style={{ flex: 1, minWidth: 200 }}>
@@ -298,15 +331,15 @@ export default function LibraryPage() {
                         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: TEAL }}>Rapid Response</span>
                         {fmtDate(a) && <span style={{ fontSize: 13, color: "#888" }}>{fmtDate(a)}</span>}
                       </div>
-                      <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 4 }}>{title}</p>
+                      <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 4 }}>{a.title || "Untitled Article"}</p>
                       <p style={{ fontSize: 13, color: "#888", marginBottom: 8 }}>
-                        {publication}{artDate ? ` · ${artDate}` : ""}{reporter ? ` · ${reporter}` : ""}
+                        {a.publication}{a.date ? ` · ${a.date}` : ""}{a.reporter ? ` · ${a.reporter}` : ""}
                       </p>
-                      {summary && (
-                        <p style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.6, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{summary}</p>
+                      {a.summary && (
+                        <p style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.6, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{a.summary}</p>
                       )}
                       {a.linkedCampaigns?.length > 0 && (
-                        <p style={{ fontSize: 12, color: TEAL, fontWeight: 700, marginTop: 8 }}>🔗 {a.linkedCampaigns.length} campaign{a.linkedCampaigns.length !== 1 ? "s" : ""} created from this article</p>
+                        <p style={{ fontSize: 12, color: TEAL, fontWeight: 700, marginTop: 8 }}>🔗 {a.linkedCampaigns.length} linked campaign{a.linkedCampaigns.length !== 1 ? "s" : ""}</p>
                       )}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
