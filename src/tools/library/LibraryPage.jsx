@@ -116,12 +116,8 @@ export default function LibraryPage() {
   };
 
   const loadCampaign = (c) => {
-    // Tools read from localStorage on mount — use that pattern for both
-    try {
-      localStorage.setItem("pending_load_campaign", JSON.stringify(c));
-    } catch {}
-    if (c.tool === "message-machine") navigate("/messaging");
-    else if (c.tool === "rebuttal")   navigate("/rebuttal");
+    if (c.tool === "message-machine") navigate("/messaging",      { state: { loadCampaign: c } });
+    else if (c.tool === "rebuttal")   navigate("/rebuttal",       { state: { loadCampaign: c } });
   };
 
   const pushArticleToMachine = (article) => {
@@ -343,7 +339,7 @@ export default function LibraryPage() {
                       )}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
-                      <button onClick={() => navigate("/rapid-response")} style={btnStyle("#fff", TEAL)}>Open in Rapid Response</button>
+                      <button onClick={() => navigate("/rapid-response", { state: { loadArticle: a } })} style={btnStyle("#fff", TEAL)}>Open in Rapid Response</button>
                       <button onClick={() => pushArticleToMachine(a)} style={btnStyle(TEAL)}>Push to Message Machine →</button>
                       <button onClick={() => handleDeleteArticle(a.id)} style={btnStyle(RED)}>Delete</button>
                     </div>
