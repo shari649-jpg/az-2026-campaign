@@ -24,10 +24,10 @@ export default function LibraryPage() {
   const [rrArticles, setRrArticles] = useState([]);
   const [filter,     setFilter]     = useState("all");
   const [search,     setSearch]     = useState("");
-  const resetPage = () => setPage(1);
   const [notif,      setNotif]      = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [page,       setPage]       = useState(1);
+  const resetPage = () => setPage(1);
   const PAGE_SIZE = 8;
   const navigate = useNavigate();
 
