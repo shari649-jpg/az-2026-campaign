@@ -51,7 +51,7 @@ export default function LibraryPage() {
     setTimeout(() => setNotif(null), 3500);
   };
 
-  const deleteCampaign = async (id) => {
+  const handleDeleteCampaign = async (id) => {
     try {
       await deleteCampaign(id);
       setCampaigns(prev => prev.filter(c => c.id !== id));
@@ -59,7 +59,7 @@ export default function LibraryPage() {
     } catch { notify("Delete failed — please try again.", "err"); }
   };
 
-  const deleteArticle = async (id) => {
+  const handleDeleteArticle = async (id) => {
     try {
       await deleteArticle(id);
       setRrArticles(prev => prev.filter(a => a.id !== id));
@@ -68,8 +68,12 @@ export default function LibraryPage() {
   };
 
   const loadCampaign = (c) => {
-    if (c.tool === "message-machine") navigate("/messaging",  { state: { loadCampaign: c } });
-    else if (c.tool === "rebuttal")   navigate("/rebuttal",   { state: { loadCampaign: c } });
+    // Tools read from localStorage on mount — use that pattern for both
+    try {
+      localStorage.setItem("pending_load_campaign", JSON.stringify(c));
+    } catch {}
+    if (c.tool === "message-machine") navigate("/messaging");
+    else if (c.tool === "rebuttal")   navigate("/rebuttal");
   };
 
   const pushArticleToMachine = (article) => {
@@ -98,15 +102,33 @@ export default function LibraryPage() {
 
   const allArticles = rrArticles.map(a => ({ ...a, _type: "article", tool: "rapid-response" }));
 
-  // Helper to extract a sortable date from any item
+  // Helper to extract a sortable timestamp from any item
   function sortKey(item) {
-    // Try savedAt ISO string first (rebuttal), then date string (message-machine), then 0
-    if (item.savedAt) return new Date(item.savedAt).getTime();
+    // ISO string (rebuttal new format, RR articles stored as ISO)
+    if (item.savedAt) {
+      const t = new Date(item.savedAt).getTime();
+      if (!isNaN(t)) return t;
+      // savedAt might be a formatted string like "May 29, 2026" — try parsing
+      const t2 = Date.parse(item.savedAt);
+      if (!isNaN(t2)) return t2;
+    }
+    // Message Machine stores date as "May 29, 2026" in .date field
     if (item.date) {
-      const d = new Date(item.date);
-      return isNaN(d.getTime()) ? 0 : d.getTime();
+      const t = Date.parse(item.date);
+      if (!isNaN(t)) return t;
     }
     return 0;
+  }
+
+  // Safe date display — handles ISO strings, formatted strings, or missing
+  function fmtDate(item) {
+    const raw = item.savedAt || item.date || "";
+    if (!raw) return "";
+    // Try ISO first
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    // Already a formatted string — return as-is
+    return raw;
   }
 
   // Filter
@@ -233,8 +255,7 @@ export default function LibraryPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
                         <span style={{ fontSize: 20 }}>{meta.emoji}</span>
                         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: meta.color }}>{meta.label}</span>
-                        {c.date && <span style={{ fontSize: 13, color: "#888" }}>{c.date}</span>}
-                        {c.savedAt && !c.date && <span style={{ fontSize: 13, color: "#888" }}>{new Date(c.savedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</span>}
+                        {fmtDate(c) && <span style={{ fontSize: 13, color: "#888" }}>{fmtDate(c)}</span>}
                       </div>
                       <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 6 }}>{c.name || "Untitled Campaign"}</p>
                       {preview && (
@@ -253,7 +274,7 @@ export default function LibraryPage() {
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
                       <button onClick={() => loadCampaign(c)} style={btnStyle("#fff", TEAL)}>Load →</button>
-                      <button onClick={() => deleteCampaign(c.id)} style={btnStyle(RED)}>Delete</button>
+                      <button onClick={() => handleDeleteCampaign(c.id)} style={btnStyle(RED)}>Delete</button>
                     </div>
                   </div>
                 );
@@ -266,7 +287,7 @@ export default function LibraryPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
                         <span style={{ fontSize: 20 }}>📡</span>
                         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: TEAL }}>Rapid Response</span>
-                        {(a.savedAt || a.date) && <span style={{ fontSize: 13, color: "#888" }}>{a.savedAt ? new Date(a.savedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : a.date}</span>}
+                        {fmtDate(a) && <span style={{ fontSize: 13, color: "#888" }}>{fmtDate(a)}</span>}
                       </div>
                       <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 4 }}>{a.title || "Untitled Article"}</p>
                       <p style={{ fontSize: 13, color: "#888", marginBottom: 8 }}>
@@ -282,7 +303,7 @@ export default function LibraryPage() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
                       <button onClick={() => navigate("/rapid-response")} style={btnStyle("#fff", TEAL)}>Open in Rapid Response</button>
                       <button onClick={() => pushArticleToMachine(a)} style={btnStyle(TEAL)}>Push to Message Machine →</button>
-                      <button onClick={() => deleteArticle(a.id)} style={btnStyle(RED)}>Delete</button>
+                      <button onClick={() => handleDeleteArticle(a.id)} style={btnStyle(RED)}>Delete</button>
                     </div>
                   </div>
                 );
