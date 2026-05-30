@@ -179,6 +179,186 @@ function copyText(text) {
   });
 }
 
+// ── Platform display config ───────────────────────────────────────────────
+const PLATFORM_META = {
+  "facebook":  { abbr: "FB", bg: "#0a4fa8", text: "#fff" },
+  "instagram": { abbr: "IG", bg: "#7b1a6e", text: "#fff" },
+  "threads":   { abbr: "TH", bg: "#111111", text: "#fff" },
+  "bluesky":   { abbr: "BS", bg: "#0055bb", text: "#fff" },
+  "twitter":   { abbr: "X",  bg: "#0369a1", text: "#fff" },
+  "tiktok":    { abbr: "TK", bg: "#b91c1c", text: "#fff" },
+};
+
+// ── Parse raw markdown output into structured sections ────────────────────
+function parseOutput(text) {
+  if (!text) return null;
+
+  const result = { anchorPhrase: "", anchorExplain: "", lenses: [], activist: "", platforms: [] };
+
+  // Extract Anchor Phrase section
+  const anchorMatch = text.match(/##\s*Anchor Phrase\s*\n([\s\S]*?)(?=##|$)/i);
+  if (anchorMatch) {
+    const lines = anchorMatch[1].trim().split("\n").filter(l => l.trim());
+    result.anchorPhrase = lines[0]?.replace(/^[""]|[""]$/g, "").trim() || "";
+    result.anchorExplain = lines.slice(1).join(" ").trim();
+  }
+
+  // Extract Rebuttal Lenses
+  const lensMatch = text.match(/##\s*Rebuttal Lenses\s*\n([\s\S]*?)(?=##|$)/i);
+  if (lensMatch) {
+    const lensText = lensMatch[1];
+    const lensItems = lensText.match(/\*\*([^*]+)\*\*[:\s]*(.*?)(?=\*\*|$)/gs) || [];
+    lensItems.forEach(item => {
+      const m = item.match(/\*\*([^*]+)\*\*[:\s]*([\s\S]*)/);
+      if (m) result.lenses.push({ title: m[1].trim(), body: m[2].trim().replace(/\n/g, " ") });
+    });
+  }
+
+  // Extract Activist line
+  const activistMatch = text.match(/^Activist A:\s*(.+)$/m);
+  if (activistMatch) result.activist = activistMatch[1].trim();
+
+  // Extract each platform post + first comment
+  const platformNames = [
+    { key: "facebook",  pattern: /###\s*Facebook/i },
+    { key: "instagram", pattern: /###\s*Instagram/i },
+    { key: "threads",   pattern: /###\s*Threads/i },
+    { key: "bluesky",   pattern: /###\s*Blue\s*[Ss]ky/i },
+    { key: "twitter",   pattern: /###\s*Twitter/i },
+    { key: "tiktok",    pattern: /###\s*TikTok/i },
+  ];
+
+  // Split text into platform sections
+  const platformSectionRegex = /###\s*(Facebook|Instagram|Threads|Blue\s*[Ss]ky|Twitter[^\n]*|TikTok)/gi;
+  const parts = text.split(platformSectionRegex);
+
+  for (let i = 1; i < parts.length; i += 2) {
+    const name = parts[i].trim();
+    const body = parts[i + 1] || "";
+    const key = platformNames.find(p => p.pattern.test("### " + name))?.key;
+    if (!key) continue;
+
+    // Extract POST and FIRST COMMENT
+    const postMatch = body.match(/POST:\s*([\s\S]*?)(?=FIRST COMMENT:|###|##|$)/i);
+    const commentMatch = body.match(/FIRST COMMENT:\s*([\s\S]*?)(?=###|##|POST:|$)/i);
+
+    const post = postMatch ? postMatch[1].trim() : "";
+    const comment = commentMatch ? commentMatch[1].trim() : "";
+
+    if (post) {
+      result.platforms.push({ key, name, post, comment });
+    }
+  }
+
+  return result;
+}
+
+// ── Rendered output component ─────────────────────────────────────────────
+function RebuttalOutput({ output, onCopy, onSave, onShare, onEdit, copied, saved }) {
+  const [copiedPlatform, setCopiedPlatform] = useState(null);
+  const parsed = parseOutput(output);
+
+  const copyPlatformPost = async (key, text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedPlatform(key);
+      setTimeout(() => setCopiedPlatform(null), 2000);
+    } catch {}
+  };
+
+  // If parsing fails or produces no platforms, fall back to raw display
+  if (!parsed || parsed.platforms.length === 0) {
+    return (
+      <>
+        <div style={S.outBox}>{output}</div>
+        <div style={S.actRow}>
+          <button style={btnOutline(copied)} onClick={onCopy}>{copied ? "✓ Copied" : "Copy All"}</button>
+          <button style={btnOutline(saved)} onClick={saved ? undefined : onSave}>{saved ? "✓ Saved" : "Save to Library"}</button>
+          <button style={btnOutline(false)} onClick={onShare}>Share</button>
+          <button style={btnOutline(false)} onClick={onEdit}>Edit &amp; Regenerate</button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+
+      {/* Anchor Phrase */}
+      {parsed.anchorPhrase && (
+        <div style={{ background: R.borderStrong, color: "#fff", borderRadius: "10px 10px 0 0", padding: "20px 24px", marginBottom: 2 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.65)", marginBottom: 8 }}>Anchor Phrase</div>
+          <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.3, marginBottom: parsed.anchorExplain ? 10 : 0 }}>"{parsed.anchorPhrase}"</div>
+          {parsed.anchorExplain && <div style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}>{parsed.anchorExplain}</div>}
+        </div>
+      )}
+
+      {/* Rebuttal Lenses */}
+      {parsed.lenses.length > 0 && (
+        <div style={{ background: "#1a1a1a", padding: "20px 24px", marginBottom: 2 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", marginBottom: 14 }}>Rebuttal Lenses</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {parsed.lenses.map((lens, i) => (
+              <div key={i}>
+                <span style={{ fontWeight: 700, color: "#fff" }}>{lens.title}:</span>{" "}
+                <span style={{ color: "rgba(255,255,255,0.82)", lineHeight: 1.6, fontSize: 14 }}>{lens.body}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Activist voice label */}
+      {parsed.activist && (
+        <div style={{ background: "#2a2a2a", padding: "10px 24px", marginBottom: 16, fontSize: 13, color: "rgba(255,255,255,0.7)", fontStyle: "italic" }}>
+          Voice: {parsed.activist}
+        </div>
+      )}
+
+      {/* Platform cards */}
+      {parsed.platforms.map(({ key, name, post, comment }) => {
+        const meta = PLATFORM_META[key] || { abbr: "?", bg: R.borderStrong, text: "#fff" };
+        const isCopied = copiedPlatform === key;
+        return (
+          <div key={key} style={{ border: `2px solid ${R.border}`, borderRadius: 10, marginBottom: 14, overflow: "hidden" }}>
+            {/* Platform header */}
+            <div style={{ background: meta.bg, padding: "10px 18px", display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ background: "rgba(255,255,255,0.2)", color: meta.text, fontWeight: 900, fontSize: 12, padding: "3px 8px", borderRadius: 6 }}>{meta.abbr}</span>
+              <span style={{ fontWeight: 700, color: meta.text, fontSize: 17 }}>{name}</span>
+            </div>
+            {/* Post */}
+            <div style={{ padding: "16px 18px", borderBottom: `1px solid ${R.border}`, background: R.surface }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: R.textMute, marginBottom: 8 }}>Post</div>
+              <p style={{ fontSize: 15, lineHeight: 1.7, color: R.text, margin: 0, whiteSpace: "pre-wrap" }}>{post}</p>
+              <button
+                onClick={() => copyPlatformPost(key, post)}
+                style={{ marginTop: 12, padding: "8px 18px", background: isCopied ? "#333" : R.borderStrong, color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+              >
+                {isCopied ? "✓ Copied!" : "Copy Post"}
+              </button>
+            </div>
+            {/* First Comment */}
+            {comment && (
+              <div style={{ padding: "12px 18px", background: R.surfaceAlt }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: R.textMute, marginBottom: 6 }}>First Comment</div>
+                <p style={{ fontSize: 14, lineHeight: 1.6, color: R.textMid, margin: 0 }}>{comment}</p>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Action buttons */}
+      <div style={{ ...S.actRow, marginTop: 8 }}>
+        <button style={btnOutline(copied)} onClick={onCopy}>{copied ? "✓ Copied All" : "Copy All (Raw)"}</button>
+        <button style={btnOutline(saved)} onClick={saved ? undefined : onSave}>{saved ? "✓ Saved" : "Save to Library"}</button>
+        <button style={btnOutline(false)} onClick={onShare}>Share</button>
+        <button style={btnOutline(false)} onClick={onEdit}>Edit &amp; Regenerate</button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────
 export default function RebuttalGenerator() {
   const [narrative,   setNarrative]   = useState("");
@@ -484,21 +664,15 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
                 <strong>AI-Generated Content:</strong> This campaign was created by an AI and may contain inaccuracies. Please verify all facts, figures, names, and claims before publishing.
               </p>
             </div>
-            <div style={S.outBox}>{output}</div>
-            <div style={S.actRow}>
-              <button style={btnOutline(copied)} onClick={handleCopy}>
-                {copied ? "✓ Copied" : "Copy All"}
-              </button>
-              <button style={btnOutline(saved)} onClick={saved ? undefined : saveToLibrary}>
-                {saved ? "✓ Saved" : "Save to Library"}
-              </button>
-              <button style={btnOutline(false)} onClick={handleShare}>
-                Share
-              </button>
-              <button style={btnOutline(false)} onClick={editAndRegenerate}>
-                Edit &amp; Regenerate
-              </button>
-            </div>
+            <RebuttalOutput
+              output={output}
+              onCopy={handleCopy}
+              onSave={saveToLibrary}
+              onShare={handleShare}
+              onEdit={editAndRegenerate}
+              copied={copied}
+              saved={saved}
+            />
           </>
         )}
       </main>
