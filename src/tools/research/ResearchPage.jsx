@@ -6,7 +6,7 @@ export default function ResearchPage() {
     <ToolPage
       eyebrow="Intel"
       title="Candidate Research"
-      desc="Deep-dive profiles on candidates — positions, vulnerabilities, voting records, and district context."
+      desc="Candidate details and issues that are in the candidate public record. More candidates are added daily."
       accentColor="#1D5C4A"
     >
       <CandidateQuery />
