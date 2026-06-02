@@ -469,7 +469,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               <section style={S.card}>
                 <label htmlFor="issue" style={S.label}>Issue / Content <span style={{color:T.primaryDark}} aria-label="required">*</span></label>
                 <textarea id="issue" rows={6} style={{...S.textarea,resize:"vertical"}}
-                  placeholder="Describe the issue, you can brief or wordy. Do not worry about grammar or spelling. If you are not happy with the results you can edit your parameters and try again."
+                  placeholder="Describe the issue, you can be brief or wordy. Do not worry about grammar or spelling. If you are not happy with the results you can edit your parameters and try again."
                   value={formData.issue} onChange={e=>upd("issue",e.target.value)} />
               </section>
 
