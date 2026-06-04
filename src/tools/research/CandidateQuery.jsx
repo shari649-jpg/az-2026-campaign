@@ -182,7 +182,7 @@ export default function CandidateQuery() {
       {/* ── Instructions ── */}
       <div style={{ background: B.surfaceAlt, border: `1px solid ${B.border}`, borderRadius: 10, padding: '14px 18px', marginBottom: 20 }}>
         <p style={{ fontSize: 14, color: B.textMid, lineHeight: 1.7, margin: 0 }}>
-          <strong style={{ color: B.teal }}>Deep-dive profiles on candidates — positions, vulnerabilities, voting records, and district context.</strong>{' '}
+          <strong style={{ color: B.teal }}>UNDER CONTRUCTION. COME BACK LATER.  Deep-dive profiles on candidates — positions, vulnerabilities, voting records, and district context.</strong>{' '}
           <em>This page layout is optimized for Laptop/Desktop use.</em>
           <br />
           <strong style={{ color: B.teal }}>Search candidate profiles by:</strong>{' '}
