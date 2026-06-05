@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
 import { saveCampaign, loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
 
 // ── 9 activist profile choices ────────────────────────────────────────────
@@ -17,28 +16,33 @@ const PROFILES = [
 
 // ── Tone options ──────────────────────────────────────────────────────────
 const TONES = [
-  { key: "happy",        label: "Happy",        instruction: "Use upbeat, optimistic language. Frame the rebuttal as opportunity. Keep energy positive and forward-looking." },
+  { key: "casual",       label: "Casual",       instruction: "Use relaxed, everyday language. Posts should feel like a real person talking, not a press release." },
   { key: "friendly",     label: "Friendly",     instruction: "Use approachable, inclusive, encouraging language. Make readers feel welcomed, not lectured." },
   { key: "witty",        label: "Witty",        instruction: "Use clever wordplay, sharp observations, and light humor. Posts should make people smile while landing the point." },
   { key: "sarcastic",    label: "Sarcastic",    instruction: "Use dry, pointed sarcasm to expose the absurdity of the false claim. Keep it cutting but not mean-spirited." },
-  { key: "empathetic",   label: "Empathetic",   instruction: "Use warm, understanding language that acknowledges people's concerns while gently correcting the false narrative." },
+  { key: "empathetic",   label: "Empathetic",   instruction: "Lead with understanding and human connection. Acknowledge real concerns before pivoting to the rebuttal." },
   { key: "professional", label: "Professional", instruction: "Use clear, measured, authoritative language. Sound like the most credible voice in the room." },
   { key: "excited",      label: "Excited",      instruction: "Use high-energy, enthusiastic language. Posts should feel like the writer can barely contain themselves." },
-  { key: "funny",        label: "Funny",        instruction: "Use humor, wit, and levity to disarm the false narrative. Keep it accessible and shareable." },
-  { key: "dramatic",     label: "Dramatic",     instruction: "Use heightened, urgent language that conveys the stakes. Every word should feel important." },
+  { key: "funny",        label: "Funny",        instruction: "Use genuine humor — jokes, absurdist comparisons, comic timing. Make people laugh and share." },
+  { key: "dramatic",     label: "Dramatic",     instruction: "Lean into the stakes. Use vivid, heightened language that underscores the gravity of the situation." },
   { key: "disgusted",    label: "Disgusted",    instruction: "Express genuine moral indignation — viscerally disappointed and outraged, but always grounded in fact." },
-  { key: "angry",        label: "Angry",        instruction: "Use direct, forceful language that conveys righteous anger. Channel the outrage productively toward action." },
+  { key: "angry",        label: "Angry",        instruction: "Channel controlled, righteous anger. Direct and forceful — not ranting, but clearly furious about injustice." },
 ];
 
 // ── Dynamic system prompt ─────────────────────────────────────────────────
-function buildPrompt(chosenKey, tone) {
-  const voice = chosenKey
-    ? (() => { const p = PROFILES.find(p => p.key === chosenKey); return `Activist A: ${p.label} — ${p.desc}. Write their posts in an authentic voice matching this profile.`; })()
-    : `Activist A: Choose a distinct voice well-suited to this topic.`;
+function buildPrompt(count, chosenKeys, tone) {
+  const names = ["A", "B", "C"].slice(0, count);
+  const voices = names.map((name, i) => {
+    if (i < chosenKeys.length) {
+      const p = PROFILES.find(p => p.key === chosenKeys[i]);
+      return `Activist ${name}: ${p.label} — ${p.desc}. Write their posts in an authentic voice matching this profile.`;
+    }
+    return `Activist ${name}: Choose a distinct voice not yet used, well-suited to this topic.`;
+  }).join("\n");
 
-  const activistBlock = `## Activist A
+  const activistBlocks = names.map(name => `## Activist ${name}
 At the very start of this section, before any platform posts, include one line in this exact format:
-Activist A: [If a profile was specified, use that profile's name and description. If you chose the voice yourself, name what you chose and describe it in 6–10 words.]
+Activist ${name}: [If a profile was specified, use that profile's name and description. If you chose the voice yourself, name what you chose and describe it in 6–10 words.]
 
 For each platform write POST: first, then immediately below FIRST COMMENT: — always paired.
 
@@ -64,12 +68,12 @@ FIRST COMMENT: [1 punchy sentence under 280 chars]
 
 ### TikTok
 POST: Hook line / Beat 1 / Beat 2 / Beat 3 / CTA line
-FIRST COMMENT: [1 punchy sentence]`;
+FIRST COMMENT: [1 punchy sentence]`).join("\n\n");
 
   return `You are a rapid rebuttal campaign strategist producing complete social media posting plans.
 
-ACTIVIST VOICE:
-${voice}
+ACTIVIST VOICES:
+${voices}
 
 OUTPUT STRUCTURE — follow exactly:
 
@@ -79,80 +83,64 @@ Derive one short memorable sentence specific to this false narrative as the camp
 ## Rebuttal Lenses
 Three lenses with bold titles and one-sentence explanations.
 
-${activistBlock}
+${activistBlocks}
 
 RULES:
 - Write ALL posts and first comments in the third person. Never use "I" or "my" as the activist's voice. Write as if observing and reporting — "Communities are being silenced," not "I am outraged." The activist's perspective comes through the subject matter and framing, not personal declarations.
-- NEVER invent, assume, or fabricate names of people, places, organizations, or specific statistics. Only use names and figures that appear explicitly in the false narrative provided.
 - Anchor phrase must emerge from the specific narrative — never generic
+- Each activist must sound genuinely different in vocabulary, rhythm, and framing
 - Always end every post with a call to action
 - First comments match their platform's tone and length norms
 - Never use "Voting access is not the same as equal power" unless the narrative is specifically about voting${tone ? `
-- TONE MODIFIER — applies to every single post and first comment: ${tone.instruction} The activist voice should remain distinct, but all writing should be unmistakably colored by this tone.` : ""}`;
+- TONE MODIFIER — applies to every single post and first comment across all activists and all platforms: ${tone.instruction} The individual activist voices should remain distinct, but all writing should be unmistakably colored by this tone.` : ""}`;
 }
 
 // ── Palette & styles ──────────────────────────────────────────────────────
-const R = {
-  pageBg:      "#ffffff",
-  surface:     "#ffffff",
-  surfaceAlt:  "#f3f4f6",
-  border:      "#555555",
-  borderStrong:"#111111",
-  text:        "#111111",
-  textMid:     "#333333",
-  textMute:    "#555555",
-  red:         "#c41e1e",
-  redDark:     "#8b0000",
-};
-
-// Keep old single-letter aliases for existing style references
-const INK = R.borderStrong, BG = R.pageBg, SURFACE = R.surface,
-      BORDER = R.border, MID = R.textMid, LIGHT = R.textMute, GREEN = "#145214";
+const INK = "#1A1A1A", BG = "#F7F5F0", SURFACE = "#FDFCFA",
+      BORDER = "#C8C4BC", MID = "#555", LIGHT = "#888", GREEN = "#2A6A2A";
 
 const S = {
-  app:    { minHeight: "100vh", background: R.pageBg, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: R.text },
-  header: { borderBottom: `4px solid ${R.borderStrong}`, padding: "14px 20px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", position: "sticky", top: 0, background: R.pageBg, zIndex: 40 },
-  hLeft:  { display: "flex", alignItems: "center", gap: "14px" },
-  hRight: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" },
-  badge:  { width: 48, height: 48, background: R.red, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 24, color: "#fff", flexShrink: 0 },
-  h1:     { fontSize: "26px", fontWeight: "900", margin: "0", color: R.text },
-  main:   { maxWidth: "820px", margin: "0 auto", padding: "32px 20px 80px" },
-  intro:  { marginBottom: "28px" },
-  introDesc: { fontSize: "17px", color: R.textMid, lineHeight: 1.6, marginTop: 8 },
-  lbl:    { display: "block", fontSize: "11px", letterSpacing: "0.13em", textTransform: "uppercase", color: R.textMid, marginBottom: "8px", marginTop: "24px", fontWeight: 700 },
-  optTag: { fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", color: R.textMute, border: `1px solid ${R.border}`, padding: "1px 6px", borderRadius: "2px", marginLeft: "8px", verticalAlign: "middle" },
-  textarea:{ width: "100%", minHeight: "88px", padding: "14px", fontSize: "16px", fontFamily: "'Atkinson Hyperlegible', Georgia, serif", border: `2px solid ${R.border}`, borderRadius: "8px", background: R.surface, color: R.text, resize: "vertical", lineHeight: "1.6", outline: "none", boxSizing: "border-box" },
+  app:    { minHeight: "100vh", background: BG, fontFamily: "'Georgia','Times New Roman',serif", color: INK },
+  header: { borderBottom: `2px solid ${INK}`, padding: "24px 32px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" },
+  hLeft:  { display: "flex", flexDirection: "column", gap: "3px" },
+  hRight: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", paddingTop: "4px" },
+  eyebrow:{ fontSize: "11px", letterSpacing: "0.18em", textTransform: "uppercase", color: LIGHT },
+  h1:     { fontSize: "24px", fontWeight: "700", letterSpacing: "-0.02em", margin: "0", lineHeight: "1.1" },
+  sub:    { fontSize: "13px", color: MID, fontStyle: "italic", margin: "0" },
+  main:   { maxWidth: "820px", margin: "0 auto", padding: "32px 24px 80px" },
+  lbl:    { display: "block", fontSize: "11px", letterSpacing: "0.13em", textTransform: "uppercase", color: MID, marginBottom: "8px", marginTop: "24px" },
+  optTag: { fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", color: LIGHT, border: `1px solid ${BORDER}`, padding: "1px 6px", borderRadius: "2px", marginLeft: "8px", verticalAlign: "middle" },
+  textarea:{ width: "100%", minHeight: "88px", padding: "14px", fontSize: "15px", fontFamily: "'Georgia',serif", border: `1.5px solid ${BORDER}`, borderRadius: "2px", background: SURFACE, color: INK, resize: "vertical", lineHeight: "1.6", outline: "none", boxSizing: "border-box" },
   pillRow:{ display: "flex", gap: "8px", marginBottom: "18px" },
   grid:   { display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "8px", marginBottom: "6px" },
-  hint:   { fontSize: "12px", color: R.textMute, fontStyle: "italic", marginBottom: "18px" },
-  outBox: { background: R.surface, border: `2px solid ${R.border}`, borderRadius: "8px", padding: "28px", fontSize: "15px", lineHeight: "1.85", whiteSpace: "pre-wrap", fontFamily: "'Atkinson Hyperlegible', Georgia, serif" },
-  disclaimer: { background: "#fffbea", border: `2px solid #F5C842`, borderRadius: "10px", padding: "12px 18px", marginTop: "24px", marginBottom: "4px", display: "flex", gap: "10px", alignItems: "flex-start" },
+  hint:   { fontSize: "11px", color: LIGHT, fontStyle: "italic", marginBottom: "18px" },
+  outBox: { background: SURFACE, border: `1.5px solid ${BORDER}`, borderRadius: "2px", padding: "28px", fontSize: "14px", lineHeight: "1.85", whiteSpace: "pre-wrap", fontFamily: "'Georgia',serif" },
   actRow: { display: "flex", gap: "8px", marginTop: "14px", flexWrap: "wrap" },
-  divider:{ border: "none", borderTop: `2px solid ${R.borderStrong}`, margin: "30px 0" },
-  status: { fontSize: "13px", color: R.textMute, fontStyle: "italic", marginTop: "14px", minHeight: "18px" },
-  errBox: { background: "#FEF0F0", border: "1.5px solid #E88", borderRadius: "8px", padding: "14px 16px", color: "#900", fontSize: "14px", marginTop: "16px", lineHeight: "1.6" },
-  libPanel:{ borderTop: `2px solid ${R.borderStrong}`, background: R.surface, padding: "20px 20px 28px" },
+  divider:{ border: "none", borderTop: `1px solid #D5D1C8`, margin: "30px 0" },
+  status: { fontSize: "13px", color: LIGHT, fontStyle: "italic", marginTop: "14px", minHeight: "18px" },
+  errBox: { background: "#FEF0F0", border: "1.5px solid #E88", borderRadius: "2px", padding: "14px 16px", color: "#900", fontSize: "14px", marginTop: "16px", lineHeight: "1.6" },
+  libPanel:{ borderTop: `2px solid ${INK}`, background: SURFACE, padding: "20px 32px 28px" },
   libGrid:{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: "10px", marginTop: "14px" },
-  libCard:{ border: `1.5px solid ${R.border}`, borderRadius: "8px", padding: "14px", background: R.pageBg, cursor: "pointer" },
+  libCard:{ border: `1.5px solid ${BORDER}`, borderRadius: "2px", padding: "14px", background: BG, cursor: "pointer" },
   libNarr:{ fontSize: "13px", lineHeight: "1.45", marginBottom: "5px", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" },
-  libMeta:{ fontSize: "11px", color: R.textMute, marginBottom: "10px" },
+  libMeta:{ fontSize: "11px", color: LIGHT, marginBottom: "10px" },
   libActs:{ display: "flex", gap: "6px", flexWrap: "wrap" },
   overlay:{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" },
-  modal:  { background: R.pageBg, border: `2px solid ${R.borderStrong}`, borderRadius: "8px", width: "100%", maxWidth: "700px", maxHeight: "86vh", display: "flex", flexDirection: "column" },
-  mHead:  { borderBottom: `1.5px solid ${R.border}`, padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
-  mTitle: { fontSize: "11px", letterSpacing: "0.14em", textTransform: "uppercase", color: R.textMid },
-  mBody:  { padding: "20px 24px", overflowY: "auto", flex: 1, fontSize: "14px", lineHeight: "1.85", whiteSpace: "pre-wrap", fontFamily: "'Atkinson Hyperlegible', Georgia, serif" },
-  mFoot:  { borderTop: `1px solid ${R.border}`, padding: "12px 20px", display: "flex", gap: "8px", justifyContent: "flex-end" },
-  spin:   { display: "inline-block", width: "13px", height: "13px", border: `2px solid rgba(255,255,255,0.4)`, borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite", marginRight: "7px", verticalAlign: "middle" },
+  modal:  { background: BG, border: `2px solid ${INK}`, borderRadius: "2px", width: "100%", maxWidth: "700px", maxHeight: "86vh", display: "flex", flexDirection: "column" },
+  mHead:  { borderBottom: `1.5px solid ${BORDER}`, padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
+  mTitle: { fontSize: "11px", letterSpacing: "0.14em", textTransform: "uppercase", color: MID },
+  mBody:  { padding: "20px 24px", overflowY: "auto", flex: 1, fontSize: "13px", lineHeight: "1.85", whiteSpace: "pre-wrap", fontFamily: "'Georgia',serif" },
+  mFoot:  { borderTop: `1px solid ${BORDER}`, padding: "12px 20px", display: "flex", gap: "8px", justifyContent: "flex-end" },
+  spin:   { display: "inline-block", width: "13px", height: "13px", border: `2px solid ${BG}`, borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite", marginRight: "7px", verticalAlign: "middle" },
 };
 
 // Reusable button builders
-const btnSolid = (disabled) => ({ padding: "15px 28px", background: disabled ? "#999" : R.red, color: "#fff", border: `3px solid ${disabled ? "#888" : R.redDark}`, borderRadius: "8px", fontSize: "18px", fontWeight: 900, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", cursor: disabled ? "not-allowed" : "pointer", marginTop: "18px", display: "inline-flex", alignItems: "center" });
-const btnOutline = (active) => ({ padding: "10px 20px", background: active ? "#f0f0f0" : "transparent", color: active ? GREEN : R.borderStrong, border: `2px solid ${active ? GREEN : R.borderStrong}`, borderRadius: "8px", fontSize: "15px", fontWeight: 700, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", cursor: "pointer" });
-const btnSmall = () => ({ padding: "8px 16px", background: "transparent", color: R.textMid, border: `1.5px solid ${R.border}`, borderRadius: "8px", fontSize: "14px", fontWeight: 700, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", cursor: "pointer" });
-const pill = (active) => ({ padding: "8px 18px", background: active ? R.borderStrong : "transparent", color: active ? "#fff" : R.text, border: `2px solid ${R.borderStrong}`, borderRadius: "8px", fontSize: "15px", fontFamily: "'Atkinson Hyperlegible', Georgia, serif", cursor: "pointer" });
-const profileCard = (checked, disabled) => ({ padding: "9px 11px", border: `1.5px solid ${checked ? R.borderStrong : R.border}`, borderRadius: "8px", background: checked ? "#f0f0f0" : R.surface, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.45 : 1, display: "flex", gap: "8px", alignItems: "flex-start" });
-const checkBox = (checked) => ({ width: "13px", height: "13px", border: `1.5px solid ${checked ? R.borderStrong : R.border}`, borderRadius: "2px", background: checked ? R.borderStrong : "transparent", flexShrink: 0, marginTop: "2px", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "9px" });
+const btnSolid = (disabled) => ({ padding: "12px 28px", background: disabled ? "#999" : INK, color: BG, border: "none", borderRadius: "2px", fontSize: "13px", letterSpacing: "0.09em", textTransform: "uppercase", fontFamily: "'Georgia',serif", cursor: disabled ? "not-allowed" : "pointer", marginTop: "18px" });
+const btnOutline = (active) => ({ padding: "8px 16px", background: active ? "#EAF0EA" : "transparent", color: active ? GREEN : INK, border: `1.5px solid ${active ? GREEN : INK}`, borderRadius: "2px", fontSize: "11px", letterSpacing: "0.09em", textTransform: "uppercase", fontFamily: "'Georgia',serif", cursor: "pointer" });
+const btnSmall = () => ({ padding: "5px 13px", background: "transparent", color: MID, border: `1px solid ${BORDER}`, borderRadius: "2px", fontSize: "11px", letterSpacing: "0.09em", textTransform: "uppercase", fontFamily: "'Georgia',serif", cursor: "pointer" });
+const pill = (active) => ({ padding: "7px 18px", background: active ? INK : "transparent", color: active ? BG : INK, border: `1.5px solid ${INK}`, borderRadius: "2px", fontSize: "13px", fontFamily: "'Georgia',serif", cursor: "pointer" });
+const profileCard = (checked, disabled) => ({ padding: "9px 11px", border: `1.5px solid ${checked ? INK : BORDER}`, borderRadius: "2px", background: checked ? "#EEEAE4" : SURFACE, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.45 : 1, display: "flex", gap: "8px", alignItems: "flex-start" });
+const checkBox = (checked) => ({ width: "13px", height: "13px", border: `1.5px solid ${checked ? INK : BORDER}`, borderRadius: "2px", background: checked ? INK : "transparent", flexShrink: 0, marginTop: "2px", display: "flex", alignItems: "center", justifyContent: "center", color: BG, fontSize: "9px" });
 
 // ── Error messages ────────────────────────────────────────────────────────
 const ERROR_MSGS = {
@@ -180,192 +168,13 @@ function copyText(text) {
   });
 }
 
-// ── Platform display config ───────────────────────────────────────────────
-const PLATFORM_META = {
-  "facebook":  { abbr: "FB", bg: "#0a4fa8", text: "#fff" },
-  "instagram": { abbr: "IG", bg: "#7b1a6e", text: "#fff" },
-  "threads":   { abbr: "TH", bg: "#111111", text: "#fff" },
-  "bluesky":   { abbr: "BS", bg: "#0055bb", text: "#fff" },
-  "twitter":   { abbr: "X",  bg: "#0369a1", text: "#fff" },
-  "tiktok":    { abbr: "TK", bg: "#b91c1c", text: "#fff" },
-};
-
-// ── Parse raw markdown output into structured sections ────────────────────
-function parseOutput(text) {
-  if (!text) return null;
-
-  const result = { anchorPhrase: "", anchorExplain: "", lenses: [], activist: "", platforms: [] };
-
-  // Extract Anchor Phrase section
-  const anchorMatch = text.match(/##\s*Anchor Phrase\s*\n([\s\S]*?)(?=##|$)/i);
-  if (anchorMatch) {
-    const lines = anchorMatch[1].trim().split("\n").filter(l => l.trim());
-    result.anchorPhrase = lines[0]?.replace(/^[""]|[""]$/g, "").trim() || "";
-    result.anchorExplain = lines.slice(1).join(" ").trim();
-  }
-
-  // Extract Rebuttal Lenses
-  const lensMatch = text.match(/##\s*Rebuttal Lenses\s*\n([\s\S]*?)(?=##|$)/i);
-  if (lensMatch) {
-    const lensText = lensMatch[1];
-    const lensItems = lensText.match(/\*\*([^*]+)\*\*[:\s]*(.*?)(?=\*\*|$)/gs) || [];
-    lensItems.forEach(item => {
-      const m = item.match(/\*\*([^*]+)\*\*[:\s]*([\s\S]*)/);
-      if (m) result.lenses.push({ title: m[1].trim(), body: m[2].trim().replace(/\n/g, " ") });
-    });
-  }
-
-  // Extract Activist line
-  const activistMatch = text.match(/^Activist A:\s*(.+)$/m);
-  if (activistMatch) result.activist = activistMatch[1].trim();
-
-  // Extract each platform post + first comment
-  const platformNames = [
-    { key: "facebook",  pattern: /###\s*Facebook/i },
-    { key: "instagram", pattern: /###\s*Instagram/i },
-    { key: "threads",   pattern: /###\s*Threads/i },
-    { key: "bluesky",   pattern: /###\s*Blue\s*[Ss]ky/i },
-    { key: "twitter",   pattern: /###\s*Twitter/i },
-    { key: "tiktok",    pattern: /###\s*TikTok/i },
-  ];
-
-  // Split text into platform sections
-  const platformSectionRegex = /###\s*(Facebook|Instagram|Threads|Blue\s*[Ss]ky|Twitter[^\n]*|TikTok)/gi;
-  const parts = text.split(platformSectionRegex);
-
-  for (let i = 1; i < parts.length; i += 2) {
-    const name = parts[i].trim();
-    const body = parts[i + 1] || "";
-    const key = platformNames.find(p => p.pattern.test("### " + name))?.key;
-    if (!key) continue;
-
-    // Extract POST and FIRST COMMENT
-    const postMatch = body.match(/POST:\s*([\s\S]*?)(?=FIRST COMMENT:|###|##|$)/i);
-    const commentMatch = body.match(/FIRST COMMENT:\s*([\s\S]*?)(?=###|##|POST:|$)/i);
-
-    const post = postMatch ? postMatch[1].trim() : "";
-    const comment = commentMatch ? commentMatch[1].trim() : "";
-
-    if (post) {
-      result.platforms.push({ key, name, post, comment });
-    }
-  }
-
-  return result;
-}
-
-// ── Rendered output component ─────────────────────────────────────────────
-function RebuttalOutput({ output, onCopy, onSave, onShare, onEdit, copied, saved }) {
-  const [copiedPlatform, setCopiedPlatform] = useState(null);
-  const parsed = parseOutput(output);
-
-  const copyPlatformPost = async (key, text) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedPlatform(key);
-      setTimeout(() => setCopiedPlatform(null), 2000);
-    } catch {}
-  };
-
-  // If parsing fails or produces no platforms, fall back to raw display
-  if (!parsed || parsed.platforms.length === 0) {
-    return (
-      <>
-        <div style={S.outBox}>{output}</div>
-        <div style={S.actRow}>
-          <button style={btnOutline(copied)} onClick={onCopy}>{copied ? "✓ Copied" : "Copy All"}</button>
-          <button style={btnOutline(saved)} onClick={saved ? undefined : onSave}>{saved ? "✓ Saved" : "Save to Library"}</button>
-          <button style={btnOutline(false)} onClick={onShare}>Share</button>
-          <button style={btnOutline(false)} onClick={onEdit}>Edit &amp; Regenerate</button>
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-
-      {/* Anchor Phrase */}
-      {parsed.anchorPhrase && (
-        <div style={{ background: R.borderStrong, color: "#fff", borderRadius: "10px 10px 0 0", padding: "20px 24px", marginBottom: 2 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.65)", marginBottom: 8 }}>Anchor Phrase</div>
-          <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.3, marginBottom: parsed.anchorExplain ? 10 : 0 }}>"{parsed.anchorPhrase}"</div>
-          {parsed.anchorExplain && <div style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}>{parsed.anchorExplain}</div>}
-        </div>
-      )}
-
-      {/* Rebuttal Lenses */}
-      {parsed.lenses.length > 0 && (
-        <div style={{ background: "#1a1a1a", padding: "20px 24px", marginBottom: 2 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", marginBottom: 14 }}>Rebuttal Lenses</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {parsed.lenses.map((lens, i) => (
-              <div key={i}>
-                <span style={{ fontWeight: 700, color: "#fff" }}>{lens.title}:</span>{" "}
-                <span style={{ color: "rgba(255,255,255,0.82)", lineHeight: 1.6, fontSize: 14 }}>{lens.body}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Activist voice label */}
-      {parsed.activist && (
-        <div style={{ background: "#2a2a2a", padding: "10px 24px", marginBottom: 16, fontSize: 13, color: "rgba(255,255,255,0.7)", fontStyle: "italic" }}>
-          Voice: {parsed.activist}
-        </div>
-      )}
-
-      {/* Platform cards */}
-      {parsed.platforms.map(({ key, name, post, comment }) => {
-        const meta = PLATFORM_META[key] || { abbr: "?", bg: R.borderStrong, text: "#fff" };
-        const isCopied = copiedPlatform === key;
-        return (
-          <div key={key} style={{ border: `2px solid ${R.border}`, borderRadius: 10, marginBottom: 14, overflow: "hidden" }}>
-            {/* Platform header */}
-            <div style={{ background: meta.bg, padding: "10px 18px", display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ background: "rgba(255,255,255,0.2)", color: meta.text, fontWeight: 900, fontSize: 12, padding: "3px 8px", borderRadius: 6 }}>{meta.abbr}</span>
-              <span style={{ fontWeight: 700, color: meta.text, fontSize: 17 }}>{name}</span>
-            </div>
-            {/* Post */}
-            <div style={{ padding: "16px 18px", borderBottom: `1px solid ${R.border}`, background: R.surface }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: R.textMute, marginBottom: 8 }}>Post</div>
-              <p style={{ fontSize: 15, lineHeight: 1.7, color: R.text, margin: 0, whiteSpace: "pre-wrap" }}>{post}</p>
-              <button
-                onClick={() => copyPlatformPost(key, post)}
-                style={{ marginTop: 12, padding: "8px 18px", background: isCopied ? "#333" : R.borderStrong, color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-              >
-                {isCopied ? "✓ Copied!" : "Copy Post"}
-              </button>
-            </div>
-            {/* First Comment */}
-            {comment && (
-              <div style={{ padding: "12px 18px", background: R.surfaceAlt }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: R.textMute, marginBottom: 6 }}>First Comment</div>
-                <p style={{ fontSize: 14, lineHeight: 1.6, color: R.textMid, margin: 0 }}>{comment}</p>
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* Action buttons */}
-      <div style={{ ...S.actRow, marginTop: 8 }}>
-        <button style={btnOutline(copied)} onClick={onCopy}>{copied ? "✓ Copied All" : "Copy All (Raw)"}</button>
-        <button style={btnOutline(saved)} onClick={saved ? undefined : onSave}>{saved ? "✓ Saved" : "Save to Library"}</button>
-        <button style={btnOutline(false)} onClick={onShare}>Share</button>
-        <button style={btnOutline(false)} onClick={onEdit}>Edit &amp; Regenerate</button>
-      </div>
-    </div>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────
 export default function RebuttalGenerator() {
   const [narrative,   setNarrative]   = useState("");
-  const [profile,     setProfile]     = useState(null);  // single selected profile key or null
-  const [tone,        setTone]        = useState(null);
-  const [showOptions, setShowOptions] = useState(false);
+  const [count,       setCount]       = useState(null);
+  const [profiles,    setProfiles]    = useState([]);
+  const [tone,        setTone]        = useState(null);        // selected tone key or null
+  const [showOptions, setShowOptions] = useState(false);       // optional controls visibility
   const [output,      setOutput]      = useState("");
   const [loading,     setLoading]     = useState(false);
   const [status,      setStatus]      = useState("");
@@ -377,20 +186,10 @@ export default function RebuttalGenerator() {
   const [showShare,   setShowShare]   = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
 
-  // Load library on mount
-  const location = useLocation();
+  const effectiveCount = count ?? 3;
 
-  useEffect(() => {
-    loadLibrary();
-    // Check if Library navigated here with a campaign to load
-    if (location.state?.loadCampaign) {
-      const c = location.state.loadCampaign;
-      setNarrative(c.narrative || "");
-      setOutput(c.output || "");
-      setTone(c.tone || null);
-      setSaved(true);
-    }
-  }, []);
+  // Load library on mount
+  useEffect(() => { loadLibrary(); }, []);
 
   async function loadLibrary() {
     try {
@@ -401,9 +200,18 @@ export default function RebuttalGenerator() {
 
   // ── Reset ───────────────────────────────────────────────────────────────
   const reset = () => {
-    setNarrative(""); setProfile(null); setTone(null);
+    setNarrative(""); setCount(null); setProfiles([]); setTone(null);
     setOutput(""); setStatus(""); setError(null);
     setCopied(false); setSaved(false);
+  };
+
+  // ── Profile toggle ──────────────────────────────────────────────────────
+  const toggleProfile = (key) => {
+    setProfiles(prev => {
+      if (prev.includes(key)) return prev.filter(k => k !== key);
+      if (prev.length >= effectiveCount) return prev;
+      return [...prev, key];
+    });
   };
 
   // ── Generate ────────────────────────────────────────────────────────────
@@ -413,9 +221,10 @@ export default function RebuttalGenerator() {
     setCopied(false); setSaved(false);
     setStatus("Building your campaign…");
 
+    const n = effectiveCount;
     const userPrompt = `False narrative to rebut: "${narrative.trim()}"
 
-Generate the full rapid rebuttal posting plan: derive the anchor phrase, identify 3 rebuttal lenses, then write platform-specific posts (Facebook, Instagram, Threads, BlueSky, Twitter/X, TikTok) with each post's first comment paired directly beneath it.`;
+Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : ""}: derive the anchor phrase, identify 3 rebuttal lenses, then write platform-specific posts (Facebook, Instagram, Threads, BlueSky, Twitter/X, TikTok) for each activist with each post's first comment paired directly beneath it.`;
 
     try {
       const res = await fetch("/.netlify/functions/generate-rebuttal", {
@@ -423,7 +232,7 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           max_tokens: 4000,
-          system: buildPrompt(profile, TONES.find(t => t.key === tone) ?? null),
+          system: buildPrompt(n, profiles, TONES.find(t => t.key === tone) ?? null),
           messages: [{ role: "user", content: userPrompt }],
         }),
       });
@@ -476,16 +285,17 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
 
   // ── Save to library ─────────────────────────────────────────────────────
   const saveToLibrary = async () => {
-    const profileLabel = profile ? PROFILES.find(p => p.key === profile)?.label : null;
+    const profileLabels = profiles.map(k => PROFILES.find(p => p.key === k)?.label).filter(Boolean);
     try {
       const id = await saveCampaign("rebuttal", {
         name: narrative.trim().substring(0, 60),
         narrative: narrative.trim(),
         output,
-        profile: profileLabel,
+        activistCount: effectiveCount,
+        profiles: profileLabels,
         tone: tone ?? null,
       });
-      const entry = { id, tool:"rebuttal", name: narrative.trim().substring(0, 60), narrative: narrative.trim(), output, profile: profileLabel, tone: tone ?? null, savedAt: new Date().toISOString() };
+      const entry = { id, tool:"rebuttal", name: narrative.trim().substring(0, 60), narrative: narrative.trim(), output, activistCount: effectiveCount, profiles: profileLabels, tone: tone ?? null, savedAt: new Date().toISOString() };
       setSaved(true);
       setLibrary(prev => [entry, ...prev]);
     } catch {
@@ -523,31 +333,21 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
   return (
     <div style={S.app}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap');
         @keyframes spin { to { transform: rotate(360deg); } }
-        textarea:focus { border-color: ${R.borderStrong} !important; outline: 4px solid ${R.borderStrong} !important; }
+        textarea:focus { border-color: ${INK} !important; }
         button:hover { opacity: 0.82; }
         button:disabled { opacity: 1; }
       `}</style>
 
-      {/* ── Header ── */}
-      <header style={S.header}>
-        <div style={S.hLeft}>
-          <div style={S.badge}>R</div>
-          <h1 style={S.h1}>Rebuttal Generator</h1>
-        </div>
-        <div style={S.hRight}>
-          <a href="/messaging" style={{ ...btnSmall(), textDecoration: "none" }}>← Message Machine</a>
-          {library.length > 0 && (
-            <button style={btnSmall()} onClick={() => setShowLib(v => !v)}>
-              {showLib ? "Hide Library" : `Rebuttal Library (${library.length})`}
-            </button>
-          )}
-          {(output || narrative) && (
-            <button style={btnSmall()} onClick={reset}>↩ New</button>
-          )}
-        </div>
-      </header>
+      {/* ── Library button row — replaces the removed duplicate header ── */}
+      <div style={{ borderBottom: `1px solid ${BORDER}`, padding: "10px 32px", display: "flex", gap: "8px", alignItems: "center", justifyContent: "flex-end", background: SURFACE }}>
+        <button style={btnSmall()} onClick={() => setShowLib(v => !v)}>
+          {showLib ? "Hide Library" : `Rebuttal Library (${library.length})`}
+        </button>
+        {(output || narrative) && (
+          <button style={btnSmall()} onClick={reset}>↩ New Campaign</button>
+        )}
+      </div>
 
       {/* ── Library panel ── */}
       {showLib && library.length > 0 && (
@@ -557,7 +357,14 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
             {library.map(entry => (
               <div key={entry.id} style={S.libCard} onClick={() => loadEntry(entry)}>
                 <div style={S.libNarr}>{entry.narrative}</div>
-                <div style={S.libMeta}>{fmtDate(entry.savedAt)}{entry.profile ? ` · ${entry.profile}` : ""}</div>
+                <div style={S.libMeta}>{fmtDate(entry.savedAt)} · {entry.activistCount} activist{entry.activistCount > 1 ? "s" : ""}</div>
+                {entry.profiles?.length > 0 && (
+                  <div style={S.libActs}>
+                    {entry.profiles.map(p => (
+                      <span key={p} style={{ fontSize: "10px", color: MID, border: `1px solid ${BORDER}`, padding: "1px 5px", borderRadius: "2px" }}>{p}</span>
+                    ))}
+                  </div>
+                )}
                 <div style={{ marginTop: "10px", display: "flex", gap: "6px" }}>
                   <span style={{ fontSize: "11px", color: INK, textDecoration: "underline" }}>Load</span>
                   <span style={{ fontSize: "11px", color: "#900", textDecoration: "underline", marginLeft: "4px" }}
@@ -572,33 +379,39 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
       {/* ── Main ── */}
       <main style={S.main}>
 
-        {/* Intro */}
-        <div style={S.intro}>
-          <p style={S.introDesc}>
-            Turn a false narrative into a multi-platform rebuttal campaign with an anchor phrase, 3 lenses to focus your advocacy, and ready-to-post content for every social media platform. Start by entering the false narrative (or lie). Click on <strong>Options</strong> to fine tune your request (not required).
-          </p>
-        </div>
-
         {/* Narrative input */}
-        <label style={S.lbl} htmlFor="narrative-input">False narrative to rebut</label>
-        <textarea
-          id="narrative-input"
-          style={S.textarea}
-          placeholder="e.g. Gerrymandering doesn't stop anyone from voting, so it isn't harmful."
-          value={narrative}
-          onChange={e => setNarrative(e.target.value)}
-          disabled={loading}
-        />
+        <div style={{
+          background: "#FFFBEA",
+          border: "3px solid #F5C842",
+          borderRadius: 8,
+          padding: "20px 20px 16px",
+          marginBottom: 4,
+        }}>
+          <label style={{ ...S.lbl, marginTop: 0, color: "#7A5C00", fontSize: "13px" }} htmlFor="narrative-input">
+            ⚠️ Enter the LIE you are rebutting
+          </label>
+          <p style={{ fontSize: 13, color: "#8a6800", marginBottom: 12, lineHeight: 1.5, fontStyle: "italic" }}>
+            Type or paste the exact false claim, misleading statement, or disinformation narrative here — this is what the entire campaign is built to counter.
+          </p>
+          <textarea
+            id="narrative-input"
+            style={{ ...S.textarea, borderColor: "#F5C842", background: "#fff" }}
+            placeholder="e.g. Gerrymandering doesn't stop anyone from voting, so it isn't harmful."
+            value={narrative}
+            onChange={e => setNarrative(e.target.value)}
+            disabled={loading}
+          />
+        </div>
 
         {/* Options toggle */}
         {(() => {
-          const activeCount = (profile !== null ? 1 : 0) + (tone !== null ? 1 : 0);
+          const activeCount = (count !== null ? 1 : 0) + (profiles.length > 0 ? 1 : 0) + (tone !== null ? 1 : 0);
           return (
             <button
-              style={{ marginTop: "14px", padding: "9px 18px", background: "transparent", color: activeCount > 0 ? R.borderStrong : R.textMute, border: `1.5px solid ${activeCount > 0 ? R.borderStrong : R.border}`, borderRadius: "8px", fontSize: "14px", fontWeight: 700, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", cursor: "pointer", display: "block" }}
+              style={{ marginTop: "14px", padding: "7px 16px", background: "transparent", color: activeCount > 0 ? INK : LIGHT, border: `1px solid ${activeCount > 0 ? INK : BORDER}`, borderRadius: "2px", fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "'Georgia',serif", cursor: "pointer", display: "block" }}
               onClick={() => setShowOptions(v => !v)}
             >
-              {showOptions ? "− Hide Options" : `+ Options${activeCount > 0 ? ` (${activeCount} active)` : ""}`}
+              {showOptions ? "− Hide options" : `+ Customize${activeCount > 0 ? ` (${activeCount} active)` : ""}`}
             </button>
           );
         })()}
@@ -606,16 +419,35 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
         {/* ── Optional controls ── */}
         {showOptions && (
           <>
-        {/* Single profile picker */}
+        {/* Activist count */}
         <label style={S.lbl}>
-          Activist profile
+          Number of activists
+          <span style={S.optTag}>optional</span>
+        </label>
+        <div style={S.pillRow}>
+          {[1, 2, 3].map(n => (
+            <button key={n} style={pill(count === n)} onClick={() => {
+              setCount(count === n ? null : n);
+              setProfiles(prev => prev.slice(0, count === n ? 3 : n));
+            }}>{n}</button>
+          ))}
+          {count !== null && (
+            <button style={{ ...btnSmall(), marginLeft: "4px", alignSelf: "center" }}
+              onClick={() => { setCount(null); setProfiles([]); }}>Clear</button>
+          )}
+        </div>
+
+        {/* Profile picker */}
+        <label style={S.lbl}>
+          Activist profiles
           <span style={S.optTag}>optional</span>
         </label>
         <div style={S.grid}>
           {PROFILES.map(p => {
-            const checked = profile === p.key;
+            const checked = profiles.includes(p.key);
+            const maxed = !checked && profiles.length >= effectiveCount;
             return (
-              <div key={p.key} style={profileCard(checked, false)} onClick={() => setProfile(checked ? null : p.key)}>
+              <div key={p.key} style={profileCard(checked, maxed)} onClick={() => !maxed && toggleProfile(p.key)}>
                 <div style={checkBox(checked)}>{checked ? "✓" : ""}</div>
                 <div>
                   <div style={{ fontSize: "12px", fontWeight: "600", lineHeight: "1.2" }}>{p.label}</div>
@@ -625,7 +457,11 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
             );
           })}
         </div>
-        <p style={S.hint}>{profile ? `Using: ${PROFILES.find(p => p.key === profile)?.label}. Click again to deselect.` : "Skip to let the AI choose a voice suited to this topic."}</p>
+        <p style={S.hint}>
+          {profiles.length === 0
+            ? "Skip to let the AI choose voices, or select up to " + effectiveCount + "."
+            : `${profiles.length} of ${effectiveCount} selected${profiles.length < effectiveCount ? " — AI will fill the rest." : "."}`}
+        </p>
 
         {/* Tone modifier */}
         <label style={S.lbl}>
@@ -638,7 +474,7 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
             return (
               <button
                 key={t.key}
-                style={{ padding: "8px 16px", background: active ? R.borderStrong : "transparent", color: active ? "#fff" : R.text, border: `2px solid ${active ? R.borderStrong : R.border}`, borderRadius: "8px", fontSize: "14px", fontWeight: 700, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", cursor: "pointer" }}
+                style={{ padding: "7px 16px", background: active ? INK : "transparent", color: active ? BG : INK, border: `1.5px solid ${active ? INK : BORDER}`, borderRadius: "2px", fontSize: "12px", fontFamily: "'Georgia',serif", letterSpacing: "0.04em", cursor: "pointer" }}
                 onClick={() => setTone(active ? null : t.key)}
               >
                 {t.label}
@@ -654,7 +490,7 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
         <button style={btnSolid(loading || !narrative.trim())} onClick={generate}
           disabled={loading || !narrative.trim()}>
           {loading && <span style={S.spin} />}
-          {loading ? "Generating…" : output ? "Generate Again" : "Generate"}
+          {loading ? "Generating…" : output ? "Regenerate Campaign" : "Generate Campaign"}
         </button>
 
         <p style={S.status}>{status}</p>
@@ -670,22 +506,22 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
         {output && (
           <>
             <hr style={S.divider} />
-            <label style={S.lbl}>Your rebuttal campaign</label>
-            <div style={S.disclaimer}>
-              <span style={{ fontSize: "20px", flexShrink: 0 }}>⚠️</span>
-              <p style={{ fontSize: "14px", color: "#4A4558", lineHeight: 1.6, margin: 0 }}>
-                <strong>AI-Generated Content:</strong> This campaign was created by an AI and may contain inaccuracies. Please verify all facts, figures, names, and claims before publishing.
-              </p>
+            <label style={S.lbl}>Your campaign</label>
+            <div style={S.outBox}>{output}</div>
+            <div style={S.actRow}>
+              <button style={btnOutline(copied)} onClick={handleCopy}>
+                {copied ? "✓ Copied" : "Copy All"}
+              </button>
+              <button style={btnOutline(saved)} onClick={saved ? undefined : saveToLibrary}>
+                {saved ? "✓ Saved" : "Save to Library"}
+              </button>
+              <button style={btnOutline(false)} onClick={handleShare}>
+                Share
+              </button>
+              <button style={btnOutline(false)} onClick={editAndRegenerate}>
+                Edit &amp; Regenerate
+              </button>
             </div>
-            <RebuttalOutput
-              output={output}
-              onCopy={handleCopy}
-              onSave={saveToLibrary}
-              onShare={handleShare}
-              onEdit={editAndRegenerate}
-              copied={copied}
-              saved={saved}
-            />
           </>
         )}
       </main>
