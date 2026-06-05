@@ -29,20 +29,29 @@ const TONES = [
   { key: "angry",        label: "Angry",        instruction: "Channel controlled, righteous anger. Direct and forceful — not ranting, but clearly furious about injustice." },
 ];
 
-// ── Dynamic system prompt ─────────────────────────────────────────────────
-function buildPrompt(count, chosenKeys, tone) {
-  const names = ["A", "B", "C"].slice(0, count);
-  const voices = names.map((name, i) => {
-    if (i < chosenKeys.length) {
-      const p = PROFILES.find(p => p.key === chosenKeys[i]);
-      return `Activist ${name}: ${p.label} — ${p.desc}. Write their posts in an authentic voice matching this profile.`;
-    }
-    return `Activist ${name}: Choose a distinct voice not yet used, well-suited to this topic.`;
-  }).join("\n");
+// ── System prompt — 1 activist, optional profile ─────────────────────────
+function buildPrompt(chosenKey, tone) {
+  const profile = chosenKey ? PROFILES.find(p => p.key === chosenKey) : null;
+  const voice = profile
+    ? `Activist voice: ${profile.label} — ${profile.desc}. Write posts in an authentic voice matching this profile.`
+    : `Activist voice: Choose a voice well-suited to this topic and briefly name it at the start of the activist section.`;
 
-  const activistBlocks = names.map(name => `## Activist ${name}
-At the very start of this section, before any platform posts, include one line in this exact format:
-Activist ${name}: [If a profile was specified, use that profile's name and description. If you chose the voice yourself, name what you chose and describe it in 6–10 words.]
+  return `You are a rapid rebuttal campaign strategist producing complete social media posting plans.
+
+ACTIVIST VOICE:
+${voice}
+
+OUTPUT STRUCTURE — follow exactly:
+
+## Anchor Phrase
+Derive one short memorable sentence specific to this false narrative as the campaign spine. State it, then in one sentence explain why it works for this claim.
+
+## Rebuttal Lenses
+Three lenses with bold titles and one-sentence explanations.
+
+## Activist
+At the very start of this section, include one line in this exact format:
+Activist: [Profile name and description, or the voice you chose in 6–10 words.]
 
 For each platform write POST: first, then immediately below FIRST COMMENT: — always paired.
 
@@ -68,31 +77,15 @@ FIRST COMMENT: [1 punchy sentence under 280 chars]
 
 ### TikTok
 POST: Hook line / Beat 1 / Beat 2 / Beat 3 / CTA line
-FIRST COMMENT: [1 punchy sentence]`).join("\n\n");
-
-  return `You are a rapid rebuttal campaign strategist producing complete social media posting plans.
-
-ACTIVIST VOICES:
-${voices}
-
-OUTPUT STRUCTURE — follow exactly:
-
-## Anchor Phrase
-Derive one short memorable sentence specific to this false narrative as the campaign spine. State it, then in one sentence explain why it works for this claim.
-
-## Rebuttal Lenses
-Three lenses with bold titles and one-sentence explanations.
-
-${activistBlocks}
+FIRST COMMENT: [1 punchy sentence]
 
 RULES:
-- Write ALL posts and first comments in the third person. Never use "I" or "my" as the activist's voice. Write as if observing and reporting — "Communities are being silenced," not "I am outraged." The activist's perspective comes through the subject matter and framing, not personal declarations.
+- Write ALL posts and first comments in the third person. Never use "I" or "my". Write as if observing and reporting — "Communities are being silenced," not "I am outraged."
 - Anchor phrase must emerge from the specific narrative — never generic
-- Each activist must sound genuinely different in vocabulary, rhythm, and framing
 - Always end every post with a call to action
 - First comments match their platform's tone and length norms
 - Never use "Voting access is not the same as equal power" unless the narrative is specifically about voting${tone ? `
-- TONE MODIFIER — applies to every single post and first comment across all activists and all platforms: ${tone.instruction} The individual activist voices should remain distinct, but all writing should be unmistakably colored by this tone.` : ""}`;
+- TONE MODIFIER — applies to every single post and first comment: ${tone.instruction} All writing should be unmistakably colored by this tone.` : ""}`;
 }
 
 // ── Palette & styles ──────────────────────────────────────────────────────
@@ -171,10 +164,9 @@ function copyText(text) {
 // ── Main component ────────────────────────────────────────────────────────
 export default function RebuttalGenerator() {
   const [narrative,   setNarrative]   = useState("");
-  const [count,       setCount]       = useState(null);
-  const [profiles,    setProfiles]    = useState([]);
-  const [tone,        setTone]        = useState(null);        // selected tone key or null
-  const [showOptions, setShowOptions] = useState(false);       // optional controls visibility
+  const [profile,     setProfile]     = useState(null);  // single selected profile key or null
+  const [tone,        setTone]        = useState(null);
+  const [showOptions, setShowOptions] = useState(false);
   const [output,      setOutput]      = useState("");
   const [loading,     setLoading]     = useState(false);
   const [status,      setStatus]      = useState("");
@@ -185,8 +177,6 @@ export default function RebuttalGenerator() {
   const [showLib,     setShowLib]     = useState(false);
   const [showShare,   setShowShare]   = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
-
-  const effectiveCount = count ?? 3;
 
   // Load library on mount
   useEffect(() => { loadLibrary(); }, []);
@@ -200,18 +190,9 @@ export default function RebuttalGenerator() {
 
   // ── Reset ───────────────────────────────────────────────────────────────
   const reset = () => {
-    setNarrative(""); setCount(null); setProfiles([]); setTone(null);
+    setNarrative(""); setProfile(null); setTone(null);
     setOutput(""); setStatus(""); setError(null);
     setCopied(false); setSaved(false);
-  };
-
-  // ── Profile toggle ──────────────────────────────────────────────────────
-  const toggleProfile = (key) => {
-    setProfiles(prev => {
-      if (prev.includes(key)) return prev.filter(k => k !== key);
-      if (prev.length >= effectiveCount) return prev;
-      return [...prev, key];
-    });
   };
 
   // ── Generate ────────────────────────────────────────────────────────────
@@ -221,10 +202,9 @@ export default function RebuttalGenerator() {
     setCopied(false); setSaved(false);
     setStatus("Building your campaign…");
 
-    const n = effectiveCount;
     const userPrompt = `False narrative to rebut: "${narrative.trim()}"
 
-Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : ""}: derive the anchor phrase, identify 3 rebuttal lenses, then write platform-specific posts (Facebook, Instagram, Threads, BlueSky, Twitter/X, TikTok) for each activist with each post's first comment paired directly beneath it.`;
+Generate the full rapid rebuttal posting plan: derive the anchor phrase, identify 3 rebuttal lenses, then write platform-specific posts (Facebook, Instagram, Threads, BlueSky, Twitter/X, TikTok) with each post's first comment paired directly beneath it.`;
 
     try {
       const res = await fetch("/.netlify/functions/generate-rebuttal", {
@@ -232,7 +212,7 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           max_tokens: 4000,
-          system: buildPrompt(n, profiles, TONES.find(t => t.key === tone) ?? null),
+          system: buildPrompt(profile, TONES.find(t => t.key === tone) ?? null),
           messages: [{ role: "user", content: userPrompt }],
         }),
       });
@@ -285,17 +265,16 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
 
   // ── Save to library ─────────────────────────────────────────────────────
   const saveToLibrary = async () => {
-    const profileLabels = profiles.map(k => PROFILES.find(p => p.key === k)?.label).filter(Boolean);
+    const profileLabel = profile ? PROFILES.find(p => p.key === profile)?.label : null;
     try {
       const id = await saveCampaign("rebuttal", {
         name: narrative.trim().substring(0, 60),
         narrative: narrative.trim(),
         output,
-        activistCount: effectiveCount,
-        profiles: profileLabels,
+        profile: profileLabel,
         tone: tone ?? null,
       });
-      const entry = { id, tool:"rebuttal", name: narrative.trim().substring(0, 60), narrative: narrative.trim(), output, activistCount: effectiveCount, profiles: profileLabels, tone: tone ?? null, savedAt: new Date().toISOString() };
+      const entry = { id, tool:"rebuttal", name: narrative.trim().substring(0, 60), narrative: narrative.trim(), output, profile: profileLabel, tone: tone ?? null, savedAt: new Date().toISOString() };
       setSaved(true);
       setLibrary(prev => [entry, ...prev]);
     } catch {
@@ -308,6 +287,7 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
     setNarrative(entry.narrative);
     setOutput(entry.output);
     setTone(entry.tone ?? null);
+    setProfile(entry.profile ? (PROFILES.find(p => p.label === entry.profile)?.key ?? null) : null);
     setStatus("Campaign loaded from library.");
     setSaved(true);
     setShowLib(false);
@@ -357,14 +337,7 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
             {library.map(entry => (
               <div key={entry.id} style={S.libCard} onClick={() => loadEntry(entry)}>
                 <div style={S.libNarr}>{entry.narrative}</div>
-                <div style={S.libMeta}>{fmtDate(entry.savedAt)} · {entry.activistCount} activist{entry.activistCount > 1 ? "s" : ""}</div>
-                {entry.profiles?.length > 0 && (
-                  <div style={S.libActs}>
-                    {entry.profiles.map(p => (
-                      <span key={p} style={{ fontSize: "10px", color: MID, border: `1px solid ${BORDER}`, padding: "1px 5px", borderRadius: "2px" }}>{p}</span>
-                    ))}
-                  </div>
-                )}
+                <div style={S.libMeta}>{fmtDate(entry.savedAt)}{entry.profile ? ` · ${entry.profile}` : ""}</div>
                 <div style={{ marginTop: "10px", display: "flex", gap: "6px" }}>
                   <span style={{ fontSize: "11px", color: INK, textDecoration: "underline" }}>Load</span>
                   <span style={{ fontSize: "11px", color: "#900", textDecoration: "underline", marginLeft: "4px" }}
@@ -405,7 +378,7 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
 
         {/* Options toggle */}
         {(() => {
-          const activeCount = (count !== null ? 1 : 0) + (profiles.length > 0 ? 1 : 0) + (tone !== null ? 1 : 0);
+          const activeCount = (profile !== null ? 1 : 0) + (tone !== null ? 1 : 0);
           return (
             <button
               style={{ marginTop: "14px", padding: "7px 16px", background: "transparent", color: activeCount > 0 ? INK : LIGHT, border: `1px solid ${activeCount > 0 ? INK : BORDER}`, borderRadius: "2px", fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: "'Georgia',serif", cursor: "pointer", display: "block" }}
@@ -419,35 +392,16 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
         {/* ── Optional controls ── */}
         {showOptions && (
           <>
-        {/* Activist count */}
+        {/* Profile picker — single select */}
         <label style={S.lbl}>
-          Number of activists
-          <span style={S.optTag}>optional</span>
-        </label>
-        <div style={S.pillRow}>
-          {[1, 2, 3].map(n => (
-            <button key={n} style={pill(count === n)} onClick={() => {
-              setCount(count === n ? null : n);
-              setProfiles(prev => prev.slice(0, count === n ? 3 : n));
-            }}>{n}</button>
-          ))}
-          {count !== null && (
-            <button style={{ ...btnSmall(), marginLeft: "4px", alignSelf: "center" }}
-              onClick={() => { setCount(null); setProfiles([]); }}>Clear</button>
-          )}
-        </div>
-
-        {/* Profile picker */}
-        <label style={S.lbl}>
-          Activist profiles
+          Activist profile
           <span style={S.optTag}>optional</span>
         </label>
         <div style={S.grid}>
           {PROFILES.map(p => {
-            const checked = profiles.includes(p.key);
-            const maxed = !checked && profiles.length >= effectiveCount;
+            const checked = profile === p.key;
             return (
-              <div key={p.key} style={profileCard(checked, maxed)} onClick={() => !maxed && toggleProfile(p.key)}>
+              <div key={p.key} style={profileCard(checked, false)} onClick={() => setProfile(checked ? null : p.key)}>
                 <div style={checkBox(checked)}>{checked ? "✓" : ""}</div>
                 <div>
                   <div style={{ fontSize: "12px", fontWeight: "600", lineHeight: "1.2" }}>{p.label}</div>
@@ -458,9 +412,9 @@ Generate the full rapid rebuttal posting plan for ${n} activist${n > 1 ? "s" : "
           })}
         </div>
         <p style={S.hint}>
-          {profiles.length === 0
-            ? "Skip to let the AI choose voices, or select up to " + effectiveCount + "."
-            : `${profiles.length} of ${effectiveCount} selected${profiles.length < effectiveCount ? " — AI will fill the rest." : "."}`}
+          {profile
+            ? `${PROFILES.find(p => p.key === profile)?.label} selected — click again to deselect.`
+            : "Skip to let the AI choose a voice, or select one profile."}
         </p>
 
         {/* Tone modifier */}
