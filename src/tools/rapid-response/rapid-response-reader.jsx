@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
 import { saveArticle, loadArticles, deleteArticle } from "../../lib/articleLibrary";
 
 // ── Brand Colors ─────────────────────────────────────────────────────────────
@@ -262,7 +261,7 @@ function ArticleResult({ article, onSave, onPushToMachine, saved, pushed }) {
     </div>
   );
 
-  const Quote = ({ text, idx }) => (
+  const Quote = ({ text, speaker, idx }) => (
     <div style={{
       borderLeft: `3px solid ${B.gold}`,
       paddingLeft: 16,
@@ -277,6 +276,11 @@ function ArticleResult({ article, onSave, onPushToMachine, saved, pushed }) {
       title="Click to copy"
     >
       <p style={{ fontSize: 15, color: B.textMid, lineHeight: 1.7, fontStyle: "italic" }}>"{text}"</p>
+      {speaker && (
+        <p style={{ fontSize: 13, fontWeight: 700, color: B.teal, marginTop: 6 }}>
+          — {speaker}
+        </p>
+      )}
       {copied === `q${idx}` && (
         <span style={{ position: "absolute", top: 10, right: 12, fontSize: 12, color: B.teal, fontWeight: 700 }}>Copied!</span>
       )}
@@ -374,7 +378,7 @@ function ArticleResult({ article, onSave, onPushToMachine, saved, pushed }) {
         {(article.quotes || []).length > 0 && (
           <Section label="Key Quotes — click to copy">
             {article.quotes.map((q, i) => (
-              <Quote key={i} text={q.text || q} idx={i} />
+              <Quote key={i} text={q.text || q} speaker={q.speaker || q.attribution || null} idx={i} />
             ))}
           </Section>
         )}
@@ -440,14 +444,14 @@ function LibraryPanel({ items, onLoad, onDelete }) {
         <div key={item.id} style={{ ...S.card, display: "flex", alignItems: "flex-start", gap: 16 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
-              <p style={{ fontSize: 17, fontWeight: 700, color: B.text }}>{String(item.title || "Untitled")}</p>
-              <span style={{ fontSize: 13, color: B.textMute }}>{String(item.date || "")}</span>
+              <p style={{ fontSize: 17, fontWeight: 700, color: B.text }}>{item.title || "Untitled"}</p>
+              <span style={{ fontSize: 13, color: B.textMute }}>{item.date || ""}</span>
             </div>
             <p style={{ fontSize: 13, color: B.textMid, marginBottom: 8 }}>
-              {String(item.publication || "")}{item.reporter ? ` · ${String(item.reporter)}` : ""}
+              {item.publication}{item.reporter ? ` · ${item.reporter}` : ""}
             </p>
             <p style={{ fontSize: 14, color: B.textMute, lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-              {String(item.summary || "")}
+              {item.summary}
             </p>
             {item.linkedCampaigns?.length > 0 && (
               <p style={{ fontSize: 12, color: B.teal, fontWeight: 700, marginTop: 8 }}>
@@ -456,7 +460,7 @@ function LibraryPanel({ items, onLoad, onDelete }) {
             )}
             {item.savedBy && (
               <p style={{ fontSize: 12, color: B.textMute, marginTop: 4 }}>
-                Saved by {String(item.savedBy)}{item.savedAt ? ` · ${String(item.savedAt)}` : ""}
+                Saved by {item.savedBy} · {item.savedAt}
               </p>
             )}
           </div>
@@ -538,46 +542,13 @@ export default function RapidResponseReader() {
   const [notif, setNotif]           = useState(null);
   const [profile, setProfile]       = useState(null);
 
-  const location = useLocation();
-
   useEffect(() => { loadAll(); }, []);
-
-  const toStr = (v) => {
-    if (v === null || v === undefined) return "";
-    if (typeof v === "string") return v;
-    if (typeof v === "number" || typeof v === "boolean") return String(v);
-    if (v && typeof v.toDate === "function") return v.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    if (v && typeof v.seconds === "number") return new Date(v.seconds * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    return "";
-  };
-
-  const normalizeArticle = (a) => ({
-    ...a,
-    id:          String(a.id || ""),
-    title:       toStr(a.title),
-    publication: toStr(a.publication),
-    reporter:    toStr(a.reporter),
-    date:        toStr(a.date),
-    savedAt:     toStr(a.savedAt),
-    summary:     toStr(a.summary),
-    url:         toStr(a.url),
-    savedBy:     toStr(a.savedBy),
-    linkedCampaigns: Array.isArray(a.linkedCampaigns) ? a.linkedCampaigns : [],
-    keyPoints:   Array.isArray(a.keyPoints) ? a.keyPoints.map(toStr) : [],
-  });
 
   const loadAll = async () => {
     try { const p = localStorage.getItem("rr_profile"); if (p) setProfile(JSON.parse(p)); } catch {}
-    if (location.state?.loadArticle) {
-      const a = location.state.loadArticle;
-      setArticle(a);
-      setSaved(true);
-      setPushed(false);
-      setView("reader");
-    }
     try {
       const articles = await loadArticles();
-      setLibrary((articles || []).map(normalizeArticle));
+      setLibrary(articles);
     } catch {}
   };
 
@@ -680,15 +651,16 @@ export default function RapidResponseReader() {
       sourceTitle: article.title,
       sourcePublication: article.publication,
       sourceDate: article.date,
-      sourceUrl: article.url,
-      issueText: `${article.title}\n\n${article.summary}\n\nKey Points:\n${(article.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join("\n")}`,
+      sourceUrl: article.url || null,
+      issueText: `${article.title}\n\n${article.summary}\n\nKey Points:\n${(article.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join("\n")}${article.url ? `\n\nSource: ${article.url}` : ""}`,
       focalPoint: article.keyPoints?.[0] || "",
       pushedAt: new Date().toISOString(),
     };
     try {
       localStorage.setItem("rr_pending_article", JSON.stringify(payload));
       setPushed(true);
-      notify("Article pushed to Message Machine! Switch to Message Machine and the issue field will be pre-filled.");
+      // Navigate to Message Machine
+      window.location.href = "/messaging";
     } catch {
       notify("Push failed — try again.", "err");
     }
