@@ -161,7 +161,174 @@ function copyText(text) {
   });
 }
 
-// ── Main component ────────────────────────────────────────────────────────
+// ── Output parser ─────────────────────────────────────────────────────────
+function parseOutput(text) {
+  const result = { anchor: null, anchorWhy: null, lenses: [], activist: null, platforms: {} };
+
+  // Anchor phrase
+  const anchorMatch = text.match(/##\s*Anchor Phrase\s*\n+([\s\S]*?)(?=\n##|\n###|$)/i);
+  if (anchorMatch) {
+    const lines = anchorMatch[1].trim().split("\n").filter(l => l.trim());
+    result.anchor = lines[0]?.replace(/^\*+|\*+$/g, "").trim();
+    result.anchorWhy = lines.slice(1).join(" ").trim() || null;
+  }
+
+  // Rebuttal lenses
+  const lensesMatch = text.match(/##\s*Rebuttal Lenses\s*\n+([\s\S]*?)(?=\n##|\n###|$)/i);
+  if (lensesMatch) {
+    const lensLines = lensesMatch[1].trim().split("\n").filter(l => l.trim());
+    lensLines.forEach(line => {
+      const m = line.match(/\*\*(.+?)\*\*[:\s—–-]*(.*)/);
+      if (m) result.lenses.push({ title: m[1].trim(), body: m[2].trim() });
+      else if (line.startsWith("- ") || line.match(/^\d+\./)) {
+        const clean = line.replace(/^[-\d.]+\s*/, "").replace(/^\*\*|\*\*$/g, "").trim();
+        if (clean) result.lenses.push({ title: clean, body: "" });
+      }
+    });
+  }
+
+  // Activist label
+  const actMatch = text.match(/Activist:\s*(.+)/i);
+  if (actMatch) result.activist = actMatch[1].trim();
+
+  // Platforms
+  const PLAT_NAMES = ["Facebook", "Instagram", "Threads", "BlueSky", "Twitter/X", "TikTok"];
+  PLAT_NAMES.forEach(name => {
+    const escaped = name.replace("/", "\\/");
+    const platMatch = text.match(new RegExp(`###\\s*${escaped}\\s*\\n+([\\s\\S]*?)(?=\\n###|\\n##|$)`, "i"));
+    if (!platMatch) return;
+    const block = platMatch[1];
+    const postMatch = block.match(/POST:\s*([\s\S]*?)(?=FIRST COMMENT:|$)/i);
+    const commentMatch = block.match(/FIRST COMMENT:\s*([\s\S]*?)(?=\n###|\n##|$)/i);
+    result.platforms[name] = {
+      post: postMatch ? postMatch[1].trim() : "",
+      comment: commentMatch ? commentMatch[1].trim() : "",
+    };
+  });
+
+  return result;
+}
+
+// ── Structured output renderer ────────────────────────────────────────────
+function CampaignOutput({ output, onCopy, onSave, onShare, onPushToMachine, onEdit, copied, saved }) {
+  const [copiedPlat, setCopiedPlat] = useState(null);
+  const parsed = parseOutput(output);
+  const hasPlatforms = Object.keys(parsed.platforms).length > 0;
+
+  const copyPlat = async (text, key) => {
+    await copyText(text);
+    setCopiedPlat(key);
+    setTimeout(() => setCopiedPlat(null), 2000);
+  };
+
+  const PLAT_COLORS = {
+    "Facebook": "#0a4fa8", "Instagram": "#7b1a6e", "Threads": "#111111",
+    "BlueSky": "#0055bb", "Twitter/X": "#0369a1", "TikTok": "#b91c1c",
+  };
+  const PLAT_ABBR = {
+    "Facebook": "FB", "Instagram": "IG", "Threads": "TH",
+    "BlueSky": "BS", "Twitter/X": "X", "TikTok": "TK",
+  };
+
+  // If parsing failed, fall back to raw text
+  if (!parsed.anchor && !hasPlatforms) {
+    return (
+      <div style={S.outBox}>{output}</div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+
+      {/* Anchor Phrase card */}
+      {parsed.anchor && (
+        <div style={{ background: INK, color: BG, borderRadius: "4px", padding: "20px 24px" }}>
+          <div style={{ fontSize: "10px", letterSpacing: "0.16em", textTransform: "uppercase", color: "#aaa", marginBottom: "8px" }}>Anchor Phrase</div>
+          <div style={{ fontSize: "20px", fontWeight: "700", lineHeight: "1.35", marginBottom: parsed.anchorWhy ? "10px" : 0, fontFamily: "'Georgia',serif" }}>
+            "{parsed.anchor}"
+          </div>
+          {parsed.anchorWhy && (
+            <div style={{ fontSize: "13px", color: "#ccc", lineHeight: "1.6", fontStyle: "italic" }}>{parsed.anchorWhy}</div>
+          )}
+        </div>
+      )}
+
+      {/* Rebuttal Lenses */}
+      {parsed.lenses.length > 0 && (
+        <div style={{ border: `1.5px solid ${BORDER}`, borderRadius: "4px", padding: "18px 22px", background: SURFACE }}>
+          <div style={{ fontSize: "10px", letterSpacing: "0.16em", textTransform: "uppercase", color: LIGHT, marginBottom: "14px" }}>Rebuttal Lenses</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {parsed.lenses.map((lens, i) => (
+              <div key={i} style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                <div style={{ width: "22px", height: "22px", borderRadius: "50%", background: INK, color: BG, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "700", flexShrink: 0, marginTop: "1px" }}>{i + 1}</div>
+                <div>
+                  <span style={{ fontWeight: "700", fontSize: "13px" }}>{lens.title}</span>
+                  {lens.body && <span style={{ fontSize: "13px", color: MID }}> — {lens.body}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Activist label */}
+      {parsed.activist && (
+        <div style={{ fontSize: "12px", color: MID, fontStyle: "italic", paddingLeft: "4px" }}>
+          Voice: {parsed.activist}
+        </div>
+      )}
+
+      {/* Platform cards */}
+      {hasPlatforms && Object.entries(parsed.platforms).map(([name, { post, comment }]) => {
+        const bg = PLAT_COLORS[name] || INK;
+        const abbr = PLAT_ABBR[name] || name.slice(0, 2).toUpperCase();
+        const fullText = `POST:\n${post}${comment ? `\n\nFIRST COMMENT:\n${comment}` : ""}`;
+        return (
+          <div key={name} style={{ border: `2px solid ${BORDER}`, borderRadius: "4px", overflow: "hidden" }}>
+            {/* Platform header */}
+            <div style={{ background: bg, color: "#fff", padding: "10px 16px", display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{ width: "28px", height: "28px", borderRadius: "6px", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "900" }}>{abbr}</div>
+              <span style={{ fontWeight: "700", fontSize: "14px", letterSpacing: "0.03em" }}>{name}</span>
+              <button
+                onClick={() => copyPlat(fullText, name)}
+                style={{ marginLeft: "auto", padding: "4px 12px", background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", borderRadius: "2px", fontSize: "11px", cursor: "pointer", fontFamily: "'Georgia',serif", letterSpacing: "0.06em", textTransform: "uppercase" }}
+              >
+                {copiedPlat === name ? "✓ Copied" : "Copy"}
+              </button>
+            </div>
+            {/* Post */}
+            <div style={{ padding: "14px 16px", borderBottom: `1px solid ${BORDER}`, background: SURFACE }}>
+              <div style={{ fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase", color: LIGHT, marginBottom: "6px" }}>Post</div>
+              <p style={{ fontSize: "14px", lineHeight: "1.75", color: INK, whiteSpace: "pre-wrap", margin: 0 }}>{post}</p>
+            </div>
+            {/* First comment */}
+            {comment && (
+              <div style={{ padding: "12px 16px", background: "#F7F5F0" }}>
+                <div style={{ fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase", color: LIGHT, marginBottom: "6px" }}>First Comment</div>
+                <p style={{ fontSize: "13px", lineHeight: "1.65", color: MID, fontStyle: "italic", margin: 0 }}>{comment}</p>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Action row */}
+      <div style={S.actRow}>
+        <button style={{ ...btnOutline(false), background: "#F5C842", borderColor: "#d4aa30", color: INK, fontWeight: "700" }} onClick={onPushToMachine}>
+          Push to Message Machine →
+        </button>
+        <button style={btnOutline(copied)} onClick={onCopy}>
+          {copied ? "✓ Copied" : "Copy All"}
+        </button>
+        <button style={btnOutline(saved)} onClick={saved ? undefined : onSave}>
+          {saved ? "✓ Saved" : "Save to Library"}
+        </button>
+        <button style={btnOutline(false)} onClick={onShare}>Share</button>
+        <button style={btnOutline(false)} onClick={onEdit}>Edit &amp; Regenerate</button>
+      </div>
+    </div>
+  );
+}
 export default function RebuttalGenerator() {
   const [narrative,   setNarrative]   = useState("");
   const [profile,     setProfile]     = useState(null);  // single selected profile key or null
@@ -306,6 +473,28 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
   const editAndRegenerate = () => {
     setOutput(""); setStatus(""); setSaved(false); setCopied(false);
     setTimeout(() => document.getElementById("narrative-input")?.focus(), 50);
+  };
+
+  // ── Push to Message Machine ─────────────────────────────────────────────
+  const pushToMachine = () => {
+    if (!output) return;
+    const parsed = parseOutput(output);
+    const issueText = [
+      narrative.trim(),
+      parsed.anchor ? `\nAnchor phrase: "${parsed.anchor}"` : "",
+      parsed.lenses.length > 0 ? `\nKey angles:\n${parsed.lenses.map((l, i) => `${i + 1}. ${l.title}${l.body ? ` — ${l.body}` : ""}`).join("\n")}` : "",
+    ].filter(Boolean).join("\n");
+    try {
+      localStorage.setItem("rr_pending_article", JSON.stringify({
+        issueText,
+        focalPoint: parsed.anchor || "",
+        sourceTitle: `Rebuttal: ${narrative.trim().substring(0, 80)}`,
+        pushedAt: new Date().toISOString(),
+      }));
+      window.location.href = "/messaging";
+    } catch {
+      setError({ heading: "Push failed.", body: "Could not send to Message Machine. Please try again." });
+    }
   };
 
   const fmtDate = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -460,22 +649,16 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
         {output && (
           <>
             <hr style={S.divider} />
-            <label style={S.lbl}>Your campaign</label>
-            <div style={S.outBox}>{output}</div>
-            <div style={S.actRow}>
-              <button style={btnOutline(copied)} onClick={handleCopy}>
-                {copied ? "✓ Copied" : "Copy All"}
-              </button>
-              <button style={btnOutline(saved)} onClick={saved ? undefined : saveToLibrary}>
-                {saved ? "✓ Saved" : "Save to Library"}
-              </button>
-              <button style={btnOutline(false)} onClick={handleShare}>
-                Share
-              </button>
-              <button style={btnOutline(false)} onClick={editAndRegenerate}>
-                Edit &amp; Regenerate
-              </button>
-            </div>
+            <CampaignOutput
+              output={output}
+              onCopy={handleCopy}
+              onSave={saveToLibrary}
+              onShare={handleShare}
+              onPushToMachine={pushToMachine}
+              onEdit={editAndRegenerate}
+              copied={copied}
+              saved={saved}
+            />
           </>
         )}
       </main>
