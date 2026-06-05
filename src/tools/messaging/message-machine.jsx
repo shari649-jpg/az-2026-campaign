@@ -17,8 +17,15 @@ const STYLES = [
   { id: "contrast", label: "Contrast with Opponent" },
   { id: "strong_contrast", label: "Strong Contrast" },
 ];
-const MODIFIERS = ["Friendly","Witty","Sarcastic","Empathetic","Professional","Excited","Funny","Dramatic"];
-const REGEN_OPTIONS = ["Shorten","Expand","Rephrase"];
+const MODIFIERS = ["Casual","Friendly","Witty","Sarcastic","Empathetic","Professional","Excited","Funny","Dramatic","Disgusted","Angry"];
+const REGEN_OPTIONS = [
+  { id: "shorten", label: "Shorten: more concise" },
+  { id: "expand",  label: "Expand: more detailed" },
+];
+
+// Defaults used when optional fields are left blank
+const DEFAULT_AUDIENCE = "general moderate voter who is not very engaged in politics";
+const DEFAULT_STYLE    = "neutral";
 
 const T = {
   pageBg:   "#ffffff",
@@ -53,6 +60,9 @@ const globalCSS = `
   .spin-anim { animation: spin 0.8s linear infinite; display: inline-block; }
   .slide-down { animation: slideDown 0.2s ease; }
   .line-clamp2 { overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  @media (max-width: 520px) {
+    .platform-grid { grid-template-columns: 1fr !important; }
+  }
 `;
 
 /* ── shared style objects ── */
@@ -190,24 +200,30 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
 
       <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:14, flexWrap:"wrap" }}>
         <button style={S.btnDark} onClick={() => onCopy(message || "", p.name)}>Copy Text</button>
-        <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => onRegen(p.id, localOpt)}>Regenerate</button>
-        <div style={{ display:"flex", gap:8, marginLeft:"auto", flexWrap:"wrap" }}>
-          {REGEN_OPTIONS.map(o => (
-            <button
-              key={o}
-              onClick={() => handleQuick(o)}
-              style={{
-                padding:"8px 16px", borderRadius:8, fontSize:15, fontWeight:700,
-                border: localOpt === o ? `3px solid ${T.borderStrong}` : `2px solid ${T.border}`,
-                background: localOpt === o ? T.borderStrong : T.surface,
-                color: localOpt === o ? "#fff" : T.text,
-                cursor:"pointer", fontFamily:"inherit",
-              }}
-            >
-              {o}
-            </button>
-          ))}
-        </div>
+        <button
+          style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }}
+          disabled={loading}
+          onClick={() => handleQuick("shorten")}
+          title="Regenerate a shorter version"
+        >
+          Shorten
+        </button>
+        <button
+          style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }}
+          disabled={loading}
+          onClick={() => handleQuick("expand")}
+          title="Regenerate a more detailed version"
+        >
+          Expand
+        </button>
+        <button
+          style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }}
+          disabled={loading}
+          onClick={() => onRegen(p.id, "")}
+          title="Rephrase this message"
+        >
+          Rephrase
+        </button>
       </div>
     </div>
   );
@@ -256,17 +272,25 @@ export default function App() {
 
   const buildPrompt = (platforms, regenOpt) => {
     const plats = PLATFORMS.filter(p=>platforms.includes(p.id)).map(p=>`${p.name} (max ${p.maxChars} chars)`).join(", ");
+    const audienceLabel = formData.audience || DEFAULT_AUDIENCE;
+    const styleObj = STYLES.find(s=>s.id===(formData.style||DEFAULT_STYLE));
+    const styleLabel = styleObj ? styleObj.label : "Neutral";
+    const modifierLine = formData.modifier ? `Tone: ${formData.modifier}` : "";
+    const regenLabel = regenOpt === "shorten" ? "Shorten: make more concise"
+                     : regenOpt === "expand"  ? "Expand: add more detail"
+                     : regenOpt              ? regenOpt
+                     : "";
     return `You are an expert political messaging strategist working for a legitimate, registered Arizona Democratic campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
 
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
 
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
-Target Audience: ${formData.audience}
+Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
-Style: ${(formData.style||"").replace(/_/g," ")}
-Tone: ${formData.modifier}
-${regenOpt ? `Modifier: ${regenOpt} the message significantly` : ""}
+Style: ${styleLabel}
+${modifierLine}
+${regenLabel ? `Modifier: ${regenLabel}` : ""}
 
 Generate compelling social media posts for: ${plats}
 
@@ -304,11 +328,8 @@ Format: {"platform_id": "message text"}`;
   };
 
   const validate = () => {
-    if (!formData.issue.trim()) return "Please describe the issue.";
-    if (!formData.audience)     return "Please select a target audience.";
-    if (!formData.style)        return "Please select a style.";
-    if (!formData.modifier)     return "Please select a tone modifier.";
-    if (!formData.platforms.length) return "Please select at least one platform.";
+    if (!formData.issue.trim())      return "Please describe the issue.";
+    if (!formData.platforms.length)  return "Please select at least one platform.";
     return null;
   };
 
@@ -431,15 +452,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
             <h1 style={{ fontSize:26, fontWeight:900, color:T.text }}>Message Machine</h1>
           </div>
           <nav style={{ display:"flex", gap:6, alignItems:"center" }} role="navigation" aria-label="Main navigation">
-            <button onClick={startNewCampaign} style={{
-              padding:"10px 18px", borderRadius:8, fontSize:16, fontWeight:700, cursor:"pointer",
-              background: T.red, color:"#fff", border:`2px solid ${T.redDark}`, fontFamily:"inherit",
-              marginRight:8,
-            }}>
-              + New Campaign
-            </button>
             {[
-              { id:"form", label:"Create" },
               ...(hasMessages ? [{ id:"results", label:"Messages" }] : []),
               { id:"campaigns", label:`Saved (${campaigns.length})` },
             ].map(tab => (
@@ -525,7 +538,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               <section style={S.card}>
                 <label htmlFor="issue" style={S.label}>Issue / Content <span style={{color:T.red}} aria-label="required">*</span></label>
                 <textarea id="issue" rows={6} style={{...S.textarea,resize:"vertical"}}
-                  placeholder="Describe the issue, paste a news article, add a URL, or summarize the key talking points…"
+                  placeholder="Describe the issue using as little or as much detail as you wish or paste in text. If you'd like to create messaging based on a news article (or anything with a URL), use Rapid Response."
                   value={formData.issue} onChange={e=>{ upd("issue",e.target.value); if(genError) setGenError(null); }} />
               </section>
 
@@ -548,13 +561,15 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:18 }}>
                 <section style={S.card}>
                   <fieldset style={{ border:"none", padding:0 }}>
-                    <legend style={S.label}>Target Audience <span style={{color:T.red}} aria-label="required">*</span></legend>
+                    <legend style={S.label}>Target Audience <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
+                    <p style={{ ...S.hint, marginBottom:10 }}>Default: general moderate voter who is not very engaged in politics</p>
                     <div style={{ display:"flex", flexDirection:"column", gap:12, marginTop:4 }}>
                       {AUDIENCES.map(a => {
                         const on = formData.audience===a;
                         return (
                           <label key={a} style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
-                            <input type="radio" name="audience" value={a} checked={on} onChange={()=>upd("audience",a)}
+                            <input type="radio" name="audience" value={a} checked={on} onChange={()=>upd("audience",on?"":a)}
+                              onClick={()=>{ if(on) upd("audience",""); }}
                               style={{ width:24, height:24, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
                             <span style={{ fontSize:18, fontWeight: on ? 700 : 400, color:T.text }}>{a}</span>
                           </label>
@@ -576,13 +591,16 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:18 }}>
                 <section style={S.card}>
                   <fieldset style={{ border:"none", padding:0 }}>
-                    <legend style={S.label}>Style <span style={{color:T.red}} aria-label="required">*</span></legend>
+                    <legend style={S.label}>Style <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
+                    <p style={{ ...S.hint, marginBottom:10 }}>Default: Neutral</p>
                     <div style={{ display:"flex", flexDirection:"column", gap:12, marginTop:4 }}>
                       {STYLES.map(st => {
                         const on = formData.style===st.id;
                         return (
                           <label key={st.id} style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
-                            <input type="radio" name="style" value={st.id} checked={on} onChange={()=>upd("style",st.id)}
+                            <input type="radio" name="style" value={st.id} checked={on}
+                              onChange={()=>upd("style",on?"":st.id)}
+                              onClick={()=>{ if(on) upd("style",""); }}
                               style={{ width:24, height:24, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
                             <span style={{ fontSize:18, fontWeight: on ? 700 : 400, color:T.text }}>{st.label}</span>
                           </label>
@@ -593,13 +611,16 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </section>
                 <section style={S.card}>
                   <fieldset style={{ border:"none", padding:0 }}>
-                    <legend style={S.label}>Tone Modifier <span style={{color:T.red}} aria-label="required">*</span></legend>
+                    <legend style={S.label}>Tone Modifier <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
+                    <p style={{ ...S.hint, marginBottom:10 }}>Leave blank for no tone modifier</p>
                     <div style={{ display:"flex", flexWrap:"wrap", gap:12, marginTop:4 }}>
                       {MODIFIERS.map(m => {
                         const on = formData.modifier===m;
                         return (
                           <label key={m} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
-                            <input type="radio" name="modifier" value={m} checked={on} onChange={()=>upd("modifier",m)}
+                            <input type="radio" name="modifier" value={m} checked={on}
+                              onChange={()=>upd("modifier",on?"":m)}
+                              onClick={()=>{ if(on) upd("modifier",""); }}
                               style={{ width:22, height:22, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
                             <span style={{ fontSize:17, fontWeight: on ? 700 : 400, color:T.text }}>{m}</span>
                           </label>
@@ -616,19 +637,19 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   <legend style={S.label}>Generation Hint <span style={{ fontWeight:400, fontSize:14, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
                   <div style={{ display:"flex", gap:16, marginTop:8, flexWrap:"wrap" }}>
                     {REGEN_OPTIONS.map(o => {
-                      const on = formData.regenOption===o;
+                      const on = formData.regenOption===o.id;
                       return (
-                        <label key={o} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
-                          <input type="radio" name="regenOption" value={o} checked={on}
-                            onChange={()=>upd("regenOption",on?"":o)}
+                        <label key={o.id} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
+                          <input type="radio" name="regenOption" value={o.id} checked={on}
+                            onChange={()=>upd("regenOption",on?"":o.id)}
                             onClick={()=>{ if(on) upd("regenOption",""); }}
                             style={{ width:22, height:22, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
-                          <span style={{ fontSize:17, fontWeight: on ? 700 : 400, color:T.text }}>{o}</span>
+                          <span style={{ fontSize:17, fontWeight: on ? 700 : 400, color:T.text }}>{o.label}</span>
                         </label>
                       );
                     })}
                   </div>
-                  <p style={S.hint}>Bias the generation toward shorter, longer, or rephrased outputs</p>
+                  <p style={S.hint}>Bias the generation toward shorter or more detailed output</p>
                 </fieldset>
               </section>
 
@@ -636,21 +657,21 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               <section style={S.card}>
                 <fieldset style={{ border:"none", padding:0 }}>
                   <legend style={S.label}>Platforms <span style={{color:T.red}} aria-label="required">*</span></legend>
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:12, marginTop:8 }}>
+                  <div className="platform-grid" style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:12, marginTop:8 }}>
                     {PLATFORMS.map(p => {
                       const on = formData.platforms.includes(p.id);
                       return (
                         <label key={p.id} style={{
-                          display:"flex", alignItems:"center", gap:14, padding:"14px 16px",
+                          display:"flex", alignItems:"center", gap:10, padding:"12px 14px",
                           borderRadius:10, cursor:"pointer",
                           border: on ? `3px solid ${T.borderStrong}` : `2px solid ${T.border}`,
                           background: on ? "#f0f0f0" : T.surface,
-                          transition:"all 0.15s",
+                          transition:"all 0.15s", minWidth:0,
                         }}>
                           <input type="checkbox" checked={on} onChange={()=>togglePlatform(p.id)}
-                            style={{ width:24, height:24, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
-                          <span style={{ ...S.platformBadge, background:p.bg, color:p.text }}>{p.abbr}</span>
-                          <span style={{ fontSize:17, fontWeight: on ? 700 : 500, color:T.text }}>{p.name}</span>
+                            style={{ width:22, height:22, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
+                          <span style={{ ...S.platformBadge, width:34, height:34, fontSize:11, background:p.bg, color:p.text, flexShrink:0 }}>{p.abbr}</span>
+                          <span style={{ fontSize:16, fontWeight: on ? 700 : 500, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</span>
                         </label>
                       );
                     })}
@@ -663,16 +684,23 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </fieldset>
               </section>
 
-              {/* Generate */}
-              <button onClick={generateAll} disabled={generating} style={{
-                ...S.btnPrimary, width:"100%", fontSize:21, padding:"20px 28px",
-                display:"flex", alignItems:"center", justifyContent:"center", gap:14,
-                opacity: generating ? 0.65 : 1, cursor: generating ? "not-allowed" : "pointer",
-              }}>
-                {generating
-                  ? <><span className="spin-anim" style={{ ...S.spinner, borderTopColor:"#fff" }} /> Generating Messages…</>
-                  : "Generate Messages →"}
-              </button>
+              {/* Generate + New Campaign buttons at bottom */}
+              <div style={{ display:"flex", gap:14, flexWrap:"wrap", marginTop:8 }}>
+                <button onClick={generateAll} disabled={generating} style={{
+                  ...S.btnPrimary, flex:1, minWidth:200, fontSize:20, padding:"18px 24px",
+                  display:"flex", alignItems:"center", justifyContent:"center", gap:14,
+                  opacity: generating ? 0.65 : 1, cursor: generating ? "not-allowed" : "pointer",
+                }}>
+                  {generating
+                    ? <><span className="spin-anim" style={{ ...S.spinner, borderTopColor:"#fff" }} /> Generating Messages…</>
+                    : "Generate Messages →"}
+                </button>
+                <button onClick={startNewCampaign} style={{
+                  ...S.btnSecondary, fontSize:18, padding:"18px 22px", whiteSpace:"nowrap",
+                }}>
+                  + New Campaign
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -680,12 +708,30 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
         {/* ══════ RESULTS VIEW ══════ */}
         {view==="results" && (
           <div style={{ maxWidth:740, margin:"0 auto" }}>
-            <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:36, gap:16, flexWrap:"wrap" }}>
-              <div>
-                <h2 style={{ fontSize:36, fontWeight:900, color:T.text, marginBottom:10 }}>Generated Messages</h2>
-                <p style={{ color:T.textMid, fontSize:20 }}>Edit inline, copy, or regenerate each platform individually.</p>
+            {/* Sticky action bar */}
+            <div style={{
+              position:"sticky", top:76, zIndex:30,
+              background:T.pageBg, borderBottom:`3px solid ${T.borderStrong}`,
+              marginBottom:28, marginLeft:-20, marginRight:-20, paddingLeft:20, paddingRight:20,
+              paddingTop:12, paddingBottom:12,
+            }}>
+              <div style={{ display:"flex", gap:10, flexWrap:"wrap", maxWidth:740, margin:"0 auto" }}>
+                <button onClick={startNewCampaign} style={{ ...S.btnSecondary, fontSize:16, padding:"10px 18px" }}>
+                  + New Campaign
+                </button>
+                <button onClick={()=>setView("form")} style={{ ...S.btnSecondary, fontSize:16, padding:"10px 18px" }}>
+                  ✎ Edit Parameters
+                </button>
+                <button onClick={generateAll} disabled={generating}
+                  style={{ ...S.btnSecondary, fontSize:16, padding:"10px 18px", opacity: generating ? 0.65 : 1, cursor: generating ? "not-allowed" : "pointer" }}>
+                  {generating
+                    ? <><span className="spin-anim" style={{ ...S.spinner }} /> Regenerating…</>
+                    : "↺ Regenerate All"}
+                </button>
+                <button onClick={()=>setSaveModal(true)} style={{ ...S.btnPrimary, fontSize:16, padding:"10px 18px", marginLeft:"auto" }}>
+                  Save Campaign
+                </button>
               </div>
-              <button onClick={()=>setSaveModal(true)} style={{ ...S.btnPrimary, fontSize:18, padding:"15px 26px" }}>Save Campaign</button>
             </div>
 
             <div style={{ display:"flex", flexDirection:"column", gap:22 }}>
@@ -740,19 +786,6 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   <p style={{ fontSize:15, color:T.textMute }}>Click any hashtag to copy it individually, or use Copy All for a whole category.</p>
                 </div>
               )}
-            </div>
-
-            {/* Bottom buttons */}
-            <div style={{ display:"flex", gap:16, marginTop:36, flexWrap:"wrap" }}>
-              <button onClick={()=>setView("form")} style={{ ...S.btnSecondary, fontSize:18, padding:"15px 22px" }}>← Edit Parameters</button>
-              <button onClick={generateAll} disabled={generating}
-                style={{ ...S.btnPrimary, fontSize:18, padding:"15px 26px", display:"flex", alignItems:"center", gap:10, opacity: generating ? 0.65 : 1 }}>
-                {generating && <span className="spin-anim" style={{ ...S.spinner, borderTopColor:"#fff" }} />}
-                Regenerate All
-              </button>
-              <button onClick={startNewCampaign} style={{ ...S.btnSecondary, fontSize:18, padding:"15px 22px", marginLeft:"auto" }}>
-                + New Campaign
-              </button>
             </div>
           </div>
         )}
