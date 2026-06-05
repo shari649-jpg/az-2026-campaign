@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
 import { saveCampaign as fbSave, loadAllCampaigns, deleteCampaign as fbDelete } from "../../lib/campaignLibrary";
 
 const PLATFORMS = [
@@ -18,28 +17,22 @@ const STYLES = [
   { id: "contrast", label: "Contrast with Opponent" },
   { id: "strong_contrast", label: "Strong Contrast" },
 ];
-const MODIFIERS = ["Happy","Friendly","Witty","Sarcastic","Empathetic","Professional","Excited","Funny","Dramatic","Disgusted","Angry"];
-const REGEN_OPTIONS = [
-  { id: "Shorten", label: "Shorten: more concise" },
-  { id: "Expand",  label: "Expand: more detailed" },
-];
+const MODIFIERS = ["Friendly","Witty","Sarcastic","Empathetic","Professional","Excited","Funny","Dramatic"];
+const REGEN_OPTIONS = ["Shorten","Expand","Rephrase"];
 
 const T = {
-  pageBg:      "#ffffff",
-  surface:     "#ffffff",
-  surfaceAlt:  "#f0fdf9",
-  border:      "#3ECFB2",
-  borderStrong:"#1D5C4A",
-  text:        "#1A1A1A",
-  textMid:     "#4A4558",
-  textMute:    "#888580",
-  primary:     "#3ECFB2",
-  primaryDark: "#1D5C4A",
-  blue:        "#0044cc",
-  green:       "#145214",
-  // aliases kept so existing references don't break
-  red:         "#3ECFB2",
-  redDark:     "#1D5C4A",
+  pageBg:   "#ffffff",
+  surface:  "#ffffff",
+  surfaceAlt:"#f3f4f6",
+  border:   "#555555",
+  borderStrong: "#111111",
+  text:     "#111111",
+  textMid:  "#333333",
+  textMute: "#555555",
+  red:      "#c41e1e",
+  redDark:  "#8b0000",
+  blue:     "#0044cc",
+  green:    "#145214",
 };
 
 const globalCSS = `
@@ -49,11 +42,11 @@ const globalCSS = `
   body { background: ${T.pageBg} !important; color: ${T.text}; }
   textarea, input, button { font-family: 'Atkinson Hyperlegible', Georgia, serif; }
   textarea:focus, input:focus {
-    outline: 4px solid ${T.primaryDark} !important;
+    outline: 4px solid ${T.blue} !important;
     outline-offset: 2px;
-    border-color: ${T.primaryDark} !important;
+    border-color: ${T.blue} !important;
   }
-  button:focus { outline: 4px solid ${T.primaryDark}; outline-offset: 3px; }
+  button:focus { outline: 4px solid ${T.blue}; outline-offset: 3px; }
   button:active { transform: scale(0.97); }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes slideDown { from { opacity:0; transform:translateY(-8px);} to {opacity:1;transform:translateY(0);} }
@@ -102,12 +95,12 @@ const S = {
     fontFamily: "inherit",
   },
   btnPrimary: {
-    background: T.primary,
-    color: T.primaryDark,
+    background: T.red,
+    color: "#ffffff",
     fontWeight: 900,
     padding: "15px 26px",
     borderRadius: 8,
-    border: `3px solid ${T.primaryDark}`,
+    border: `3px solid ${T.redDark}`,
     cursor: "pointer",
     fontSize: 18,
     fontFamily: "inherit",
@@ -142,7 +135,7 @@ const S = {
     height: 20,
     flexShrink: 0,
     border: "3px solid rgba(0,0,0,0.2)",
-    borderTopColor: T.primaryDark,
+    borderTopColor: T.borderStrong,
     borderRadius: "50%",
   },
   platformBadge: {
@@ -164,8 +157,8 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
   const charCount = (message || "").length;
   const over = charCount > p.maxChars;
 
-  const handleQuick = (optId) => {
-    const next = localOpt === optId ? "" : optId;
+  const handleQuick = (opt) => {
+    const next = localOpt === opt ? "" : opt;
     setLocalOpt(next);
     onRegen(p.id, next);
   };
@@ -197,20 +190,21 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
 
       <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:14, flexWrap:"wrap" }}>
         <button style={S.btnDark} onClick={() => onCopy(message || "", p.name)}>Copy Text</button>
+        <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => onRegen(p.id, localOpt)}>Regenerate</button>
         <div style={{ display:"flex", gap:8, marginLeft:"auto", flexWrap:"wrap" }}>
           {REGEN_OPTIONS.map(o => (
             <button
-              key={o.id}
-              onClick={() => handleQuick(o.id)}
+              key={o}
+              onClick={() => handleQuick(o)}
               style={{
                 padding:"8px 16px", borderRadius:8, fontSize:15, fontWeight:700,
-                border: localOpt === o.id ? `3px solid ${T.borderStrong}` : `2px solid ${T.border}`,
-                background: localOpt === o.id ? T.borderStrong : T.surface,
-                color: localOpt === o.id ? "#fff" : T.text,
+                border: localOpt === o ? `3px solid ${T.borderStrong}` : `2px solid ${T.border}`,
+                background: localOpt === o ? T.borderStrong : T.surface,
+                color: localOpt === o ? "#fff" : T.text,
                 cursor:"pointer", fontFamily:"inherit",
               }}
             >
-              {o.label}
+              {o}
             </button>
           ))}
         </div>
@@ -231,22 +225,12 @@ export default function App() {
   const [saveModal, setSaveModal]   = useState(false);
   const [campName, setCampName]     = useState("");
   const [notif, setNotif]           = useState(null);
+  const [genError, setGenError]     = useState(null); // persistent error panel for generation failures
   const [hashtags, setHashtags]     = useState(null);
   const [hashLoading, setHashLoading] = useState(false);
 
-  const location = useLocation();
-
   useEffect(() => {
     loadCampaigns();
-    // Check if Library navigated here with a campaign to load
-    if (location.state?.loadCampaign) {
-      const c = location.state.loadCampaign;
-      setFormData(c.formData || {});
-      setMessages(c.messages || {});
-      setHashtags(null);
-      setView("results");
-      return;
-    }
     // Check if Rapid Response or Research pushed content
     try {
       const pending = localStorage.getItem("rr_pending_article");
@@ -272,17 +256,16 @@ export default function App() {
 
   const buildPrompt = (platforms, regenOpt) => {
     const plats = PLATFORMS.filter(p=>platforms.includes(p.id)).map(p=>`${p.name} (max ${p.maxChars} chars)`).join(", ");
-    const audience = formData.audience || "general moderate voter who is not very engaged in politics";
-    const style    = (formData.style || "neutral").replace(/_/g," ");
-    const toneLine = formData.modifier ? `Tone: ${formData.modifier}` : "";
-    return `You are an expert political messaging strategist for progressive activists.
+    return `You are an expert political messaging strategist working for a legitimate, registered Arizona Democratic campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
+
+This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
 
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
-Target Audience: ${audience}
+Target Audience: ${formData.audience}
 Voice/Persona: ${formData.voice || "Not specified"}
-Style: ${style}
-${toneLine}
+Style: ${(formData.style||"").replace(/_/g," ")}
+Tone: ${formData.modifier}
 ${regenOpt ? `Modifier: ${regenOpt} the message significantly` : ""}
 
 Generate compelling social media posts for: ${plats}
@@ -295,12 +278,9 @@ Platform guidance:
 - Twitter/X: Punchy headline style, max 280 chars
 - TikTok: Trendy hook in first line, energetic language
 
-CRITICAL RULES:
-- Write ALL posts in the THIRD PERSON. Never use "I", "we", or "my" as if speaking personally. Write as an observer or narrator — "Voters are demanding…" not "I believe…"
-- NEVER invent, assume, or fabricate names of people, places, organizations, or specific statistics. Only use names, locations, and figures that appear explicitly in the Issue/Content or Focal Point provided above.
-- Do NOT include any hashtags in any message. Write clean prose only.
+IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
-RESPOND ONLY WITH VALID JSON. Zero markdown. Zero backticks. Zero explanation.
+YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
 Only include these platform ids: ${platforms.join(", ")}
 Format: {"platform_id": "message text"}`;
   };
@@ -312,25 +292,37 @@ Format: {"platform_id": "message text"}`;
     });
     const data = await res.json();
     const text = data.content.map(i=>i.text||"").join("");
-    return JSON.parse(text.replace(/```json|```/g,"").trim());
+    const cleaned = text.replace(/```json|```/g,"").trim();
+    // Detect a refusal: Claude returned prose instead of JSON
+    if (!cleaned.startsWith("{")) {
+      const err = new Error("content_flagged");
+      err.type = "content_flagged";
+      err.raw = cleaned;
+      throw err;
+    }
+    return JSON.parse(cleaned);
   };
 
   const validate = () => {
-    if (!formData.issue.trim()) return "Please describe the issue or paste content to generate from.";
-    if (!formData.platforms.length) return "Please select at least one platform to generate posts for.";
+    if (!formData.issue.trim()) return "Please describe the issue.";
+    if (!formData.audience)     return "Please select a target audience.";
+    if (!formData.style)        return "Please select a style.";
+    if (!formData.modifier)     return "Please select a tone modifier.";
+    if (!formData.platforms.length) return "Please select at least one platform.";
     return null;
   };
 
   const generateAll = async () => {
     const err = validate(); if (err) { notify(err,"err"); return; }
-    setGenerating(true); setHashtags(null);
-    try { const r = await callAPI(buildPrompt(formData.platforms, formData.regenOption)); setMessages(r); setView("results"); }
-    catch (e) {
-      const msg = (e?.message || "").toLowerCase();
-      if (msg.includes("url") || msg.includes("fetch") || msg.includes("network")) {
-        notify("Could not read that URL. Try pasting the article text directly into the Issue field instead.","err");
+    setGenerating(true); setHashtags(null); setGenError(null);
+    try {
+      const r = await callAPI(buildPrompt(formData.platforms, formData.regenOption));
+      setMessages(r); setView("results");
+    } catch(e) {
+      if (e.type === "content_flagged") {
+        setGenError("flagged");
       } else {
-        notify("Generation failed — please check your issue content and try again.","err");
+        notify("Generation failed — check your connection and try again.","err");
       }
     }
     setGenerating(false);
@@ -338,8 +330,17 @@ Format: {"platform_id": "message text"}`;
 
   const regenPlatform = async (platformId, regenOpt) => {
     setPlatLoad(p=>({...p,[platformId]:true}));
-    try { const r = await callAPI(buildPrompt([platformId],regenOpt)); setMessages(p=>({...p,...r})); }
-    catch { notify("Regeneration failed.","err"); }
+    try {
+      const r = await callAPI(buildPrompt([platformId],regenOpt));
+      setMessages(p=>({...p,...r}));
+    } catch(e) {
+      if (e.type === "content_flagged") {
+        setGenError("flagged");
+        setView("form");
+      } else {
+        notify("Regeneration failed — check your connection and try again.","err");
+      }
+    }
     setPlatLoad(p=>({...p,[platformId]:false}));
   };
 
@@ -394,10 +395,15 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
     } catch { notify("Delete failed — please try again.", "err"); }
   };
 
+  const [formKey, setFormKey] = useState(0); // increment to force form field reset
+
   const startNewCampaign = () => {
-    setFormData({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", regenOption:"", platforms:[] }); setFromResearch(false);
+    setFormData({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", regenOption:"", platforms:[] });
+    setFromResearch(false);
     setMessages({});
     setHashtags(null);
+    setGenError(null);
+    setFormKey(k => k + 1); // force re-render so fields visibly clear
     setView("form");
   };
 
@@ -405,8 +411,8 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
   const tabStyle = (active) => ({
     padding:"12px 22px", borderRadius:8, fontSize:18, fontWeight:700, cursor:"pointer",
-    border: active ? `3px solid ${T.primaryDark}` : `2px solid transparent`,
-    background: active ? T.primaryDark : "transparent",
+    border: active ? `3px solid ${T.borderStrong}` : `2px solid transparent`,
+    background: active ? T.borderStrong : "transparent",
     color: active ? "#ffffff" : T.text,
     transition:"all 0.15s",
     fontFamily:"inherit",
@@ -418,15 +424,22 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
       <style>{globalCSS}</style>
 
       {/* HEADER */}
-      <header style={{ background:T.pageBg, borderBottom:`4px solid ${T.primaryDark}`, position:"sticky", top:0, zIndex:40 }}>
+      <header style={{ background:T.pageBg, borderBottom:`4px solid ${T.borderStrong}`, position:"sticky", top:0, zIndex:40 }}>
         <div style={{ maxWidth:860, margin:"0 auto", padding:"14px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:16, flexWrap:"wrap" }}>
           <div style={{ display:"flex", alignItems:"center", gap:14 }}>
-            <div style={{ width:48, height:48, background:T.primary, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:24, color:T.primaryDark }}>M</div>
+            <div style={{ width:48, height:48, background:T.red, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:24, color:"#fff" }}>M</div>
             <h1 style={{ fontSize:26, fontWeight:900, color:T.text }}>Message Machine</h1>
           </div>
           <nav style={{ display:"flex", gap:6, alignItems:"center" }} role="navigation" aria-label="Main navigation">
-            {view !== "results" && [
-              { id:"form", label:"New Campaign" },
+            <button onClick={startNewCampaign} style={{
+              padding:"10px 18px", borderRadius:8, fontSize:16, fontWeight:700, cursor:"pointer",
+              background: T.red, color:"#fff", border:`2px solid ${T.redDark}`, fontFamily:"inherit",
+              marginRight:8,
+            }}>
+              + New Campaign
+            </button>
+            {[
+              { id:"form", label:"Create" },
               ...(hasMessages ? [{ id:"results", label:"Messages" }] : []),
               { id:"campaigns", label:`Saved (${campaigns.length})` },
             ].map(tab => (
@@ -443,7 +456,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
         <div className="slide-down" role="alert" aria-live="assertive" style={{
           position:"fixed", top:80, left:"50%", transform:"translateX(-50%)", zIndex:100,
           padding:"14px 28px", borderRadius:10, fontSize:18, fontWeight:700,
-          background: notif.type==="err" ? "#b91c1c" : T.primaryDark,
+          background: notif.type==="err" ? "#b91c1c" : T.green,
           color:"#fff",
           border:`3px solid ${notif.type==="err" ? "#7f1d1d" : "#0d3b0d"}`,
           boxShadow:"0 4px 24px rgba(0,0,0,0.35)", whiteSpace:"nowrap",
@@ -457,20 +470,63 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
         {/* ══════ FORM VIEW ══════ */}
         {view==="form" && (
-          <div style={{ maxWidth:740, margin:"0 auto" }}>
+          <div key={formKey} style={{ maxWidth:740, margin:"0 auto" }}>
             <div style={{ marginBottom:36 }}>
-              <h2 style={{ fontSize:36, fontWeight:900, color:T.text, marginBottom:10 }}>New Campaign</h2>
+              <h2 style={{ fontSize:36, fontWeight:900, color:T.text, marginBottom:10 }}>Create Your Message</h2>
               <p style={{ color:T.textMid, fontSize:20, lineHeight:1.5 }}>Fill in the fields below to generate platform-ready activist messages.</p>
             </div>
+
+            {/* ── Persistent generation error panel ── */}
+            {genError === "flagged" && (
+              <div role="alert" style={{
+                background:"#fff5f5", border:`3px solid #b91c1c`,
+                borderRadius:12, padding:"20px 24px", marginBottom:28,
+                position:"relative",
+              }}>
+                <button
+                  onClick={() => setGenError(null)}
+                  aria-label="Dismiss error"
+                  style={{
+                    position:"absolute", top:14, right:16,
+                    background:"none", border:"none", cursor:"pointer",
+                    fontSize:22, color:"#b91c1c", fontWeight:900, lineHeight:1,
+                    fontFamily:"inherit",
+                  }}
+                >✕</button>
+                <p style={{ fontSize:18, fontWeight:900, color:"#b91c1c", marginBottom:10 }}>
+                  ⚠️ Message generation was blocked
+                </p>
+                <p style={{ fontSize:16, color:T.textMid, lineHeight:1.6, marginBottom:14 }}>
+                  The AI declined to generate messages based on the content in the{" "}
+                  <strong style={{ color:T.text }}>Issue / Content field</strong> above.
+                  Edit that field and try again.
+                </p>
+                <p style={{ fontSize:15, fontWeight:700, color:T.textMid, marginBottom:8 }}>Common causes in campaign work:</p>
+                <ul style={{ paddingLeft:20, display:"flex", flexDirection:"column", gap:6 }}>
+                  {[
+                    "Political figures named in strongly negative or accusatory framing",
+                    "Language that reads as incitement, threats, or calls to harassment",
+                    "Unverified election fraud or stolen election claims",
+                    "Content that attributes quotes or actions not in the source material",
+                    "Extreme or inflammatory phrasing (even when quoting opponents)",
+                  ].map((item, i) => (
+                    <li key={i} style={{ fontSize:15, color:T.textMid, lineHeight:1.5 }}>{item}</li>
+                  ))}
+                </ul>
+                <p style={{ fontSize:15, color:T.textMid, marginTop:14, lineHeight:1.6 }}>
+                  <strong>Try:</strong> Rephrase using factual, policy-focused language. Instead of characterizing intent, describe documented actions. You can name officials and cite their record — just keep the framing grounded in fact.
+                </p>
+              </div>
+            )}
 
             <div style={{ display:"flex", flexDirection:"column", gap:22 }}>
 
               {/* Issue */}
               <section style={S.card}>
-                <label htmlFor="issue" style={S.label}>Issue / Content <span style={{color:T.primaryDark}} aria-label="required">*</span></label>
+                <label htmlFor="issue" style={S.label}>Issue / Content <span style={{color:T.red}} aria-label="required">*</span></label>
                 <textarea id="issue" rows={6} style={{...S.textarea,resize:"vertical"}}
-                  placeholder="Describe the issue, you can be brief or wordy. Do not worry about grammar or spelling. If you are not happy with the results you can edit your parameters and try again."
-                  value={formData.issue} onChange={e=>upd("issue",e.target.value)} />
+                  placeholder="Describe the issue, paste a news article, add a URL, or summarize the key talking points…"
+                  value={formData.issue} onChange={e=>{ upd("issue",e.target.value); if(genError) setGenError(null); }} />
               </section>
 
               {/* Focal Point */}
@@ -492,14 +548,14 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:18 }}>
                 <section style={S.card}>
                   <fieldset style={{ border:"none", padding:0 }}>
-                    <legend style={S.label}>Target Audience <span style={{ fontWeight:400, fontSize:14, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
+                    <legend style={S.label}>Target Audience <span style={{color:T.red}} aria-label="required">*</span></legend>
                     <div style={{ display:"flex", flexDirection:"column", gap:12, marginTop:4 }}>
                       {AUDIENCES.map(a => {
                         const on = formData.audience===a;
                         return (
                           <label key={a} style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
                             <input type="radio" name="audience" value={a} checked={on} onChange={()=>upd("audience",a)}
-                              style={{ width:24, height:24, accentColor:T.primary, cursor:"pointer", flexShrink:0 }} />
+                              style={{ width:24, height:24, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
                             <span style={{ fontSize:18, fontWeight: on ? 700 : 400, color:T.text }}>{a}</span>
                           </label>
                         );
@@ -508,7 +564,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   </fieldset>
                 </section>
                 <section style={S.card}>
-                  <label htmlFor="voice" style={S.label}>Your Voice / Persona</label>
+                  <label htmlFor="voice" style={S.label}>Voice / Persona</label>
                   <input id="voice" type="text" style={S.input}
                     placeholder='e.g. "Rural AZ neighborly mom" or "GenZ activist"'
                     value={formData.voice} onChange={e=>upd("voice",e.target.value)} />
@@ -520,14 +576,14 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:18 }}>
                 <section style={S.card}>
                   <fieldset style={{ border:"none", padding:0 }}>
-                    <legend style={S.label}>Style <span style={{ fontWeight:400, fontSize:14, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
+                    <legend style={S.label}>Style <span style={{color:T.red}} aria-label="required">*</span></legend>
                     <div style={{ display:"flex", flexDirection:"column", gap:12, marginTop:4 }}>
                       {STYLES.map(st => {
                         const on = formData.style===st.id;
                         return (
                           <label key={st.id} style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
                             <input type="radio" name="style" value={st.id} checked={on} onChange={()=>upd("style",st.id)}
-                              style={{ width:24, height:24, accentColor:T.primary, cursor:"pointer", flexShrink:0 }} />
+                              style={{ width:24, height:24, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
                             <span style={{ fontSize:18, fontWeight: on ? 700 : 400, color:T.text }}>{st.label}</span>
                           </label>
                         );
@@ -537,14 +593,14 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </section>
                 <section style={S.card}>
                   <fieldset style={{ border:"none", padding:0 }}>
-                    <legend style={S.label}>Tone Modifier <span style={{ fontWeight:400, fontSize:14, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
+                    <legend style={S.label}>Tone Modifier <span style={{color:T.red}} aria-label="required">*</span></legend>
                     <div style={{ display:"flex", flexWrap:"wrap", gap:12, marginTop:4 }}>
                       {MODIFIERS.map(m => {
                         const on = formData.modifier===m;
                         return (
                           <label key={m} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
                             <input type="radio" name="modifier" value={m} checked={on} onChange={()=>upd("modifier",m)}
-                              style={{ width:22, height:22, accentColor:T.primary, cursor:"pointer", flexShrink:0 }} />
+                              style={{ width:22, height:22, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
                             <span style={{ fontSize:17, fontWeight: on ? 700 : 400, color:T.text }}>{m}</span>
                           </label>
                         );
@@ -560,26 +616,26 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   <legend style={S.label}>Generation Hint <span style={{ fontWeight:400, fontSize:14, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
                   <div style={{ display:"flex", gap:16, marginTop:8, flexWrap:"wrap" }}>
                     {REGEN_OPTIONS.map(o => {
-                      const on = formData.regenOption===o.id;
+                      const on = formData.regenOption===o;
                       return (
-                        <label key={o.id} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
-                          <input type="radio" name="regenOption" value={o.id} checked={on}
-                            onChange={()=>upd("regenOption",on?"":o.id)}
+                        <label key={o} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
+                          <input type="radio" name="regenOption" value={o} checked={on}
+                            onChange={()=>upd("regenOption",on?"":o)}
                             onClick={()=>{ if(on) upd("regenOption",""); }}
-                            style={{ width:22, height:22, accentColor:T.primary, cursor:"pointer", flexShrink:0 }} />
-                          <span style={{ fontSize:17, fontWeight: on ? 700 : 400, color:T.text }}>{o.label}</span>
+                            style={{ width:22, height:22, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
+                          <span style={{ fontSize:17, fontWeight: on ? 700 : 400, color:T.text }}>{o}</span>
                         </label>
                       );
                     })}
                   </div>
-                  <p style={S.hint}>Bias the generation toward shorter or longer outputs</p>
+                  <p style={S.hint}>Bias the generation toward shorter, longer, or rephrased outputs</p>
                 </fieldset>
               </section>
 
               {/* Platforms */}
               <section style={S.card}>
                 <fieldset style={{ border:"none", padding:0 }}>
-                  <legend style={S.label}>Platforms <span style={{color:T.primaryDark}} aria-label="required">*</span></legend>
+                  <legend style={S.label}>Platforms <span style={{color:T.red}} aria-label="required">*</span></legend>
                   <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:12, marginTop:8 }}>
                     {PLATFORMS.map(p => {
                       const on = formData.platforms.includes(p.id);
@@ -592,7 +648,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                           transition:"all 0.15s",
                         }}>
                           <input type="checkbox" checked={on} onChange={()=>togglePlatform(p.id)}
-                            style={{ width:24, height:24, accentColor:T.primary, cursor:"pointer", flexShrink:0 }} />
+                            style={{ width:24, height:24, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
                           <span style={{ ...S.platformBadge, background:p.bg, color:p.text }}>{p.abbr}</span>
                           <span style={{ fontSize:17, fontWeight: on ? 700 : 500, color:T.text }}>{p.name}</span>
                         </label>
@@ -614,7 +670,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 opacity: generating ? 0.65 : 1, cursor: generating ? "not-allowed" : "pointer",
               }}>
                 {generating
-                  ? <><span className="spin-anim" style={{ ...S.spinner, borderTopColor:T.primaryDark }} /> Generating Messages…</>
+                  ? <><span className="spin-anim" style={{ ...S.spinner, borderTopColor:"#fff" }} /> Generating Messages…</>
                   : "Generate Messages →"}
               </button>
             </div>
@@ -624,28 +680,12 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
         {/* ══════ RESULTS VIEW ══════ */}
         {view==="results" && (
           <div style={{ maxWidth:740, margin:"0 auto" }}>
-            {/* Sticky action bar replacing tab nav */}
-            <div style={{
-              position:"sticky", top:80, zIndex:30, background:T.pageBg,
-              borderBottom:`3px solid ${T.primaryDark}`, marginBottom:32,
-              padding:"12px 0", display:"flex", gap:10, flexWrap:"wrap", alignItems:"center",
-            }}>
-              <button onClick={startNewCampaign} style={{ ...S.btnSecondary, fontSize:16, padding:"11px 18px" }}>+ New Campaign</button>
-              <button onClick={()=>setView("form")} style={{ ...S.btnSecondary, fontSize:16, padding:"11px 18px" }}>← Edit Parameters</button>
-              <button onClick={generateAll} disabled={generating}
-                style={{ ...S.btnSecondary, fontSize:16, padding:"11px 18px", opacity: generating ? 0.65 : 1, display:"flex", alignItems:"center", gap:8 }}>
-                {generating && <span className="spin-anim" style={{ ...S.spinner }} />}
-                Regenerate All
-              </button>
-              <button onClick={()=>setSaveModal(true)} style={{ ...S.btnPrimary, fontSize:16, padding:"11px 18px", marginLeft:"auto" }}>Save Campaign</button>
-            </div>
-
-            {/* Disclaimer */}
-            <div style={{ background:"#fffbea", border:`2px solid #F5C842`, borderRadius:10, padding:"12px 18px", marginBottom:28, display:"flex", gap:10, alignItems:"flex-start" }}>
-              <span style={{ fontSize:20, flexShrink:0 }}>⚠️</span>
-              <p style={{ fontSize:14, color:"#4A4558", lineHeight:1.6, margin:0 }}>
-                <strong>AI-Generated Content:</strong> These messages were created by an AI and may contain inaccuracies. Please verify all facts, figures, names, and claims before publishing.
-              </p>
+            <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:36, gap:16, flexWrap:"wrap" }}>
+              <div>
+                <h2 style={{ fontSize:36, fontWeight:900, color:T.text, marginBottom:10 }}>Generated Messages</h2>
+                <p style={{ color:T.textMid, fontSize:20 }}>Edit inline, copy, or regenerate each platform individually.</p>
+              </div>
+              <button onClick={()=>setSaveModal(true)} style={{ ...S.btnPrimary, fontSize:18, padding:"15px 26px" }}>Save Campaign</button>
             </div>
 
             <div style={{ display:"flex", flexDirection:"column", gap:22 }}>
@@ -656,8 +696,8 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               ))}
             </div>
 
-            {/* Bottom buttons — hashtags only */}
-            <div style={{ marginTop:40, borderTop:`4px solid ${T.primaryDark}`, paddingTop:36 }}>
+            {/* Hashtag Section */}
+            <div style={{ marginTop:40, borderTop:`4px solid ${T.borderStrong}`, paddingTop:36 }}>
               <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:16, marginBottom: hashtags || hashLoading ? 28 : 0 }}>
                 <div>
                   <h3 style={{ fontSize:26, fontWeight:900, color:T.text, marginBottom:6 }}>Hashtag Suggestions</h3>
@@ -690,7 +730,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                       <div style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
                         {tags.map(tag => (
                           <button key={tag} onClick={()=>copyHashtags([tag])} title="Click to copy"
-                            style={{ fontSize:17, fontWeight:700, padding:"9px 18px", background:T.surface, color:T.primaryDark, border:`2px solid ${T.primaryDark}`, borderRadius:8, cursor:"pointer", fontFamily:"inherit" }}>
+                            style={{ fontSize:17, fontWeight:700, padding:"9px 18px", background:T.surface, color:T.blue, border:`2px solid ${T.blue}`, borderRadius:8, cursor:"pointer", fontFamily:"inherit" }}>
                             {tag}
                           </button>
                         ))}
@@ -702,6 +742,18 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               )}
             </div>
 
+            {/* Bottom buttons */}
+            <div style={{ display:"flex", gap:16, marginTop:36, flexWrap:"wrap" }}>
+              <button onClick={()=>setView("form")} style={{ ...S.btnSecondary, fontSize:18, padding:"15px 22px" }}>← Edit Parameters</button>
+              <button onClick={generateAll} disabled={generating}
+                style={{ ...S.btnPrimary, fontSize:18, padding:"15px 26px", display:"flex", alignItems:"center", gap:10, opacity: generating ? 0.65 : 1 }}>
+                {generating && <span className="spin-anim" style={{ ...S.spinner, borderTopColor:"#fff" }} />}
+                Regenerate All
+              </button>
+              <button onClick={startNewCampaign} style={{ ...S.btnSecondary, fontSize:18, padding:"15px 22px", marginLeft:"auto" }}>
+                + New Campaign
+              </button>
+            </div>
           </div>
         )}
 
@@ -720,7 +772,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 <div style={{ fontSize:60, marginBottom:18 }}>📂</div>
                 <p style={{ color:T.textMid, fontSize:22, fontWeight:700, marginBottom:10 }}>No saved campaigns yet</p>
                 <p style={{ color:T.textMute, fontSize:18 }}>Generate messages and save your first campaign.</p>
-                <button onClick={()=>setView("form")} style={{ ...S.btnPrimary, marginTop:28, fontSize:18, padding:"15px 30px" }}>Generate Messages</button>
+                <button onClick={()=>setView("form")} style={{ ...S.btnPrimary, marginTop:28, fontSize:18, padding:"15px 30px" }}>Create Campaign</button>
               </div>
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
@@ -748,7 +800,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                     <div style={{ display:"flex", flexDirection:"column", gap:10, flexShrink:0 }}>
                       <button onClick={()=>loadCampaign(c)} style={{ ...S.btnPrimary, padding:"12px 24px", fontSize:17 }}>Load</button>
                       <button onClick={()=>deleteCampaign(c.id)}
-                        style={{ padding:"12px 24px", fontSize:17, fontWeight:700, background:T.surface, color:"#b91c1c", border:`2px solid #b91c1c`, borderRadius:8, cursor:"pointer", fontFamily:"inherit" }}>
+                        style={{ padding:"12px 24px", fontSize:17, fontWeight:700, background:T.surface, color:T.red, border:`2px solid ${T.red}`, borderRadius:8, cursor:"pointer", fontFamily:"inherit" }}>
                         Delete
                       </button>
                     </div>
