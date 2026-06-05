@@ -176,15 +176,29 @@ function parseOutput(text) {
   // Rebuttal lenses
   const lensesMatch = text.match(/##\s*Rebuttal Lenses\s*\n+([\s\S]*?)(?=\n##|\n###|$)/i);
   if (lensesMatch) {
-    const lensLines = lensesMatch[1].trim().split("\n").filter(l => l.trim());
-    lensLines.forEach(line => {
-      const m = line.match(/\*\*(.+?)\*\*[:\s—–-]*(.*)/);
-      if (m) result.lenses.push({ title: m[1].trim(), body: m[2].trim() });
-      else if (line.startsWith("- ") || line.match(/^\d+\./)) {
-        const clean = line.replace(/^[-\d.]+\s*/, "").replace(/^\*\*|\*\*$/g, "").trim();
+    const block = lensesMatch[1].trim();
+    const lines = block.split("\n").map(l => l.trim()).filter(l => l);
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      // Match bold title — possibly with inline description
+      const inlineMatch = line.match(/\*\*(.+?)\*\*[:\s—–-]*(.*)/);
+      if (inlineMatch) {
+        const title = inlineMatch[1].trim();
+        let body = inlineMatch[2].trim();
+        // If no inline body, check next line for description
+        if (!body && i + 1 < lines.length && !lines[i + 1].match(/^\*\*/)) {
+          body = lines[i + 1].replace(/^[-–—]\s*/, "").trim();
+          i++; // consume the description line
+        }
+        result.lenses.push({ title, body });
+      } else if (line.match(/^[-•]\s+/) || line.match(/^\d+\.\s+/)) {
+        // Fallback: bullet or numbered line
+        const clean = line.replace(/^[-•\d.]+\s*/, "").replace(/^\*\*|\*\*$/g, "").trim();
         if (clean) result.lenses.push({ title: clean, body: "" });
       }
-    });
+      i++;
+    }
   }
 
   // Activist label
