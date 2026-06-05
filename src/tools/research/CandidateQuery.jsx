@@ -162,7 +162,7 @@ export default function CandidateQuery() {
 
   // ── Styles ──────────────────────────────────────────────────────────────
   const S = {
-    wrap:    { fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: B.text },
+    wrap:    { fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: B.text, padding: '0 24px' },
     label:   { fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: B.textMid, marginBottom: 6, display: 'block' },
     input:   { width: '100%', padding: '12px 16px', border: `1.5px solid ${B.border}`, borderRadius: 8, fontSize: 16, color: B.text, background: B.surface, fontFamily: 'inherit' },
     btnPrimary: { background: B.teal, color: '#fff', fontWeight: 700, padding: '12px 28px', borderRadius: 8, border: `2px solid ${B.tealLight}`, cursor: 'pointer', fontSize: 16, fontFamily: 'inherit' },
@@ -182,9 +182,6 @@ export default function CandidateQuery() {
       {/* ── Instructions ── */}
       <div style={{ background: B.surfaceAlt, border: `1px solid ${B.border}`, borderRadius: 10, padding: '14px 18px', marginBottom: 20 }}>
         <p style={{ fontSize: 14, color: B.textMid, lineHeight: 1.7, margin: 0 }}>
-          <strong style={{ color: B.teal }}>UNDER CONTRUCTION. COME BACK LATER.  Deep-dive profiles on candidates — positions, vulnerabilities, voting records, and district context.</strong>{' '}
-          <em>This page layout is optimized for Laptop/Desktop use.</em>
-          <br />
           <strong style={{ color: B.teal }}>Search candidate profiles by:</strong>{' '}
           issue or topic (e.g. <em>water</em>, <em>housing</em>, <em>education</em>),
           candidate name, office or seat (e.g. <em>governor</em>, <em>attorney general</em>, <em>state senate</em>),
@@ -213,12 +210,14 @@ export default function CandidateQuery() {
           }
         </div>
 
-        {/* Filter chips */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-          {FILTER_TYPES.map(ft => (
-            <button key={ft.id} type="button" onClick={() => setFilter(ft.id)} style={S.filterBtn(filter === ft.id)}>{ft.label}</button>
-          ))}
-        </div>
+        {/* Filter chips — only shown after first search */}
+        {hasResults && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+            {FILTER_TYPES.map(ft => (
+              <button key={ft.id} type="button" onClick={() => setFilter(ft.id)} style={S.filterBtn(filter === ft.id)}>{ft.label}</button>
+            ))}
+          </div>
+        )}
       </form>
 
       {/* ── Error ── */}
