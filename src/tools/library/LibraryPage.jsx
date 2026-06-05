@@ -24,73 +24,24 @@ export default function LibraryPage() {
   const [rrArticles, setRrArticles] = useState([]);
   const [filter,     setFilter]     = useState("all");
   const [search,     setSearch]     = useState("");
+  const resetPage = () => setPage(1);
   const [notif,      setNotif]      = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [page,       setPage]       = useState(1);
-  const resetPage = () => setPage(1);
   const PAGE_SIZE = 8;
   const navigate = useNavigate();
 
   useEffect(() => { loadAll(); }, []);
 
-  // Normalize a value from Firestore to a plain JS primitive or safe type
-  const toStr = (v) => {
-    if (v === null || v === undefined) return "";
-    if (typeof v === "string") return v;
-    if (typeof v === "number" || typeof v === "boolean") return String(v);
-    // Firestore Timestamp
-    if (v && typeof v.toDate === "function") return v.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    if (v && typeof v.seconds === "number") return new Date(v.seconds * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    // Any other object — don't render it
-    return "";
-  };
-
-  const normalizeCampaign = (c) => ({
-    ...c,
-    id:       String(c.id || ""),
-    tool:     String(c.tool || ""),
-    name:     toStr(c.name),
-    date:     toStr(c.date),
-    savedAt:  toStr(c.savedAt),
-    narrative:toStr(c.narrative),
-    tone:     toStr(c.tone),
-    output:   toStr(c.output),
-    formData: c.formData ? {
-      issue:    toStr(c.formData.issue),
-      audience: toStr(c.formData.audience),
-      modifier: toStr(c.formData.modifier),
-      voice:    toStr(c.formData.voice),
-      style:    toStr(c.formData.style),
-      platforms: Array.isArray(c.formData.platforms)
-        ? c.formData.platforms.map(p => String(p))
-        : [],
-    } : {},
-  });
-
-  const normalizeArticle = (a) => ({
-    ...a,  // preserve ALL fields from Firebase (people, quotes, keyPoints, etc.)
-    id:          String(a.id || ""),
-    title:       toStr(a.title),
-    publication: toStr(a.publication),
-    reporter:    toStr(a.reporter),
-    date:        toStr(a.date),
-    savedAt:     toStr(a.savedAt),
-    summary:     toStr(a.summary),
-    url:         toStr(a.url),
-    savedBy:     toStr(a.savedBy),
-    linkedCampaigns: Array.isArray(a.linkedCampaigns) ? a.linkedCampaigns : [],
-    keyPoints:   Array.isArray(a.keyPoints) ? a.keyPoints.map(toStr) : [],
-  });
-
   const loadAll = async () => {
     setLoading(true);
     try {
       const all = await loadAllCampaigns();
-      setCampaigns((all || []).map(normalizeCampaign));
+      setCampaigns(all);
     } catch {}
     try {
       const articles = await loadArticles();
-      setRrArticles((articles || []).map(normalizeArticle));
+      setRrArticles(articles);
     } catch {}
     setLoading(false);
   };
@@ -117,8 +68,26 @@ export default function LibraryPage() {
   };
 
   const loadCampaign = (c) => {
-    if (c.tool === "message-machine") navigate("/messaging",      { state: { loadCampaign: c } });
-    else if (c.tool === "rebuttal")   navigate("/rebuttal",       { state: { loadCampaign: c } });
+    if (c.tool === "message-machine") {
+      // MM reads from localStorage on mount
+      try {
+        localStorage.setItem("mm_load_campaign", JSON.stringify(c));
+      } catch {}
+      navigate("/messaging");
+    } else if (c.tool === "rebuttal") {
+      // Rebuttal reads from localStorage on mount
+      try {
+        localStorage.setItem("rebuttal_load_campaign", JSON.stringify(c));
+      } catch {}
+      navigate("/rebuttal");
+    }
+  };
+
+  const loadArticleInRR = (article) => {
+    try {
+      localStorage.setItem("rr_load_article", JSON.stringify(article));
+    } catch {}
+    navigate("/rapid-response");
   };
 
   const pushArticleToMachine = (article) => {
@@ -140,39 +109,12 @@ export default function LibraryPage() {
     }
   };
 
-  // Combine and sort everything by most recent first
+  // Combine everything for the "all" view
   const allCampaigns = [
     ...campaigns.map(c => ({ ...c, _type: "campaign" })),
   ];
 
   const allArticles = rrArticles.map(a => ({ ...a, _type: "article", tool: "rapid-response" }));
-
-  // Helper to extract a sortable timestamp from any item
-  function sortKey(item) {
-    // ISO string (rebuttal new format, RR articles stored as ISO)
-    if (item.savedAt) {
-      const t = new Date(item.savedAt).getTime();
-      if (!isNaN(t)) return t;
-      // savedAt might be a formatted string like "May 29, 2026" — try parsing
-      const t2 = Date.parse(item.savedAt);
-      if (!isNaN(t2)) return t2;
-    }
-    // Message Machine stores date as "May 29, 2026" in .date field
-    if (item.date) {
-      const t = Date.parse(item.date);
-      if (!isNaN(t)) return t;
-    }
-    return 0;
-  }
-
-  // Safe date display — fields are already normalized strings by this point
-  function fmtDate(item) {
-    const raw = item.savedAt || item.date || "";
-    if (!raw) return "";
-    const d = new Date(raw);
-    if (!isNaN(d.getTime())) return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    return raw; // already a formatted string
-  }
 
   // Filter
   const showCampaigns = filter === "all" || filter === "message-machine" || filter === "rebuttal";
@@ -198,13 +140,10 @@ export default function LibraryPage() {
 
   const totalShown = (showCampaigns ? filteredCampaigns.length : 0) + (showArticles ? filteredArticles.length : 0);
   const totalPages = Math.ceil(totalShown / PAGE_SIZE);
-
-  // Merge all visible items and sort most-recent first
   const allItems = [
     ...(showCampaigns ? filteredCampaigns.map(c => ({ ...c, _itemType: "campaign" })) : []),
     ...(showArticles  ? filteredArticles.map(a => ({ ...a, _itemType: "article" }))   : []),
-  ].sort((a, b) => sortKey(b) - sortKey(a));
-
+  ];
   const pageItems   = allItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const pageCampaigns = pageItems.filter(x => x._itemType === "campaign");
   const pageArticles  = pageItems.filter(x => x._itemType === "article");
@@ -282,12 +221,16 @@ export default function LibraryPage() {
           </div>
         )}
 
-        {/* ── All items in one sorted list ── */}
-        {!loading && pageItems.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 40 }}>
-            {pageItems.map(item => {
-              if (item._itemType === "campaign") {
-                const c = item;
+        {/* ── Campaign cards (Message Machine + Rebuttal) ── */}
+        {showCampaigns && filteredCampaigns.length > 0 && (
+          <div style={{ marginBottom: 40 }}>
+            {(filter === "all") && (
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: TEAL, marginBottom: 16, paddingBottom: 8, borderBottom: `2px solid ${GOLD}`, display: "inline-block" }}>
+                Campaigns
+              </h2>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {pageCampaigns.map(c => {
                 const meta = TOOL_META[c.tool] || { label: c.tool, color: CHARCOAL, emoji: "📄" };
                 return (
                   <div key={c.id} style={{ background: "#fafaf8", border: `1.5px solid ${BORDER}`, borderLeft: `5px solid ${meta.color}`, borderRadius: 10, padding: "20px 22px", display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
@@ -295,22 +238,18 @@ export default function LibraryPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
                         <span style={{ fontSize: 20 }}>{meta.emoji}</span>
                         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: meta.color }}>{meta.label}</span>
-                        {fmtDate(c) && <span style={{ fontSize: 13, color: "#888" }}>{fmtDate(c)}</span>}
                       </div>
                       <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 6 }}>{c.name || "Untitled Campaign"}</p>
-                      {(c.narrative || c.formData?.issue) && (
-                        <p style={{ fontSize: 14, color: "#666", lineHeight: 1.6, marginBottom: 8, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-                          {(c.narrative || c.formData?.issue || "").substring(0, 240)}
-                        </p>
+                      {c.date && <p style={{ fontSize: 13, color: "#888" }}>Saved {c.date}</p>}
+                      {c.formData?.audience && (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                          {c.formData.audience && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.formData.audience}</span>}
+                          {c.formData.modifier  && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.formData.modifier}</span>}
+                          {(c.formData.platforms || []).map(pid => (
+                            <span key={pid} style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: meta.color + "22", color: meta.color, borderRadius: 12, border: `1px solid ${meta.color}` }}>{pid}</span>
+                          ))}
+                        </div>
                       )}
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
-                        {c.formData?.audience && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.formData.audience}</span>}
-                        {c.formData?.modifier  && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.formData.modifier}</span>}
-                        {c.tone                && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.tone}</span>}
-                        {(c.formData?.platforms || []).map(pid => (
-                          <span key={pid} style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: meta.color + "22", color: meta.color, borderRadius: 12, border: `1px solid ${meta.color}` }}>{pid}</span>
-                        ))}
-                      </div>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
                       <button onClick={() => loadCampaign(c)} style={btnStyle("#fff", TEAL)}>Load →</button>
@@ -318,36 +257,47 @@ export default function LibraryPage() {
                     </div>
                   </div>
                 );
-              } else {
-                const a = item;
-                return (
-                  <div key={a.id} style={{ background: "#fafaf8", border: `1.5px solid ${BORDER}`, borderLeft: `5px solid ${TEAL}`, borderRadius: 10, padding: "20px 22px", display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
-                    <div style={{ flex: 1, minWidth: 200 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                        <span style={{ fontSize: 20 }}>📡</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: TEAL }}>Rapid Response</span>
-                        {fmtDate(a) && <span style={{ fontSize: 13, color: "#888" }}>{fmtDate(a)}</span>}
-                      </div>
-                      <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 4 }}>{a.title || "Untitled Article"}</p>
-                      <p style={{ fontSize: 13, color: "#888", marginBottom: 8 }}>
-                        {a.publication}{a.date ? ` · ${a.date}` : ""}{a.reporter ? ` · ${a.reporter}` : ""}
-                      </p>
-                      {a.summary && (
-                        <p style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.6, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{a.summary}</p>
-                      )}
-                      {a.linkedCampaigns?.length > 0 && (
-                        <p style={{ fontSize: 12, color: TEAL, fontWeight: 700, marginTop: 8 }}>🔗 {a.linkedCampaigns.length} linked campaign{a.linkedCampaigns.length !== 1 ? "s" : ""}</p>
-                      )}
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Rapid Response articles ── */}
+        {showArticles && filteredArticles.length > 0 && (
+          <div style={{ marginBottom: 40 }}>
+            {(filter === "all") && (
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: TEAL, marginBottom: 16, paddingBottom: 8, borderBottom: `2px solid ${GOLD}`, display: "inline-block" }}>
+                📡 Rapid Response Articles
+              </h2>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {pageArticles.map(a => (
+                <div key={a.id} style={{ background: "#fafaf8", border: `1.5px solid ${BORDER}`, borderLeft: `5px solid ${TEAL}`, borderRadius: 10, padding: "20px 22px", display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                      <span style={{ fontSize: 20 }}>📡</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: TEAL }}>Rapid Response</span>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
-                      <button onClick={() => navigate("/rapid-response", { state: { loadArticle: a } })} style={btnStyle("#fff", TEAL)}>Open in Rapid Response</button>
-                      <button onClick={() => pushArticleToMachine(a)} style={btnStyle(TEAL)}>Push to Message Machine →</button>
-                      <button onClick={() => handleDeleteArticle(a.id)} style={btnStyle(RED)}>Delete</button>
-                    </div>
+                    <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 4 }}>{a.title || "Untitled Article"}</p>
+                    <p style={{ fontSize: 13, color: "#888", marginBottom: 8 }}>
+                      {a.publication}{a.date ? ` · ${a.date}` : ""}{a.reporter ? ` · ${a.reporter}` : ""}
+                    </p>
+                    {a.summary && (
+                      <p style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.6, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{a.summary}</p>
+                    )}
+                    {a.linkedCampaigns?.length > 0 && (
+                      <p style={{ fontSize: 12, color: TEAL, fontWeight: 700, marginTop: 8 }}>🔗 {a.linkedCampaigns.length} campaign{a.linkedCampaigns.length !== 1 ? "s" : ""} created from this article</p>
+                    )}
+                    {a.savedBy && <p style={{ fontSize: 12, color: "#888", marginTop: 6 }}>Saved by {a.savedBy}{a.savedAt ? ` · ${a.savedAt}` : ""}</p>}
                   </div>
-                );
-              }
-            })}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+                    <button onClick={() => loadArticleInRR(a)} style={btnStyle("#fff", TEAL)}>Open in Rapid Response</button>
+                    <button onClick={() => pushArticleToMachine(a)} style={btnStyle(TEAL)}>Push to Message Machine →</button>
+                    <button onClick={() => handleDeleteArticle(a.id)} style={btnStyle(RED)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
