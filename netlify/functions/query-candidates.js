@@ -29,7 +29,7 @@ async function fetchAllRows(auth) {
   const sheets = google.sheets({ version: 'v4', auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: 'Sheet1!A2:G', // skip header row
+    range: 'A2:G', // skip header row
   });
   return response.data.values || [];
 }
