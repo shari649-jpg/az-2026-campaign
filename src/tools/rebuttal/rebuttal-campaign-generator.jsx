@@ -362,28 +362,22 @@ export default function RebuttalGenerator() {
     setCopied(false); setSaved(false);
   };
 
-  // ── Generate ────────────────────────────────────────────────────────────
+  // ── Generate — two sequential calls to stay under 10s timeout ────────────
   const generate = async () => {
     if (!narrative.trim()) return;
     setLoading(true); setOutput(""); setError(null);
     setCopied(false); setSaved(false);
-    setStatus("Building your campaign…");
 
-    const userPrompt = `False narrative to rebut: "${narrative.trim()}"
-
-Generate the full rapid rebuttal posting plan: derive the anchor phrase, identify 3 rebuttal lenses, then write platform-specific posts (Facebook, Instagram, Threads, BlueSky, Twitter/X, TikTok) with each post's first comment paired directly beneath it.`;
-
-    try {
+    const callAPI = async (systemPrompt, userContent, maxTokens) => {
       const res = await fetch("/.netlify/functions/generate-rebuttal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          max_tokens: 4000,
-          system: buildPrompt(profile, TONES.find(t => t.key === tone) ?? null),
-          messages: [{ role: "user", content: userPrompt }],
+          max_tokens: maxTokens,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userContent }],
         }),
       });
-
       if (!res.ok) {
         const err = await res.json();
         const raw = (err?.error?.message || "").toLowerCase();
@@ -392,11 +386,47 @@ Generate the full rapid rebuttal posting plan: derive the anchor phrase, identif
         if (res.status === 529 || res.status === 503) throw new Error("OVERLOADED");
         throw new Error("GENERIC");
       }
-
       const data = await res.json();
-      const text = data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
-      setOutput(text);
+      return data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
+    };
+
+    const toneObj = TONES.find(t => t.key === tone) ?? null;
+    const systemPrompt = buildPrompt(profile, toneObj);
+
+    try {
+      // ── Call 1: Anchor phrase + lenses only ──────────────────────────────
+      setStatus("Step 1 of 2 — Building anchor phrase and lenses…");
+
+      const call1User = `False narrative to rebut: "${narrative.trim()}"
+
+Generate ONLY the following two sections — do not write any platform posts yet:
+
+## Anchor Phrase
+Derive one short memorable sentence specific to this false narrative as the campaign spine. State it, then in one sentence explain why it works for this claim.
+
+## Rebuttal Lenses
+Three lenses with bold titles and one-sentence explanations.
+
+Stop after the Rebuttal Lenses section.`;
+
+      const part1 = await callAPI(systemPrompt, call1User, 500);
+
+      // ── Call 2: Platform posts using part1 as context ────────────────────
+      setStatus("Step 2 of 2 — Writing platform posts…");
+
+      const call2User = `False narrative to rebut: "${narrative.trim()}"
+
+The anchor phrase and lenses have already been established:
+
+${part1}
+
+Now write the Activist section with platform-specific posts for all 6 platforms. Follow the output structure exactly as specified — include the Activist label line, then all 6 platforms each with POST: and FIRST COMMENT: paired.`;
+
+      const part2 = await callAPI(systemPrompt, call2User, 1400);
+
+      setOutput(`${part1}\n\n${part2}`);
       setStatus("Campaign ready.");
+
     } catch (e) {
       setError(ERROR_MSGS[e.message] ?? ERROR_MSGS.GENERIC);
       setStatus("");
