@@ -1,4 +1,27 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+function useScrollArrows() {
+  const [showUp, setShowUp] = useState(false);
+  const [showDown, setShowDown] = useState(false);
+  useEffect(() => {
+    const onScroll = () => {
+      const scrolled = window.scrollY;
+      const atBottom = window.innerHeight + scrolled >= document.body.scrollHeight - 80;
+      setShowUp(scrolled > 200);
+      setShowDown(!atBottom && document.body.scrollHeight > window.innerHeight + 200);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  return { showUp, showDown };
+}
+
+function localStorageSafe(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); return true; }
+  catch { return false; }
+}
 
 const B = {
   teal:       '#1D5C4A',
@@ -53,12 +76,16 @@ function factsToText(c) {
 }
 
 export default function RaceComparison() {
+  const navigate = useNavigate();
+  const { showUp, showDown } = useScrollArrows();
   const [races,    setRaces]    = useState(null);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState(null);
   const [expanded, setExpanded] = useState({});
   const [selected, setSelected] = useState({});
+  const [selectedFacts, setSelectedFacts] = useState({}); // `candidateName:factIndex` -> fact object
   const [pushed,   setPushed]   = useState(false);
+  const [lsError,  setLsError]  = useState(false);
   const [search,   setSearch]   = useState('');
 
   useEffect(() => { loadRaces(); }, []);
@@ -84,6 +111,19 @@ export default function RaceComparison() {
 
   const selectedList = Object.values(selected);
   const hasSelected  = selectedList.length > 0;
+  const selectedFactList = Object.values(selectedFacts);
+  const hasSelectedFacts = selectedFactList.length > 0;
+
+  function toggleFact(candidate, factIndex, fact) {
+    const key = `${candidate.candidate_name}:${factIndex}`;
+    setSelectedFacts(p => {
+      const next = { ...p };
+      if (next[key]) delete next[key];
+      else next[key] = { candidate, fact };
+      return next;
+    });
+    setPushed(false);
+  }
 
   const filteredRaces = useMemo(() => {
     if (!races) return [];
@@ -111,17 +151,36 @@ export default function RaceComparison() {
   }
 
   function pushToMessageMachine() {
-    const candidates = hasSelected ? selectedList : (races || []).flatMap(r => r.candidates);
-    const sections = candidates.map(c => factsToText(c)).join('\n\n');
+    let issueText;
+    if (hasSelectedFacts) {
+      // Group selected facts by candidate
+      const byCandidate = {};
+      selectedFactList.forEach(({ candidate, fact }) => {
+        const label = candidateLabel(candidate);
+        if (!byCandidate[label]) byCandidate[label] = [];
+        const tag = fact.type ? `[${fact.type.toUpperCase()}${fact.category ? ' – ' + fact.category : ''}] ` : '';
+        byCandidate[label].push(`• ${tag}${fact.text}`);
+      });
+      issueText = Object.entries(byCandidate)
+        .map(([label, lines]) => `── ${label} ──\n${lines.join('\n')}`)
+        .join('\n\n');
+    } else if (hasSelected) {
+      issueText = selectedList.map(c => factsToText(c)).join('\n\n');
+    } else {
+      issueText = (races || []).flatMap(r => r.candidates).map(c => factsToText(c)).join('\n\n');
+    }
     const payload = {
       sourceArticleId:   null,
-      sourceTitle:       `Candidate Research: ${candidates.map(c => c.candidate_name).join(', ')}`,
+      sourceTitle:       hasSelectedFacts ? `Selected Facts — AZ 2026 Research` : `Candidate Research: ${(hasSelected ? selectedList : (races||[]).flatMap(r=>r.candidates)).map(c=>c.candidate_name).join(', ')}`,
       sourcePublication: 'AZ 2026 Candidate Research',
-      issueText:         sections,
-      focalPoint:        candidates[0]?.facts?.[0]?.text || '',
+      issueText,
+      focalPoint:        '',
       pushedAt:          new Date().toISOString(),
     };
-    try { localStorage.setItem('rr_pending_article', JSON.stringify(payload)); setPushed(true); } catch {}
+    const ok = localStorageSafe('rr_pending_article', payload);
+    if (!ok) { setLsError(true); return; }
+    setPushed(true);
+    navigate('/messaging');
   }
 
   const S = {
@@ -134,6 +193,17 @@ export default function RaceComparison() {
 
   return (
     <div style={S.wrap}>
+      {/* Floating scroll arrows */}
+      {showUp && (
+        <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          style={{ position: 'fixed', bottom: 72, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: B.teal, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          aria-label="Scroll to top">↑</button>
+      )}
+      {showDown && (
+        <button onClick={() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })}
+          style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: B.teal, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          aria-label="Scroll to bottom">↓</button>
+      )}
 
       {/* Instructions */}
       <div style={{ background: B.surfaceAlt, border: `1px solid ${B.border}`, borderRadius: 10, padding: '14px 18px', marginBottom: 20 }}>
@@ -173,23 +243,33 @@ export default function RaceComparison() {
         </div>
       )}
 
+      {/* lsError */}
+      {lsError && (
+        <div style={{ background: '#fff7ed', border: '1.5px solid #f5c842', borderRadius: 10, padding: '14px 18px', marginBottom: 16, color: '#7a4f00', fontSize: 14 }}>
+          <strong>⚠️ Could not send to Message Machine</strong> — browser storage is disabled. Copy your content manually.
+          <button onClick={() => setLsError(false)} style={{ marginLeft: 12, background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700, color: '#7a4f00' }}>✕</button>
+        </div>
+      )}
+
       {/* Summary bar */}
       {races && !loading && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
           <p style={{ fontSize: 15, color: B.textMid, fontWeight: 700, margin: 0 }}>
             {filteredRaces.length} race{filteredRaces.length !== 1 ? 's' : ''}
             {search ? ` matching "${search}"` : ''}
-            {hasSelected && <span style={{ color: B.teal }}> · {selectedList.length} selected</span>}
+            {hasSelectedFacts && <span style={{ color: B.teal }}> · {selectedFactList.length} fact{selectedFactList.length !== 1 ? 's' : ''} selected</span>}
+            {!hasSelectedFacts && hasSelected && <span style={{ color: B.teal }}> · {selectedList.length} candidate{selectedList.length !== 1 ? 's' : ''} selected</span>}
           </p>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {hasSelected && (
-              <button onClick={() => setSelected({})} style={S.btnSmall}>Clear selection</button>
+            {(hasSelected || hasSelectedFacts) && (
+              <button onClick={() => { setSelected({}); setSelectedFacts({}); }} style={S.btnSmall}>Clear selection</button>
             )}
             <button
               onClick={pushToMessageMachine}
               style={{ ...S.btnGold, opacity: pushed ? 0.7 : 1, cursor: pushed ? 'default' : 'pointer' }}
             >
               {pushed ? '✓ Sent to Message Machine'
+                : hasSelectedFacts ? `Send ${selectedFactList.length} fact${selectedFactList.length!==1?'s':''} to Message Machine →`
                 : hasSelected ? `Send ${selectedList.length} selected to Message Machine →`
                 : 'Send all to Message Machine →'}
             </button>
@@ -306,9 +386,18 @@ export default function RaceComparison() {
                   ) : (
                     (candidate.facts || []).map((fact, fi) => {
                       const fc = FACT_COLORS[fact.type] || FACT_COLORS.background;
+                      const factKey = `${candidate.candidate_name}:${fi}`;
+                      const isFactSelected = !!selectedFacts[factKey];
                       return (
-                        <div key={fi} style={{ background: fc.bg, border: `1px solid ${fc.border}`, borderRadius: 8, padding: '10px 14px', marginBottom: 10 }}>
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 5 }}>
+                        <div key={fi} style={{ background: isFactSelected ? fc.bg : fc.bg + 'aa', border: `1.5px solid ${isFactSelected ? fc.text : fc.border}`, borderRadius: 8, padding: '10px 14px', marginBottom: 10 }}>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 5, alignItems: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={isFactSelected}
+                              onChange={() => toggleFact(candidate, fi, fact)}
+                              style={{ width: 15, height: 15, accentColor: B.teal, cursor: 'pointer', flexShrink: 0 }}
+                              aria-label={`Select fact: ${fact.text.substring(0, 40)}`}
+                            />
                             <span style={{ fontSize: 11, fontWeight: 700, color: fc.text, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{fact.type}</span>
                             {fact.category && <span style={{ fontSize: 11, color: fc.text, opacity: 0.8 }}>· {fact.category}</span>}
                           </div>
@@ -316,22 +405,10 @@ export default function RaceComparison() {
                             {fact.type === 'quote' ? `"${fact.text}"` : fact.text}
                           </p>
                           <button
-                            onClick={() => {
-                              const label = `── ${candidateLabel(candidate)} ──`;
-                              const tag = `[${fact.type.toUpperCase()}${fact.category ? ' – ' + fact.category : ''}] `;
-                              const payload = {
-                                sourceArticleId: null,
-                                sourceTitle: `${candidate.candidate_name} – ${fact.category || fact.type}`,
-                                sourcePublication: 'AZ 2026 Candidate Research',
-                                issueText: `${label}\n• ${tag}${fact.text}`,
-                                focalPoint: fact.text,
-                                pushedAt: new Date().toISOString(),
-                              };
-                              try { localStorage.setItem('rr_pending_article', JSON.stringify(payload)); setPushed(true); } catch {}
-                            }}
-                            style={{ fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 6, border: `1px solid ${fc.border}`, background: 'transparent', color: fc.text, cursor: 'pointer', fontFamily: 'inherit' }}
+                            onClick={() => toggleFact(candidate, fi, fact)}
+                            style={{ fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 6, border: `1px solid ${fc.border}`, background: isFactSelected ? fc.text : 'transparent', color: isFactSelected ? '#fff' : fc.text, cursor: 'pointer', fontFamily: 'inherit' }}
                           >
-                            Use in Message Machine →
+                            {isFactSelected ? '✓ Selected' : 'Select fact →'}
                           </button>
                         </div>
                       );
