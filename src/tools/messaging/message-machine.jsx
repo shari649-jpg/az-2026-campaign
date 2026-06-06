@@ -36,10 +36,14 @@ const T = {
   text:     "#111111",
   textMid:  "#333333",
   textMute: "#555555",
-  red:      "#c41e1e",
-  redDark:  "#8b0000",
-  blue:     "#0044cc",
+  teal:     "#1D5C4A",
+  tealDark: "#164437",
+  gold:     "#F5C842",
+  goldDark: "#d4aa30",
+  turquoise:"#3ECFB2",
+  charcoal: "#4A4558",
   green:    "#145214",
+  red:      "#c41e1e",
 };
 
 const globalCSS = `
@@ -49,11 +53,11 @@ const globalCSS = `
   body { background: ${T.pageBg} !important; color: ${T.text}; }
   textarea, input, button { font-family: 'Atkinson Hyperlegible', Georgia, serif; }
   textarea:focus, input:focus {
-    outline: 4px solid ${T.blue} !important;
+    outline: 4px solid ${T.turquoise} !important;
     outline-offset: 2px;
-    border-color: ${T.blue} !important;
+    border-color: ${T.teal} !important;
   }
-  button:focus { outline: 4px solid ${T.blue}; outline-offset: 3px; }
+  button:focus { outline: 4px solid ${T.turquoise}; outline-offset: 3px; }
   button:active { transform: scale(0.97); }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes slideDown { from { opacity:0; transform:translateY(-8px);} to {opacity:1;transform:translateY(0);} }
@@ -105,12 +109,12 @@ const S = {
     fontFamily: "inherit",
   },
   btnPrimary: {
-    background: T.red,
+    background: T.teal,
     color: "#ffffff",
     fontWeight: 900,
     padding: "15px 26px",
     borderRadius: 8,
-    border: `3px solid ${T.redDark}`,
+    border: `3px solid ${T.tealDark}`,
     cursor: "pointer",
     fontSize: 18,
     fontFamily: "inherit",
@@ -174,14 +178,16 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
   };
 
   return (
-    <div style={{ ...S.card, borderWidth: 3 }}>
-      <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:14 }}>
-        <span style={{ ...S.platformBadge, background: p.bg, color: p.text }}>{p.abbr}</span>
-        <span style={{ fontWeight:700, color:T.text, fontSize:20 }}>{p.name}</span>
-        <span style={{ marginLeft:"auto", fontFamily:"monospace", fontSize:15, fontWeight:700, color: over ? T.red : T.textMute }}>
+    <div style={{ ...S.card, borderWidth: 3, overflow: 'hidden', padding: 0 }}>
+      {/* Colored platform header */}
+      <div style={{ background: p.bg, color: p.text, padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ ...S.platformBadge, width: 32, height: 32, fontSize: 11, background: 'rgba(255,255,255,0.2)', color: p.text }}>{p.abbr}</span>
+        <span style={{ fontWeight: 900, fontSize: 18, letterSpacing: '0.02em' }}>{p.name}</span>
+        <span style={{ marginLeft: 'auto', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: over ? '#fca5a5' : 'rgba(255,255,255,0.7)' }}>
           {charCount.toLocaleString()} / {p.maxChars.toLocaleString()}
         </span>
       </div>
+      <div style={{ padding: 24 }}>
 
       {loading ? (
         <div style={{ display:"flex", alignItems:"center", gap:14, padding:"32px 0", color:T.textMid }}>
@@ -225,6 +231,7 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
           Rephrase
         </button>
       </div>
+      </div>
     </div>
   );
 }
@@ -247,6 +254,20 @@ export default function App() {
 
   useEffect(() => {
     loadCampaigns();
+    // Check for rebuttal push → load directly into results view with pre-filled platform cards
+    try {
+      const rebuttalPush = localStorage.getItem("rebuttal_push_results");
+      if (rebuttalPush) {
+        const p = JSON.parse(rebuttalPush);
+        // p.messages = { facebook, instagram, threads, bluesky, twitter, tiktok }
+        // p.issueText = anchor phrase + lenses (for Edit Parameters)
+        setMessages(p.messages || {});
+        setFormData(f => ({ ...f, issue: p.issueText || "", focalPoint: "", platforms: Object.keys(p.messages || {}) }));
+        setView("results");
+        localStorage.removeItem("rebuttal_push_results");
+        return; // skip other localStorage checks
+      }
+    } catch {}
     // Check if Rapid Response or Research pushed content
     try {
       const pending = localStorage.getItem("rr_pending_article");
@@ -460,7 +481,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
       <header style={{ background:T.pageBg, borderBottom:`4px solid ${T.borderStrong}`, position:"sticky", top:0, zIndex:40 }}>
         <div style={{ maxWidth:860, margin:"0 auto", padding:"14px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:16, flexWrap:"wrap" }}>
           <div style={{ display:"flex", alignItems:"center", gap:14 }}>
-            <div style={{ width:48, height:48, background:T.red, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:24, color:"#fff" }}>M</div>
+            <div style={{ width:48, height:48, background:T.teal, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:24, color:"#fff" }}>M</div>
             <h1 style={{ fontSize:26, fontWeight:900, color:T.text }}>Message Machine</h1>
           </div>
           <nav style={{ display:"flex", gap:6, alignItems:"center" }} role="navigation" aria-label="Main navigation">
@@ -582,7 +603,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                           <label key={a} style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
                             <input type="radio" name="audience" value={a} checked={on} onChange={()=>upd("audience",on?"":a)}
                               onClick={()=>{ if(on) upd("audience",""); }}
-                              style={{ width:24, height:24, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
+                              style={{ width:24, height:24, accentColor:T.teal, cursor:"pointer", flexShrink:0 }} />
                             <span style={{ fontSize:18, fontWeight: on ? 700 : 400, color:T.text }}>{a}</span>
                           </label>
                         );
@@ -613,7 +634,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                             <input type="radio" name="style" value={st.id} checked={on}
                               onChange={()=>upd("style",on?"":st.id)}
                               onClick={()=>{ if(on) upd("style",""); }}
-                              style={{ width:24, height:24, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
+                              style={{ width:24, height:24, accentColor:T.teal, cursor:"pointer", flexShrink:0 }} />
                             <span style={{ fontSize:18, fontWeight: on ? 700 : 400, color:T.text }}>{st.label}</span>
                           </label>
                         );
@@ -633,7 +654,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                             <input type="radio" name="modifier" value={m} checked={on}
                               onChange={()=>upd("modifier",on?"":m)}
                               onClick={()=>{ if(on) upd("modifier",""); }}
-                              style={{ width:22, height:22, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
+                              style={{ width:22, height:22, accentColor:T.teal, cursor:"pointer", flexShrink:0 }} />
                             <span style={{ fontSize:17, fontWeight: on ? 700 : 400, color:T.text }}>{m}</span>
                           </label>
                         );
@@ -655,7 +676,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                           <input type="radio" name="regenOption" value={o.id} checked={on}
                             onChange={()=>upd("regenOption",on?"":o.id)}
                             onClick={()=>{ if(on) upd("regenOption",""); }}
-                            style={{ width:22, height:22, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
+                            style={{ width:22, height:22, accentColor:T.teal, cursor:"pointer", flexShrink:0 }} />
                           <span style={{ fontSize:17, fontWeight: on ? 700 : 400, color:T.text }}>{o.label}</span>
                         </label>
                       );
@@ -681,7 +702,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                           transition:"all 0.15s", minWidth:0,
                         }}>
                           <input type="checkbox" checked={on} onChange={()=>togglePlatform(p.id)}
-                            style={{ width:22, height:22, accentColor:T.red, cursor:"pointer", flexShrink:0 }} />
+                            style={{ width:22, height:22, accentColor:T.teal, cursor:"pointer", flexShrink:0 }} />
                           <span style={{ ...S.platformBadge, width:34, height:34, fontSize:11, background:p.bg, color:p.text, flexShrink:0 }}>{p.abbr}</span>
                           <span style={{ fontSize:16, fontWeight: on ? 700 : 500, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</span>
                         </label>
@@ -788,7 +809,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                       <div style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
                         {tags.map(tag => (
                           <button key={tag} onClick={()=>copyHashtags([tag])} title="Click to copy"
-                            style={{ fontSize:17, fontWeight:700, padding:"9px 18px", background:T.surface, color:T.blue, border:`2px solid ${T.blue}`, borderRadius:8, cursor:"pointer", fontFamily:"inherit" }}>
+                            style={{ fontSize:17, fontWeight:700, padding:"9px 18px", background:T.surface, color:T.teal, border:`2px solid ${T.teal}`, borderRadius:8, cursor:"pointer", fontFamily:"inherit" }}>
                             {tag}
                           </button>
                         ))}
