@@ -51,20 +51,20 @@ export default function ResearchPage() {
                 flex: 1,
                 padding: '14px 20px',
                 border: 'none',
-                borderBottom: isActive ? `3px solid ${B.teal}` : '3px solid transparent',
-                background: isActive ? B.surface : B.surfaceAlt,
-                color: isActive ? B.teal : B.textMid,
+                borderBottom: isActive ? `4px solid ${B.gold}` : `4px solid transparent`,
+                background: isActive ? B.teal : B.surfaceAlt,
+                color: isActive ? '#fff' : B.textMid,
                 fontWeight: isActive ? 700 : 500,
                 fontSize: 15,
                 fontFamily: 'inherit',
                 cursor: 'pointer',
                 textAlign: 'left',
                 transition: 'all 0.15s',
-                marginBottom: -2, // overlap the border-bottom
+                marginBottom: -2,
               }}
             >
               <div style={{ fontSize: 15, fontWeight: isActive ? 700 : 600 }}>{tab.label}</div>
-              <div style={{ fontSize: 12, color: isActive ? B.tealLight : '#aaa', marginTop: 2 }}>{tab.desc}</div>
+              <div style={{ fontSize: 12, color: isActive ? 'rgba(255,255,255,0.8)' : '#aaa', marginTop: 2 }}>{tab.desc}</div>
             </button>
           );
         })}
