@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 function useScrollArrows() {
@@ -89,7 +89,7 @@ export default function RaceComparison() {
   const [search,   setSearch]   = useState('');
   const [districtMap,      setDistrictMap]      = useState({});
   const [districtExpanded, setDistrictExpanded] = useState({});
-  const [districtPushed,   setDistrictPushed]   = useState({});
+  const [districtPrompt,   setDistrictPrompt]   = useState(null); // district object to prompt about, or null
 
   useEffect(() => { loadRaces(); loadDistricts(); }, []);
 
@@ -143,21 +143,6 @@ export default function RaceComparison() {
     return lines.join('\n');
   }
 
-  function pushDistrictToMM(d) {
-    const payload = {
-      sourceArticleId: null,
-      sourceTitle: `District Context: ${d.district_id}`,
-      sourcePublication: 'AZ 2026 District Research',
-      issueText: buildDistrictIssueText(d),
-      focalPoint: '',
-      pushedAt: new Date().toISOString(),
-    };
-    const ok = localStorageSafe('rr_pending_article', payload);
-    if (!ok) { setLsError(true); return; }
-    setDistrictPushed(p => ({ ...p, [d.district_id]: true }));
-    navigate('/messaging');
-  }
-
   function toggleFact(candidate, factIndex, fact) {
     const key = `${candidate.candidate_name}:${factIndex}`;
     setSelectedFacts(p => {
@@ -194,10 +179,8 @@ export default function RaceComparison() {
     setPushed(false);
   }
 
-  function pushToMessageMachine() {
-    let issueText;
+  function buildCandidateIssueText() {
     if (hasSelectedFacts) {
-      // Group selected facts by candidate
       const byCandidate = {};
       selectedFactList.forEach(({ candidate, fact }) => {
         const label = candidateLabel(candidate);
@@ -205,26 +188,63 @@ export default function RaceComparison() {
         const tag = fact.type ? `[${fact.type.toUpperCase()}${fact.category ? ' – ' + fact.category : ''}] ` : '';
         byCandidate[label].push(`• ${tag}${fact.text}`);
       });
-      issueText = Object.entries(byCandidate)
+      return Object.entries(byCandidate)
         .map(([label, lines]) => `── ${label} ──\n${lines.join('\n')}`)
         .join('\n\n');
     } else if (hasSelected) {
-      issueText = selectedList.map(c => factsToText(c)).join('\n\n');
+      return selectedList.map(c => factsToText(c)).join('\n\n');
     } else {
-      issueText = (races || []).flatMap(r => r.candidates).map(c => factsToText(c)).join('\n\n');
+      return (races || []).flatMap(r => r.candidates).map(c => factsToText(c)).join('\n\n');
     }
+  }
+
+  function doSend(issueText, withDistrict) {
+    const candidatesForTitle = hasSelected ? selectedList : (races||[]).flatMap(r=>r.candidates);
     const payload = {
       sourceArticleId:   null,
-      sourceTitle:       hasSelectedFacts ? `Selected Facts — AZ 2026 Research` : `Candidate Research: ${(hasSelected ? selectedList : (races||[]).flatMap(r=>r.candidates)).map(c=>c.candidate_name).join(', ')}`,
+      sourceTitle:       hasSelectedFacts ? 'Selected Facts — AZ 2026 Research' : `Candidate Research: ${candidatesForTitle.map(c=>c.candidate_name).join(', ')}`,
       sourcePublication: 'AZ 2026 Candidate Research',
       issueText,
       focalPoint:        '',
       pushedAt:          new Date().toISOString(),
     };
     const ok = localStorageSafe('rr_pending_article', payload);
-    if (!ok) { setLsError(true); return; }
+    if (!ok) { setLsError(true); setDistrictPrompt(null); return; }
     setPushed(true);
+    setDistrictPrompt(null);
     navigate('/messaging');
+  }
+
+  function pushToMessageMachine() {
+    const candidateIssueText = buildCandidateIssueText();
+
+    // Check if all selected candidates share a single district that exists in districtMap
+    const activeCandidates = hasSelectedFacts
+      ? [...new Map(selectedFactList.map(({candidate}) => [candidate.candidate_name, candidate])).values()]
+      : hasSelected ? selectedList : (races||[]).flatMap(r=>r.candidates);
+
+    const districts = [...new Set(activeCandidates.map(c => c.district).filter(Boolean))];
+    const singleDistrict = districts.length === 1 ? districtMap[districts[0]] : null;
+
+    if (singleDistrict) {
+      setDistrictPrompt({ district: singleDistrict, candidateIssueText });
+    } else {
+      doSend(candidateIssueText, false);
+    }
+  }
+
+  function sendWithDistrict() {
+    if (!districtPrompt) return;
+    const { district, candidateIssueText } = districtPrompt;
+    const districtText = [
+      `\n── District Context: ${district.district_id} ──`,
+      district.location_note  ? `Location: ${district.location_note}`     : null,
+      district.registration   ? `Registration: ${district.registration}`   : null,
+      district.voting_history ? `Voting History: ${district.voting_history}` : null,
+      district.demographics   ? `Demographics: ${district.demographics}`   : null,
+      district.top_issues     ? `Top Issues: ${district.top_issues}`       : null,
+    ].filter(Boolean).join('\n');
+    doSend(candidateIssueText + districtText, true);
   }
 
   const S = {
@@ -304,19 +324,39 @@ export default function RaceComparison() {
             {hasSelectedFacts && <span style={{ color: B.teal }}> · {selectedFactList.length} fact{selectedFactList.length !== 1 ? 's' : ''} selected</span>}
             {!hasSelectedFacts && hasSelected && <span style={{ color: B.teal }}> · {selectedList.length} candidate{selectedList.length !== 1 ? 's' : ''} selected</span>}
           </p>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {(hasSelected || hasSelectedFacts) && (
-              <button onClick={() => { setSelected({}); setSelectedFacts({}); }} style={S.btnSmall}>Clear selection</button>
+              <button onClick={() => { setSelected({}); setSelectedFacts({}); setDistrictPrompt(null); }} style={S.btnSmall}>Clear selection</button>
             )}
-            <button
-              onClick={pushToMessageMachine}
-              style={{ ...S.btnGold, opacity: pushed ? 0.7 : 1, cursor: pushed ? 'default' : 'pointer' }}
-            >
-              {pushed ? '✓ Sent to Message Machine'
-                : hasSelectedFacts ? `Send ${selectedFactList.length} fact${selectedFactList.length!==1?'s':''} to Message Machine →`
-                : hasSelected ? `Send ${selectedList.length} selected to Message Machine →`
-                : 'Send all to Message Machine →'}
-            </button>
+            {districtPrompt ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: '#fffbeb', border: `2px solid ${B.gold}`, borderRadius: 10, padding: '10px 16px' }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: B.charcoal }}>
+                  Also include {districtPrompt.district.district_id} district details?
+                </span>
+                <button
+                  onClick={sendWithDistrict}
+                  style={{ ...S.btnGold, padding: '8px 18px', fontSize: 14 }}
+                >
+                  Yes, include it →
+                </button>
+                <button
+                  onClick={() => doSend(districtPrompt.candidateIssueText, false)}
+                  style={{ ...S.btnSmall, fontSize: 14 }}
+                >
+                  No, just candidates
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={pushToMessageMachine}
+                style={{ ...S.btnGold, opacity: pushed ? 0.7 : 1, cursor: pushed ? 'default' : 'pointer' }}
+              >
+                {pushed ? '✓ Sent to Message Machine'
+                  : hasSelectedFacts ? `Send ${selectedFactList.length} fact${selectedFactList.length!==1?'s':''} to Message Machine →`
+                  : hasSelected ? `Send ${selectedList.length} selected to Message Machine →`
+                  : 'Send all to Message Machine →'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -369,6 +409,56 @@ export default function RaceComparison() {
               {/* If only one side exists, show full width */}
               {dCandidates.length === 0 && rightSide.map(candidate => renderCandidate(candidate))}
             </div>
+
+            {/* District strip — one per race group */}
+            {(() => {
+              const raceDistrict = race.district ? districtMap[race.district] : null;
+              if (!raceDistrict) return null;
+              const stripKey = race.district;
+              const isOpen = districtExpanded[stripKey];
+              return (
+                <div style={{ borderTop: `1.5px solid ${B.teal}25`, background: `${B.teal}05` }}>
+                  <button
+                    onClick={() => setDistrictExpanded(p => ({ ...p, [stripKey]: !p[stripKey] }))}
+                    style={{ width: '100%', padding: '9px 20px', background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', color: B.teal }}
+                  >
+                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>🗺️ District Context: {raceDistrict.district_id}</span>
+                    {raceDistrict.location_note && <span style={{ fontSize: 12, color: B.textMute }}>{raceDistrict.location_note}</span>}
+                    <span style={{ marginLeft: 'auto', fontSize: 14, color: B.textMute, transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▾</span>
+                  </button>
+                  {isOpen && (
+                    <div style={{ padding: '12px 20px', borderTop: `1px solid ${B.teal}15` }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+                        {raceDistrict.registration && (
+                          <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 8, padding: '10px 12px' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Registration</div>
+                            <div style={{ fontSize: 13, color: B.text, lineHeight: 1.5 }}>{raceDistrict.registration}</div>
+                          </div>
+                        )}
+                        {raceDistrict.voting_history && (
+                          <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 8, padding: '10px 12px' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Voting History</div>
+                            <div style={{ fontSize: 13, color: B.text, lineHeight: 1.5 }}>{raceDistrict.voting_history}</div>
+                          </div>
+                        )}
+                        {raceDistrict.demographics && (
+                          <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 8, padding: '10px 12px' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Demographics</div>
+                            <div style={{ fontSize: 13, color: B.text, lineHeight: 1.5 }}>{raceDistrict.demographics}</div>
+                          </div>
+                        )}
+                        {raceDistrict.top_issues && (
+                          <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 8, padding: '10px 12px' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Top Issues</div>
+                            <div style={{ fontSize: 13, color: B.text, lineHeight: 1.5 }}>{raceDistrict.top_issues}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         );
 
@@ -376,13 +466,10 @@ export default function RaceComparison() {
           const isExpanded = expanded[candidate.candidate_name];
           const isSelected = !!selected[candidate.candidate_name];
           const pc         = partyColor(candidate.party);
-          const isRepOrOther = candidate.party?.toUpperCase() !== 'D';
-          const districtData = candidate.district ? districtMap[candidate.district] : null;
-          const isDistrictExpanded = districtExpanded[candidate.candidate_name];
 
           return (
-            <React.Fragment key={candidate.candidate_name}>
             <div
+              key={candidate.candidate_name}
               style={{
                 background: isSelected ? pc.lightBg : B.surface,
                 borderTop: `3px solid ${pc.bg}`,
@@ -469,58 +556,6 @@ export default function RaceComparison() {
                 </div>
               )}
             </div>
-
-            {/* District strip */}
-            {districtData && (
-              <div style={{ border: `1.5px solid ${B.teal}25`, borderTop: 'none', background: `${B.teal}05` }}>
-                <button
-                  onClick={() => setDistrictExpanded(p => ({ ...p, [candidate.candidate_name]: !p[candidate.candidate_name] }))}
-                  style={{ width: '100%', padding: '8px 14px', background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', color: B.teal }}
-                >
-                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>🗺️ {districtData.district_id}</span>
-                  {districtData.location_note && <span style={{ fontSize: 11, color: B.textMute }}>{districtData.location_note}</span>}
-                  <span style={{ marginLeft: 'auto', fontSize: 12, transform: isDistrictExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▾</span>
-                </button>
-                {isDistrictExpanded && (
-                  <div style={{ padding: '10px 14px', borderTop: `1px solid ${B.teal}15` }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginBottom: 10 }}>
-                      {districtData.registration && (
-                        <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 6, padding: '8px 10px' }}>
-                          <div style={{ fontSize: 9, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Registration</div>
-                          <div style={{ fontSize: 12, color: B.text, lineHeight: 1.5 }}>{districtData.registration}</div>
-                        </div>
-                      )}
-                      {districtData.voting_history && (
-                        <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 6, padding: '8px 10px' }}>
-                          <div style={{ fontSize: 9, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Voting History</div>
-                          <div style={{ fontSize: 12, color: B.text, lineHeight: 1.5 }}>{districtData.voting_history}</div>
-                        </div>
-                      )}
-                      {districtData.demographics && (
-                        <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 6, padding: '8px 10px' }}>
-                          <div style={{ fontSize: 9, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Demographics</div>
-                          <div style={{ fontSize: 12, color: B.text, lineHeight: 1.5 }}>{districtData.demographics}</div>
-                        </div>
-                      )}
-                      {districtData.top_issues && (
-                        <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 6, padding: '8px 10px' }}>
-                          <div style={{ fontSize: 9, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Top Issues</div>
-                          <div style={{ fontSize: 12, color: B.text, lineHeight: 1.5 }}>{districtData.top_issues}</div>
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => pushDistrictToMM(districtData)}
-                      disabled={districtPushed[districtData.district_id]}
-                      style={{ padding: '7px 16px', background: districtPushed[districtData.district_id] ? '#aaa' : B.gold, color: districtPushed[districtData.district_id] ? '#fff' : B.teal, border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12, fontFamily: 'inherit', cursor: districtPushed[districtData.district_id] ? 'default' : 'pointer' }}
-                    >
-                      {districtPushed[districtData.district_id] ? '✓ Sent' : 'Add district context to Message Machine →'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-            </React.Fragment>
           );
         }
       })}
