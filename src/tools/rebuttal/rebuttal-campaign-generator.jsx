@@ -359,8 +359,21 @@ export default function RebuttalGenerator() {
   const [showShare,   setShowShare]   = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
 
-  // Load library on mount
-  useEffect(() => { loadLibrary(); }, []);
+  // Load library on mount, also check for library-pushed campaign
+  useEffect(() => {
+    loadLibrary();
+    try {
+      const saved = localStorage.getItem("rebuttal_load_campaign");
+      if (saved) {
+        const entry = JSON.parse(saved);
+        setNarrative(entry.narrative || "");
+        setOutput(entry.output || "");
+        setTone(entry.tone ?? null);
+        setProfile(entry.profile ? (PROFILES.find(p => p.label === entry.profile)?.key ?? null) : null);
+        localStorage.removeItem("rebuttal_load_campaign");
+      }
+    } catch {}
+  }, []);
 
   async function loadLibrary() {
     try {
