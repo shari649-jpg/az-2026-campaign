@@ -667,7 +667,7 @@ export default function RapidResponseReader() {
       sourceDate: article.date,
       sourceUrl: article.url || null,
       issueText: `${article.title}\n\n${article.summary}\n\nKey Points:\n${(article.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join("\n")}${article.url ? `\n\nSource: ${article.url}` : ""}`,
-      focalPoint: article.keyPoints?.[0] || "",
+      focalPoint: "",
       pushedAt: new Date().toISOString(),
     };
     try {
