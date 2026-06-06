@@ -1,5 +1,27 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+
+function useScrollArrows() {
+  const [showUp, setShowUp] = useState(false);
+  const [showDown, setShowDown] = useState(false);
+  useEffect(() => {
+    const onScroll = () => {
+      const scrolled = window.scrollY;
+      const atBottom = window.innerHeight + scrolled >= document.body.scrollHeight - 80;
+      setShowUp(scrolled > 200);
+      setShowDown(!atBottom && document.body.scrollHeight > window.innerHeight + 200);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  return { showUp, showDown };
+}
+
+function localStorageSafe(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); return true; }
+  catch { return false; }
+}
 
 const B = {
   teal:      '#1D5C4A',
@@ -73,11 +95,13 @@ function groupByseat(results) {
 
 export default function CandidateQuery() {
   const navigate = useNavigate();
+  const { showUp, showDown } = useScrollArrows();
   const [query,     setQuery]     = useState('');
   const [filter,    setFilter]    = useState('all');
   const [results,   setResults]   = useState(null);
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState(null);
+  const [lsError,   setLsError]   = useState(false);
   const [expanded,  setExpanded]  = useState({});
   const [selected,  setSelected]  = useState({});  // candidateName -> candidate object
   const [pushed,    setPushed]    = useState(false);
@@ -153,14 +177,13 @@ export default function CandidateQuery() {
       sourceTitle: `Candidate Research: ${candidates.map(c => c.candidate_name).join(', ')}`,
       sourcePublication: 'AZ 2026 Candidate Research',
       issueText: sections,
-      focalPoint: candidates[0]?.facts?.[0]?.text || '',
+      focalPoint: '',
       pushedAt: new Date().toISOString(),
     };
-    try {
-      localStorage.setItem('rr_pending_article', JSON.stringify(payload));
-      setPushed(true);
-      navigate('/messaging');
-    } catch {}
+    const ok = localStorageSafe('rr_pending_article', payload);
+    if (!ok) { setLsError(true); return; }
+    setPushed(true);
+    navigate('/messaging');
   }
 
   // ── Styles ──────────────────────────────────────────────────────────────
@@ -181,7 +204,18 @@ export default function CandidateQuery() {
   };
 
   return (
-    <div style={S.wrap}>
+    <div style={{ ...S.wrap, padding: '0 24px' }}>
+      {/* ── Floating scroll arrows ── */}
+      {showUp && (
+        <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          style={{ position: 'fixed', bottom: 72, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: B.teal, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          aria-label="Scroll to top">↑</button>
+      )}
+      {showDown && (
+        <button onClick={() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })}
+          style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: B.teal, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          aria-label="Scroll to bottom">↓</button>
+      )}
       {/* ── Instructions ── */}
       <div style={{ background: B.surfaceAlt, border: `1px solid ${B.border}`, borderRadius: 10, padding: '14px 18px', marginBottom: 20 }}>
         <p style={{ fontSize: 14, color: B.textMid, lineHeight: 1.7, margin: 0 }}>
@@ -213,16 +247,23 @@ export default function CandidateQuery() {
           }
         </div>
 
-        {/* Filter chips */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-          {FILTER_TYPES.map(ft => (
-            <button key={ft.id} type="button" onClick={() => setFilter(ft.id)} style={S.filterBtn(filter === ft.id)}>{ft.label}</button>
-          ))}
-        </div>
+      {/* Filter chips — only shown when results are loaded */}
+        {hasResults && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+            {FILTER_TYPES.map(ft => (
+              <button key={ft.id} type="button" onClick={() => setFilter(ft.id)} style={S.filterBtn(filter === ft.id)}>{ft.label}</button>
+            ))}
+          </div>
+        )}
       </form>
 
-      {/* ── Error ── */}
-      {error && (
+      {/* ── localStorage error ── */}
+      {lsError && (
+        <div style={{ background: '#fff7ed', border: '1.5px solid #f5c842', borderRadius: 10, padding: '14px 18px', marginBottom: 16, color: '#7a4f00', fontSize: 14, lineHeight: 1.6 }}>
+          <strong>⚠️ Could not send to Message Machine</strong> — your browser has storage disabled. Copy the content below manually and paste it into Message Machine.
+          <button onClick={() => setLsError(false)} style={{ marginLeft: 12, background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700, color: '#7a4f00', fontSize: 14 }}>✕</button>
+        </div>
+      )}
         <div style={{ background: '#fee2e2', border: '1.5px solid #fca5a5', borderRadius: 10, padding: '14px 18px', marginBottom: 16, color: '#991b1b', fontSize: 15 }}>
           {error}
         </div>
@@ -264,7 +305,7 @@ export default function CandidateQuery() {
             </div>
           </div>
 
-          {/* Seat groups */}
+          {/* Seat groups — always single-row, one candidate per card */}
           {seatGroupsFiltered.map((group, gi) => {
             const isContrast = group.length > 1;
             const seat = `${group[0].office || ''}${group[0].district ? ' · ' + group[0].district : ''}`;
@@ -279,7 +320,7 @@ export default function CandidateQuery() {
                   </div>
                 )}
 
-                <div style={{ display: isContrast ? 'grid' : 'block', gridTemplateColumns: isContrast ? `repeat(${group.length}, 1fr)` : undefined, gap: isContrast ? 0 : undefined }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                   {group.map((candidate, ci) => {
                     const isExpanded = expanded[candidate.candidate_name];
                     const isSelected = !!selected[candidate.candidate_name];
@@ -293,11 +334,12 @@ export default function CandidateQuery() {
                           ...S.card,
                           borderRadius: isContrast
                             ? ci === 0
-                              ? (group.length > 1 ? '0 0 0 10px' : 10)
+                              ? '0 0 0 0'
                               : ci === group.length - 1
-                                ? '0 0 10px 0'
+                                ? '0 0 10px 10px'
                                 : 0
                             : 10,
+                          borderTop: isContrast && ci > 0 ? 'none' : undefined,
                           borderLeft: isSelected ? `4px solid ${B.turquoise}` : undefined,
                           background: isSelected ? '#f0fdf9' : B.surface,
                         }}
@@ -356,10 +398,12 @@ export default function CandidateQuery() {
                                             sourceTitle: `${candidate.candidate_name} – ${fact.category || fact.type}`,
                                             sourcePublication: 'AZ 2026 Candidate Research',
                                             issueText,
-                                            focalPoint: fact.text,
+                                            focalPoint: '',
                                             pushedAt: new Date().toISOString(),
                                           };
-                                          try { localStorage.setItem('rr_pending_article', JSON.stringify(payload)); setPushed(true); navigate('/messaging'); } catch {}
+                                          const ok = localStorageSafe('rr_pending_article', payload);
+                                          if (!ok) { setLsError(true); return; }
+                                          setPushed(true); navigate('/messaging');
                                         }}
                                         style={{ fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 6, border: `1px solid ${fc.border}`, background: 'transparent', color: fc.text, cursor: 'pointer', fontFamily: 'inherit' }}
                                       >
