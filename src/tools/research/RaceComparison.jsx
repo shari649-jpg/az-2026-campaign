@@ -466,6 +466,7 @@ export default function RaceComparison() {
           const isExpanded = expanded[candidate.candidate_name];
           const isSelected = !!selected[candidate.candidate_name];
           const pc         = partyColor(candidate.party);
+          const isRepOrOther = candidate.party?.toUpperCase() !== 'D';
 
           return (
             <div
