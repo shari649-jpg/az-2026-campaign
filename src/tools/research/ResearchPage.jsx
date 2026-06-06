@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import CandidateQuery from './CandidateQuery';
 import RaceComparison from './RaceComparison';
+import DistrictProfiles from './DistrictProfiles';
 
 const B = {
   teal:      '#1D5C4A',
@@ -25,6 +26,11 @@ const TABS = [
     id:    'races',
     label: '⚡ Compare Races',
     desc:  'Browse all races — D vs R side-by-side',
+  },
+  {
+    id:    'districts',
+    label: '🗺️ District Profiles',
+    desc:  'Demographics, registration & messaging by district',
   },
 ];
 
@@ -71,8 +77,9 @@ export default function ResearchPage() {
       </div>
 
       {/* Tab content */}
-      {activeTab === 'search' && <CandidateQuery />}
-      {activeTab === 'races'  && <RaceComparison />}
+      {activeTab === 'search'    && <CandidateQuery />}
+      {activeTab === 'races'     && <RaceComparison />}
+      {activeTab === 'districts' && <DistrictProfiles />}
     </div>
   );
 }
