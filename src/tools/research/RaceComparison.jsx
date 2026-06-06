@@ -388,10 +388,6 @@ export default function RaceComparison() {
                 borderTop: `3px solid ${pc.bg}`,
                 transition: 'background 0.15s',
               }}
-                background: isSelected ? pc.lightBg : B.surface,
-                borderTop: `3px solid ${pc.bg}`,
-                transition: 'background 0.15s',
-              }}
             >
               {/* Candidate header */}
               <div style={{ padding: '14px 16px', borderBottom: `1px solid ${B.border}`, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
