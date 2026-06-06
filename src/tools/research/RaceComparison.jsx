@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 function useScrollArrows() {
@@ -87,8 +87,27 @@ export default function RaceComparison() {
   const [pushed,   setPushed]   = useState(false);
   const [lsError,  setLsError]  = useState(false);
   const [search,   setSearch]   = useState('');
+  const [districtMap,      setDistrictMap]      = useState({});
+  const [districtExpanded, setDistrictExpanded] = useState({});
+  const [districtPushed,   setDistrictPushed]   = useState({});
 
-  useEffect(() => { loadRaces(); }, []);
+  useEffect(() => { loadRaces(); loadDistricts(); }, []);
+
+  async function loadDistricts() {
+    try {
+      const res = await fetch('/.netlify/functions/query-candidates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'districts' }),
+      });
+      const data = await res.json();
+      if (data.success && data.districts) {
+        const map = {};
+        data.districts.forEach(d => { map[d.district_id] = d; });
+        setDistrictMap(map);
+      }
+    } catch { /* silent */ }
+  }
 
   async function loadRaces() {
     setLoading(true);
@@ -113,6 +132,31 @@ export default function RaceComparison() {
   const hasSelected  = selectedList.length > 0;
   const selectedFactList = Object.values(selectedFacts);
   const hasSelectedFacts = selectedFactList.length > 0;
+
+  function buildDistrictIssueText(d) {
+    const lines = [`── District Context: ${d.district_id} ──`];
+    if (d.location_note)  lines.push(`Location: ${d.location_note}`);
+    if (d.registration)   lines.push(`Registration: ${d.registration}`);
+    if (d.voting_history) lines.push(`Voting History: ${d.voting_history}`);
+    if (d.demographics)   lines.push(`Demographics: ${d.demographics}`);
+    if (d.top_issues)     lines.push(`Top Issues: ${d.top_issues}`);
+    return lines.join('\n');
+  }
+
+  function pushDistrictToMM(d) {
+    const payload = {
+      sourceArticleId: null,
+      sourceTitle: `District Context: ${d.district_id}`,
+      sourcePublication: 'AZ 2026 District Research',
+      issueText: buildDistrictIssueText(d),
+      focalPoint: '',
+      pushedAt: new Date().toISOString(),
+    };
+    const ok = localStorageSafe('rr_pending_article', payload);
+    if (!ok) { setLsError(true); return; }
+    setDistrictPushed(p => ({ ...p, [d.district_id]: true }));
+    navigate('/messaging');
+  }
 
   function toggleFact(candidate, factIndex, fact) {
     const key = `${candidate.candidate_name}:${factIndex}`;
@@ -333,11 +377,17 @@ export default function RaceComparison() {
           const isSelected = !!selected[candidate.candidate_name];
           const pc         = partyColor(candidate.party);
           const isRepOrOther = candidate.party?.toUpperCase() !== 'D';
+          const districtData = candidate.district ? districtMap[candidate.district] : null;
+          const isDistrictExpanded = districtExpanded[candidate.candidate_name];
 
           return (
+            <React.Fragment key={candidate.candidate_name}>
             <div
-              key={candidate.candidate_name}
               style={{
+                background: isSelected ? pc.lightBg : B.surface,
+                borderTop: `3px solid ${pc.bg}`,
+                transition: 'background 0.15s',
+              }}
                 background: isSelected ? pc.lightBg : B.surface,
                 borderTop: `3px solid ${pc.bg}`,
                 transition: 'background 0.15s',
@@ -423,6 +473,58 @@ export default function RaceComparison() {
                 </div>
               )}
             </div>
+
+            {/* District strip */}
+            {districtData && (
+              <div style={{ border: `1.5px solid ${B.teal}25`, borderTop: 'none', background: `${B.teal}05` }}>
+                <button
+                  onClick={() => setDistrictExpanded(p => ({ ...p, [candidate.candidate_name]: !p[candidate.candidate_name] }))}
+                  style={{ width: '100%', padding: '8px 14px', background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', color: B.teal }}
+                >
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>🗺️ {districtData.district_id}</span>
+                  {districtData.location_note && <span style={{ fontSize: 11, color: B.textMute }}>{districtData.location_note}</span>}
+                  <span style={{ marginLeft: 'auto', fontSize: 12, transform: isDistrictExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▾</span>
+                </button>
+                {isDistrictExpanded && (
+                  <div style={{ padding: '10px 14px', borderTop: `1px solid ${B.teal}15` }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginBottom: 10 }}>
+                      {districtData.registration && (
+                        <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 6, padding: '8px 10px' }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Registration</div>
+                          <div style={{ fontSize: 12, color: B.text, lineHeight: 1.5 }}>{districtData.registration}</div>
+                        </div>
+                      )}
+                      {districtData.voting_history && (
+                        <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 6, padding: '8px 10px' }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Voting History</div>
+                          <div style={{ fontSize: 12, color: B.text, lineHeight: 1.5 }}>{districtData.voting_history}</div>
+                        </div>
+                      )}
+                      {districtData.demographics && (
+                        <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 6, padding: '8px 10px' }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Demographics</div>
+                          <div style={{ fontSize: 12, color: B.text, lineHeight: 1.5 }}>{districtData.demographics}</div>
+                        </div>
+                      )}
+                      {districtData.top_issues && (
+                        <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 6, padding: '8px 10px' }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Top Issues</div>
+                          <div style={{ fontSize: 12, color: B.text, lineHeight: 1.5 }}>{districtData.top_issues}</div>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => pushDistrictToMM(districtData)}
+                      disabled={districtPushed[districtData.district_id]}
+                      style={{ padding: '7px 16px', background: districtPushed[districtData.district_id] ? '#aaa' : B.gold, color: districtPushed[districtData.district_id] ? '#fff' : B.teal, border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12, fontFamily: 'inherit', cursor: districtPushed[districtData.district_id] ? 'default' : 'pointer' }}
+                    >
+                      {districtPushed[districtData.district_id] ? '✓ Sent' : 'Add district context to Message Machine →'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            </React.Fragment>
           );
         }
       })}
