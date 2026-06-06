@@ -90,7 +90,8 @@ RULES:
 
 // ── Palette & styles ──────────────────────────────────────────────────────
 const INK = "#1A1A1A", BG = "#F7F5F0", SURFACE = "#FDFCFA",
-      BORDER = "#C8C4BC", MID = "#555", LIGHT = "#888", GREEN = "#2A6A2A";
+      BORDER = "#C8C4BC", MID = "#555", LIGHT = "#888", GREEN = "#2A6A2A",
+      TEAL = "#1D5C4A", GOLD = "#F5C842";
 
 const S = {
   app:    { minHeight: "100vh", background: BG, fontFamily: "'Georgia','Times New Roman',serif", color: INK },
@@ -127,13 +128,13 @@ const S = {
   spin:   { display: "inline-block", width: "13px", height: "13px", border: `2px solid ${BG}`, borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite", marginRight: "7px", verticalAlign: "middle" },
 };
 
-// Reusable button builders
-const btnSolid = (disabled) => ({ padding: "12px 28px", background: disabled ? "#999" : INK, color: BG, border: "none", borderRadius: "2px", fontSize: "13px", letterSpacing: "0.09em", textTransform: "uppercase", fontFamily: "'Georgia',serif", cursor: disabled ? "not-allowed" : "pointer", marginTop: "18px" });
-const btnOutline = (active) => ({ padding: "8px 16px", background: active ? "#EAF0EA" : "transparent", color: active ? GREEN : INK, border: `1.5px solid ${active ? GREEN : INK}`, borderRadius: "2px", fontSize: "11px", letterSpacing: "0.09em", textTransform: "uppercase", fontFamily: "'Georgia',serif", cursor: "pointer" });
-const btnSmall = () => ({ padding: "5px 13px", background: "transparent", color: MID, border: `1px solid ${BORDER}`, borderRadius: "2px", fontSize: "11px", letterSpacing: "0.09em", textTransform: "uppercase", fontFamily: "'Georgia',serif", cursor: "pointer" });
-const pill = (active) => ({ padding: "7px 18px", background: active ? INK : "transparent", color: active ? BG : INK, border: `1.5px solid ${INK}`, borderRadius: "2px", fontSize: "13px", fontFamily: "'Georgia',serif", cursor: "pointer" });
-const profileCard = (checked, disabled) => ({ padding: "9px 11px", border: `1.5px solid ${checked ? INK : BORDER}`, borderRadius: "2px", background: checked ? "#EEEAE4" : SURFACE, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.45 : 1, display: "flex", gap: "8px", alignItems: "flex-start" });
-const checkBox = (checked) => ({ width: "13px", height: "13px", border: `1.5px solid ${checked ? INK : BORDER}`, borderRadius: "2px", background: checked ? INK : "transparent", flexShrink: 0, marginTop: "2px", display: "flex", alignItems: "center", justifyContent: "center", color: BG, fontSize: "9px" });
+// Reusable button builders — aligned with Message Machine style
+const btnSolid = (disabled) => ({ padding: "12px 28px", background: disabled ? "#999" : INK, color: BG, border: "none", borderRadius: 8, fontSize: "15px", fontWeight: 700, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", cursor: disabled ? "not-allowed" : "pointer", marginTop: "18px" });
+const btnOutline = (active) => ({ padding: "9px 18px", background: active ? "#e6f4f0" : "transparent", color: active ? TEAL : INK, border: `2px solid ${active ? TEAL : INK}`, borderRadius: 8, fontSize: "14px", fontWeight: 700, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", cursor: "pointer" });
+const btnSmall = () => ({ padding: "7px 16px", background: "transparent", color: MID, border: `1.5px solid ${BORDER}`, borderRadius: 8, fontSize: "13px", fontWeight: 700, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", cursor: "pointer" });
+const pill = (active) => ({ padding: "8px 18px", background: active ? TEAL : "transparent", color: active ? "#fff" : INK, border: `2px solid ${active ? TEAL : INK}`, borderRadius: 8, fontSize: "14px", fontWeight: 700, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", cursor: "pointer" });
+const profileCard = (checked, disabled) => ({ padding: "9px 11px", border: `2px solid ${checked ? TEAL : BORDER}`, borderRadius: 8, background: checked ? "#e8f5f1" : SURFACE, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.45 : 1, display: "flex", gap: "8px", alignItems: "flex-start" });
+const checkBox = (checked) => ({ width: "13px", height: "13px", border: `1.5px solid ${checked ? TEAL : BORDER}`, borderRadius: "3px", background: checked ? TEAL : "transparent", flexShrink: 0, marginTop: "2px", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "9px" });
 
 // ── Error messages ────────────────────────────────────────────────────────
 const ERROR_MSGS = {
@@ -343,7 +344,26 @@ function CampaignOutput({ output, onCopy, onSave, onShare, onPushToMachine, onEd
     </div>
   );
 }
+
+function useScrollArrows() {
+  const [showUp, setShowUp] = useState(false);
+  const [showDown, setShowDown] = useState(false);
+  useEffect(() => {
+    const onScroll = () => {
+      const scrolled = window.scrollY;
+      const atBottom = window.innerHeight + scrolled >= document.body.scrollHeight - 80;
+      setShowUp(scrolled > 200);
+      setShowDown(!atBottom && document.body.scrollHeight > window.innerHeight + 200);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  return { showUp, showDown };
+}
+
 export default function RebuttalGenerator() {
+  const { showUp, showDown } = useScrollArrows();
   const [narrative,   setNarrative]   = useState("");
   const [profile,     setProfile]     = useState(null);  // single selected profile key or null
   const [tone,        setTone]        = useState(null);
@@ -532,25 +552,42 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
     setTimeout(() => document.getElementById("narrative-input")?.focus(), 50);
   };
 
-  // ── Push to Message Machine ─────────────────────────────────────────────
+  // ── Push to Message Machine — loads directly into MM results view ──────────
   const pushToMachine = () => {
     if (!output) return;
     const parsed = parseOutput(output);
+
+    // Map rebuttal platform names to MM platform IDs
+    const platMap = {
+      "Facebook":   "facebook",
+      "Instagram":  "instagram",
+      "Threads":    "threads",
+      "BlueSky":    "bluesky",
+      "Twitter/X":  "twitter",
+      "TikTok":     "tiktok",
+    };
+
+    // Build messages object: { platformId: "post text" }
+    const messages = {};
+    Object.entries(parsed.platforms || {}).forEach(([name, data]) => {
+      const id = platMap[name];
+      if (id && data.post) messages[id] = data.post;
+    });
+
+    // Build issue text for Edit Parameters (anchor + lenses)
     const issueText = [
       narrative.trim(),
       parsed.anchor ? `\nAnchor phrase: "${parsed.anchor}"` : "",
       parsed.lenses.length > 0 ? `\nKey angles:\n${parsed.lenses.map((l, i) => `${i + 1}. ${l.title}${l.body ? ` — ${l.body}` : ""}`).join("\n")}` : "",
     ].filter(Boolean).join("\n");
+
+    const payload = { messages, issueText, platforms: Object.keys(messages), pushedAt: new Date().toISOString() };
+
     try {
-      localStorage.setItem("rr_pending_article", JSON.stringify({
-        issueText,
-        focalPoint: parsed.anchor || "",
-        sourceTitle: `Rebuttal: ${narrative.trim().substring(0, 80)}`,
-        pushedAt: new Date().toISOString(),
-      }));
+      localStorage.setItem("rebuttal_push_results", JSON.stringify(payload));
       window.location.href = "/messaging";
     } catch {
-      setError({ heading: "Push failed.", body: "Could not send to Message Machine. Please try again." });
+      setError({ heading: "Push failed.", body: "Browser storage is disabled. Your rebuttal content could not be sent. Copy the posts manually using the Copy buttons above." });
     }
   };
 
@@ -558,6 +595,17 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
 
   return (
     <div style={S.app}>
+      {/* Floating scroll arrows */}
+      {showUp && (
+        <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          style={{ position: 'fixed', bottom: 72, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: TEAL, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          aria-label="Scroll to top">↑</button>
+      )}
+      {showDown && (
+        <button onClick={() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })}
+          style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: TEAL, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          aria-label="Scroll to bottom">↓</button>
+      )}
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         textarea:focus { border-color: ${INK} !important; }
