@@ -328,35 +328,15 @@ export default function RaceComparison() {
             {(hasSelected || hasSelectedFacts) && (
               <button onClick={() => { setSelected({}); setSelectedFacts({}); setDistrictPrompt(null); }} style={S.btnSmall}>Clear selection</button>
             )}
-            {districtPrompt ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: '#fffbeb', border: `2px solid ${B.gold}`, borderRadius: 10, padding: '10px 16px' }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: B.charcoal }}>
-                  Also include {districtPrompt.district.district_id} district details?
-                </span>
-                <button
-                  onClick={sendWithDistrict}
-                  style={{ ...S.btnGold, padding: '8px 18px', fontSize: 14 }}
-                >
-                  Yes, include it →
-                </button>
-                <button
-                  onClick={() => doSend(districtPrompt.candidateIssueText, false)}
-                  style={{ ...S.btnSmall, fontSize: 14 }}
-                >
-                  No, just candidates
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={pushToMessageMachine}
-                style={{ ...S.btnGold, opacity: pushed ? 0.7 : 1, cursor: pushed ? 'default' : 'pointer' }}
-              >
-                {pushed ? '✓ Sent to Message Machine'
-                  : hasSelectedFacts ? `Send ${selectedFactList.length} fact${selectedFactList.length!==1?'s':''} to Message Machine →`
-                  : hasSelected ? `Send ${selectedList.length} selected to Message Machine →`
-                  : 'Send all to Message Machine →'}
-              </button>
-            )}
+            <button
+              onClick={pushToMessageMachine}
+              style={{ ...S.btnGold, opacity: pushed ? 0.7 : 1, cursor: pushed ? 'default' : 'pointer' }}
+            >
+              {pushed ? '✓ Sent to Message Machine'
+                : hasSelectedFacts ? `Send ${selectedFactList.length} fact${selectedFactList.length!==1?'s':''} to Message Machine →`
+                : hasSelected ? `Send ${selectedList.length} selected to Message Machine →`
+                : 'Send all to Message Machine →'}
+            </button>
           </div>
         </div>
       )}
@@ -569,8 +549,8 @@ export default function RaceComparison() {
         </div>
       )}
 
-      {/* Floating selection bar */}
-      {hasSelected && (
+      {/* Floating selection bar — also hosts district prompt */}
+      {(hasSelected || districtPrompt) && (
         <div style={{
           position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
           background: B.teal, color: '#fff', borderRadius: 12,
@@ -578,16 +558,38 @@ export default function RaceComparison() {
           boxShadow: '0 8px 32px rgba(0,0,0,0.25)', zIndex: 50, flexWrap: 'wrap',
           maxWidth: '90vw',
         }}>
-          <span style={{ fontWeight: 700, fontSize: 15 }}>
-            {selectedList.length} selected: {selectedList.map(c => c.candidate_name).join(', ')}
-          </span>
-          <button
-            onClick={pushToMessageMachine}
-            style={{ background: B.gold, color: B.teal, fontWeight: 700, padding: '9px 20px', borderRadius: 8, border: '2px solid #d4aa30', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit', opacity: pushed ? 0.7 : 1 }}
-          >
-            {pushed ? '✓ Sent!' : 'Send to Message Machine →'}
-          </button>
-          <button onClick={() => setSelected({})} style={{ background: 'transparent', color: 'rgba(255,255,255,0.7)', border: 'none', cursor: 'pointer', fontSize: 20, padding: 0, lineHeight: 1 }}>✕</button>
+          {districtPrompt ? (
+            <>
+              <span style={{ fontWeight: 700, fontSize: 15 }}>
+                Also include {districtPrompt.district.district_id} district details?
+              </span>
+              <button
+                onClick={sendWithDistrict}
+                style={{ background: B.gold, color: B.teal, fontWeight: 700, padding: '9px 20px', borderRadius: 8, border: '2px solid #d4aa30', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit' }}
+              >
+                Yes, include it →
+              </button>
+              <button
+                onClick={() => doSend(districtPrompt.candidateIssueText, false)}
+                style={{ background: 'transparent', color: '#fff', fontWeight: 700, padding: '9px 20px', borderRadius: 8, border: '2px solid rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit' }}
+              >
+                No, just candidates
+              </button>
+            </>
+          ) : (
+            <>
+              <span style={{ fontWeight: 700, fontSize: 15 }}>
+                {selectedList.length} selected: {selectedList.map(c => c.candidate_name).join(', ')}
+              </span>
+              <button
+                onClick={pushToMessageMachine}
+                style={{ background: B.gold, color: B.teal, fontWeight: 700, padding: '9px 20px', borderRadius: 8, border: '2px solid #d4aa30', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit', opacity: pushed ? 0.7 : 1 }}
+              >
+                {pushed ? '✓ Sent!' : 'Send to Message Machine →'}
+              </button>
+              <button onClick={() => { setSelected({}); setSelectedFacts({}); setDistrictPrompt(null); }} style={{ background: 'transparent', color: 'rgba(255,255,255,0.7)', border: 'none', cursor: 'pointer', fontSize: 20, padding: 0, lineHeight: 1 }}>✕</button>
+            </>
+          )}
         </div>
       )}
     </div>
