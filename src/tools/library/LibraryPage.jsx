@@ -13,6 +13,14 @@ const TERRACOTTA= "#C1673A";
 const BG        = "#ffffff";
 const BORDER    = "#555555";
 
+function extractAnchorPhrase(output) {
+  if (!output) return null;
+  const match = output.match(/##\s*Anchor Phrase\s*\n+([\s\S]*?)(?=\n##|\n###|$)/i);
+  if (!match) return null;
+  const lines = match[1].trim().split("\n").filter(l => l.trim());
+  return lines[0]?.replace(/^\*+|\*+$/g, "").trim() || null;
+}
+
 const TOOL_META = {
   "message-machine": { label: "Message Machine", color: TURQUOISE, emoji: "📣", path: "/messaging" },
   "rebuttal":        { label: "Rebuttal Generator", color: RED,       emoji: "🛡️", path: "/rebuttal" },
@@ -240,6 +248,14 @@ export default function LibraryPage() {
                         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: meta.color }}>{meta.label}</span>
                       </div>
                       <p style={{ fontSize: 19, fontWeight: 700, color: CHARCOAL, marginBottom: 6 }}>{c.name || "Untitled Campaign"}</p>
+                      {c.tool === "rebuttal" && (() => {
+                        const anchor = extractAnchorPhrase(c.output);
+                        return anchor ? (
+                          <p style={{ fontSize: 13, color: TEAL, fontStyle: "italic", marginBottom: 6, borderLeft: `3px solid ${GOLD}`, paddingLeft: 10 }}>
+                            "{anchor}"
+                          </p>
+                        ) : null;
+                      })()}
                       {c.date && <p style={{ fontSize: 13, color: "#888" }}>Saved {c.date}</p>}
                       {c.formData?.audience && (
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
@@ -282,6 +298,12 @@ export default function LibraryPage() {
                     <p style={{ fontSize: 13, color: "#888", marginBottom: 8 }}>
                       {a.publication}{a.date ? ` · ${a.date}` : ""}{a.reporter ? ` · ${a.reporter}` : ""}
                     </p>
+                    {a.url && (
+                      <a href={a.url} target="_blank" rel="noopener noreferrer"
+                        style={{ fontSize: 13, color: TEAL, fontWeight: 700, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 8 }}>
+                        View source ↗
+                      </a>
+                    )}
                     {a.summary && (
                       <p style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.6, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{a.summary}</p>
                     )}
