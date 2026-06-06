@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 function useScrollArrows() {
@@ -246,8 +246,6 @@ export default function CandidateQuery() {
               </button>
           }
         </div>
-
-      {/* Filter chips — only shown when results are loaded */}
         {hasResults && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
             {FILTER_TYPES.map(ft => (
