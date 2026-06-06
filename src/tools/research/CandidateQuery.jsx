@@ -104,6 +104,7 @@ export default function CandidateQuery() {
   const [lsError,   setLsError]   = useState(false);
   const [expanded,  setExpanded]  = useState({});
   const [selected,  setSelected]  = useState({});  // candidateName -> candidate object
+  const [selectedFacts, setSelectedFacts] = useState({}); // `candidateName:factIndex` -> {candidate, fact}
   const [pushed,    setPushed]    = useState(false);
 
   const hasResults = results !== null;
@@ -128,6 +129,7 @@ export default function CandidateQuery() {
     setError(null);
     setResults(null);
     setSelected({});
+    setSelectedFacts({});
     setPushed(false);
 
     try {
@@ -152,6 +154,7 @@ export default function CandidateQuery() {
     setResults(null);
     setError(null);
     setSelected({});
+    setSelectedFacts({});
     setPushed(false);
   }
 
@@ -169,14 +172,41 @@ export default function CandidateQuery() {
     setPushed(false);
   }
 
+  function toggleFact(candidate, factIndex, fact) {
+    const key = `${candidate.candidate_name}:${factIndex}`;
+    setSelectedFacts(p => {
+      const next = { ...p };
+      if (next[key]) delete next[key];
+      else next[key] = { candidate, fact };
+      return next;
+    });
+    setPushed(false);
+  }
+
   function pushToMessageMachine() {
-    const candidates = hasSelected ? selectedList : (results || []);
-    const sections = candidates.map(c => factsToText(c)).join('\n\n');
+    const selectedFactList = Object.values(selectedFacts);
+    const hasSelectedFacts = selectedFactList.length > 0;
+    let issueText;
+    if (hasSelectedFacts) {
+      const byCandidate = {};
+      selectedFactList.forEach(({ candidate, fact }) => {
+        const label = candidateLabel(candidate);
+        if (!byCandidate[label]) byCandidate[label] = [];
+        const tag = fact.type ? `[${fact.type.toUpperCase()}${fact.category ? ' – ' + fact.category : ''}] ` : '';
+        byCandidate[label].push(`• ${tag}${fact.text}`);
+      });
+      issueText = Object.entries(byCandidate)
+        .map(([label, lines]) => `── ${label} ──\n${lines.join('\n')}`)
+        .join('\n\n');
+    } else {
+      const candidates = hasSelected ? selectedList : (results || []);
+      issueText = candidates.map(c => factsToText(c)).join('\n\n');
+    }
     const payload = {
       sourceArticleId: null,
-      sourceTitle: `Candidate Research: ${candidates.map(c => c.candidate_name).join(', ')}`,
+      sourceTitle: hasSelectedFacts ? 'Selected Facts — AZ 2026 Research' : `Candidate Research: ${(hasSelected ? selectedList : (results||[])).map(c => c.candidate_name).join(', ')}`,
       sourcePublication: 'AZ 2026 Candidate Research',
-      issueText: sections,
+      issueText,
       focalPoint: '',
       pushedAt: new Date().toISOString(),
     };
@@ -284,22 +314,21 @@ export default function CandidateQuery() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
             <p style={{ fontSize: 15, color: B.textMid, fontWeight: 700 }}>
               {filteredResults.length} candidate{filteredResults.length !== 1 ? 's' : ''} found{filter !== 'all' ? ` (filtered: ${filter})` : ''}
-              {hasSelected && <span style={{ color: B.teal }}> · {selectedList.length} selected</span>}
+              {Object.keys(selectedFacts).length > 0 && <span style={{ color: B.teal }}> · {Object.keys(selectedFacts).length} fact{Object.keys(selectedFacts).length !== 1 ? 's' : ''} selected</span>}
+              {Object.keys(selectedFacts).length === 0 && hasSelected && <span style={{ color: B.teal }}> · {selectedList.length} candidate{selectedList.length !== 1 ? 's' : ''} selected</span>}
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {hasSelected && (
-                <button onClick={() => setSelected({})} style={S.btnSmall}>Clear selection</button>
+              {(hasSelected || Object.keys(selectedFacts).length > 0) && (
+                <button onClick={() => { setSelected({}); setSelectedFacts({}); }} style={S.btnSmall}>Clear selection</button>
               )}
               <button
                 onClick={pushToMessageMachine}
                 style={{ ...S.btnGold, opacity: pushed ? 0.7 : 1, cursor: pushed ? 'default' : 'pointer' }}
               >
-                {pushed
-                  ? '✓ Sent to Message Machine'
-                  : hasSelected
-                    ? `Send ${selectedList.length} candidate${selectedList.length !== 1 ? 's' : ''} to Message Machine →`
-                    : 'Send all to Message Machine →'
-                }
+                {pushed ? '✓ Sent to Message Machine'
+                  : Object.keys(selectedFacts).length > 0 ? `Send ${Object.keys(selectedFacts).length} fact${Object.keys(selectedFacts).length !== 1 ? 's' : ''} to Message Machine →`
+                  : hasSelected ? `Send ${selectedList.length} candidate${selectedList.length !== 1 ? 's' : ''} to Message Machine →`
+                  : 'Send all to Message Machine →'}
               </button>
             </div>
           </div>
@@ -378,9 +407,18 @@ export default function CandidateQuery() {
                               ? <p style={{ color: B.textMute, fontSize: 14 }}>No facts found for this filter.</p>
                               : factsToShow.map((fact, fi) => {
                                   const fc = FACT_COLORS[fact.type] || FACT_COLORS.background;
+                                  const factKey = `${candidate.candidate_name}:${fi}`;
+                                  const isFactSelected = !!selectedFacts[factKey];
                                   return (
-                                    <div key={fi} style={{ background: fc.bg, border: `1px solid ${fc.border}`, borderRadius: 8, padding: '10px 14px', marginBottom: 10 }}>
-                                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                                    <div key={fi} style={{ background: fc.bg, border: `1.5px solid ${isFactSelected ? fc.text : fc.border}`, borderRadius: 8, padding: '10px 14px', marginBottom: 10 }}>
+                                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 6, alignItems: 'center' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={isFactSelected}
+                                          onChange={() => toggleFact(candidate, fi, fact)}
+                                          style={{ width: 15, height: 15, accentColor: B.teal, cursor: 'pointer', flexShrink: 0 }}
+                                          aria-label={`Select fact: ${fact.text.substring(0, 40)}`}
+                                        />
                                         <span style={{ fontSize: 11, fontWeight: 700, color: fc.text, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{fact.type}</span>
                                         {fact.category && <span style={{ fontSize: 11, color: fc.text, opacity: 0.8 }}>· {fact.category}</span>}
                                       </div>
@@ -388,25 +426,10 @@ export default function CandidateQuery() {
                                         {fact.type === 'quote' ? `"${fact.text}"` : fact.text}
                                       </p>
                                       <button
-                                        onClick={() => {
-                                          const label = `── ${candidateLabel(candidate)} ──`;
-                                          const tag = fact.type ? `[${fact.type.toUpperCase()}${fact.category ? ' – ' + fact.category : ''}] ` : '';
-                                          const issueText = `${label}\n• ${tag}${fact.text}`;
-                                          const payload = {
-                                            sourceArticleId: null,
-                                            sourceTitle: `${candidate.candidate_name} – ${fact.category || fact.type}`,
-                                            sourcePublication: 'AZ 2026 Candidate Research',
-                                            issueText,
-                                            focalPoint: '',
-                                            pushedAt: new Date().toISOString(),
-                                          };
-                                          const ok = localStorageSafe('rr_pending_article', payload);
-                                          if (!ok) { setLsError(true); return; }
-                                          setPushed(true); navigate('/messaging');
-                                        }}
-                                        style={{ fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 6, border: `1px solid ${fc.border}`, background: 'transparent', color: fc.text, cursor: 'pointer', fontFamily: 'inherit' }}
+                                        onClick={() => toggleFact(candidate, fi, fact)}
+                                        style={{ fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 6, border: `1px solid ${fc.border}`, background: isFactSelected ? fc.text : 'transparent', color: isFactSelected ? '#fff' : fc.text, cursor: 'pointer', fontFamily: 'inherit' }}
                                       >
-                                        Use in Message Machine →
+                                        {isFactSelected ? '✓ Selected' : 'Select fact →'}
                                       </button>
                                     </div>
                                   );
