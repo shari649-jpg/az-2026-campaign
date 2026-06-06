@@ -252,9 +252,21 @@ export default function App() {
       const pending = localStorage.getItem("rr_pending_article");
       if (pending) {
         const p = JSON.parse(pending);
-        setFormData(f => ({ ...f, issue: p.issueText || "", focalPoint: "" }));
+        setFormData(f => ({ ...f, issue: p.issueText || "", focalPoint: p.focalPoint || "" }));
         setFromResearch(true);
         localStorage.removeItem("rr_pending_article");
+      }
+    } catch {}
+    // Check if Library pushed a saved campaign to load
+    try {
+      const saved = localStorage.getItem("mm_load_campaign");
+      if (saved) {
+        const c = JSON.parse(saved);
+        setFormData(c.formData || {});
+        setMessages(c.messages || {});
+        setHashtags(null);
+        setView(Object.keys(c.messages || {}).length > 0 ? "results" : "form");
+        localStorage.removeItem("mm_load_campaign");
       }
     } catch {}
   }, []);
