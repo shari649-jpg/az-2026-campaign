@@ -262,6 +262,7 @@ export default function CandidateQuery() {
           <button onClick={() => setLsError(false)} style={{ marginLeft: 12, background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700, color: '#7a4f00', fontSize: 14 }}>✕</button>
         </div>
       )}
+      {error && (
         <div style={{ background: '#fee2e2', border: '1.5px solid #fca5a5', borderRadius: 10, padding: '14px 18px', marginBottom: 16, color: '#991b1b', fontSize: 15 }}>
           {error}
         </div>
