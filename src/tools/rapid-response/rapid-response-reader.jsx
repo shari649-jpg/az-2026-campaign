@@ -542,7 +542,21 @@ export default function RapidResponseReader() {
   const [notif, setNotif]           = useState(null);
   const [profile, setProfile]       = useState(null);
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    loadAll();
+    // Check if Library pushed a saved article to load
+    try {
+      const saved = localStorage.getItem("rr_load_article");
+      if (saved) {
+        const article = JSON.parse(saved);
+        setArticle(article);
+        setSaved(true);
+        setPushed(false);
+        setView("reader");
+        localStorage.removeItem("rr_load_article");
+      }
+    } catch {}
+  }, []);
 
   const loadAll = async () => {
     try { const p = localStorage.getItem("rr_profile"); if (p) setProfile(JSON.parse(p)); } catch {}
