@@ -298,8 +298,8 @@ export default function LibraryPage() {
                     <p style={{ fontSize: 13, color: "#888", marginBottom: 8 }}>
                       {a.publication}{a.date ? ` · ${a.date}` : ""}{a.reporter ? ` · ${a.reporter}` : ""}
                     </p>
-                    {a.url && (
-                      <a href={a.url} target="_blank" rel="noopener noreferrer"
+                    {(a.url || a.sourceUrl) && (
+                      <a href={a.url || a.sourceUrl} target="_blank" rel="noopener noreferrer"
                         style={{ fontSize: 13, color: TEAL, fontWeight: 700, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 8 }}>
                         View source ↗
                       </a>
