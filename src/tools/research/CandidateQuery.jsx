@@ -122,21 +122,18 @@ export default function CandidateQuery() {
 
   const seatGroupsFiltered = useMemo(() => groupByseat(filteredResults), [filteredResults]);
 
-  async function handleSearch(e) {
-    e.preventDefault();
-    if (!query.trim()) return;
+  async function runSearch(searchQuery, filterType) {
     setLoading(true);
     setError(null);
     setResults(null);
     setSelected({});
     setSelectedFacts({});
     setPushed(false);
-
     try {
       const res = await fetch('/.netlify/functions/query-candidates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query.trim(), filterType: filter !== 'all' ? filter : null }),
+        body: JSON.stringify({ query: searchQuery.trim(), filterType: filterType !== 'all' ? filterType : null }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) { setError(data.error || 'Search failed'); return; }
@@ -149,10 +146,25 @@ export default function CandidateQuery() {
     }
   }
 
+  async function handleSearch(e) {
+    e.preventDefault();
+    if (!query.trim()) return;
+    await runSearch(query, filter);
+  }
+
+  async function handleFilterChange(newFilter) {
+    setFilter(newFilter);
+    if (query.trim() && results !== null) {
+      // Re-run search with new filter so only candidates with matching facts in that category are returned
+      await runSearch(query, newFilter);
+    }
+  }
+
   function handleNewSearch() {
     setQuery('');
     setResults(null);
     setError(null);
+    setFilter('all');
     setSelected({});
     setSelectedFacts({});
     setPushed(false);
@@ -279,7 +291,7 @@ export default function CandidateQuery() {
         {hasResults && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
             {FILTER_TYPES.map(ft => (
-              <button key={ft.id} type="button" onClick={() => setFilter(ft.id)} style={S.filterBtn(filter === ft.id)}>{ft.label}</button>
+              <button key={ft.id} type="button" onClick={() => handleFilterChange(ft.id)} style={S.filterBtn(filter === ft.id)}>{ft.label}</button>
             ))}
           </div>
         )}
