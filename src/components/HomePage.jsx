@@ -3,9 +3,9 @@ import { useNavigate } from "react-router-dom";
 const TOOLS = [
   {
     path: "/research",
-    label: "Candidate Research",
+    label: "Research: Candidates, Issues & Districts",
     eyebrow: "Intel",
-    desc: "Deep-dive profiles on candidates — positions, vulnerabilities, voting records, and district context.",
+    desc: "Deep-dive profiles on candidates — positions, vulnerabilities, voting records. Search by issue, district demographics, or race comparisons.",
     status: "live",
     color: "#1D5C4A",
     bg: "#e0f2ec",
