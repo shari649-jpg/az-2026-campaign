@@ -107,12 +107,16 @@ function searchCandidates(candidates, query, filterType) {
         .join(' ').toLowerCase();
       if (meta.includes(q)) return true;
 
-      // Full text search across all facts
-      return c.facts.some(f => f.text.toLowerCase().includes(q));
+      // When a filterType is active, only search within facts of that type
+      const factsToSearch = filterType
+        ? c.facts.filter(f => f.type === filterType)
+        : c.facts;
+
+      return factsToSearch.some(f => f.text.toLowerCase().includes(q));
     });
   }
 
-  // Apply fact type filter if specified
+  // Apply fact type filter — strip out non-matching fact types and drop candidates with none left
   if (filterType) {
     results = results
       .map(c => ({ ...c, facts: c.facts.filter(f => f.type === filterType) }))
