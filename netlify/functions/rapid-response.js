@@ -3,7 +3,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200,
       headers: {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "https://az-coalition-2026-election.netlify.app",
         "Access-Control-Allow-Headers": "Content-Type",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
       },
@@ -58,7 +58,7 @@ exports.handler = async (event) => {
       if (!fetchOk) {
         return {
           statusCode: 422,
-          headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+          headers: { "Access-Control-Allow-Origin": "https://az-coalition-2026-election.netlify.app", "Content-Type": "application/json" },
           body: JSON.stringify({ error: "scrape_failed" }),
         };
       }
@@ -100,7 +100,7 @@ Format:
       const analysisData = await analysisRes.json();
       return {
         statusCode: 200,
-        headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+        headers: { "Access-Control-Allow-Origin": "https://az-coalition-2026-election.netlify.app", "Content-Type": "application/json" },
         body: JSON.stringify({ result: analysisData }),
       };
     }
@@ -150,21 +150,21 @@ Format:
       const analysisData = await analysisRes.json();
       return {
         statusCode: 200,
-        headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+        headers: { "Access-Control-Allow-Origin": "https://az-coalition-2026-election.netlify.app", "Content-Type": "application/json" },
         body: JSON.stringify({ result: analysisData }),
       };
     }
 
     return {
       statusCode: 400,
-      headers: { "Access-Control-Allow-Origin": "*" },
+      headers: { "Access-Control-Allow-Origin": "https://az-coalition-2026-election.netlify.app" },
       body: JSON.stringify({ error: "Unknown action" }),
     };
 
   } catch (err) {
     return {
       statusCode: 500,
-      headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+      headers: { "Access-Control-Allow-Origin": "https://az-coalition-2026-election.netlify.app", "Content-Type": "application/json" },
       body: JSON.stringify({ error: err.message }),
     };
   }
