@@ -27,14 +27,14 @@ exports.handler = async (event) => {
       statusCode: 200,
       headers: {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "https://az-coalition-2026-election.netlify.app",
       },
       body: JSON.stringify(data),
     };
   } catch (err) {
     return {
       statusCode: 500,
-      headers: { "Access-Control-Allow-Origin": "*" },
+      headers: { "Access-Control-Allow-Origin": "https://az-coalition-2026-election.netlify.app" },
       body: JSON.stringify({ error: err.message }),
     };
   }
