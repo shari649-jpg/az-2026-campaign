@@ -46,6 +46,20 @@ const T = {
   red:      "#c41e1e",
 };
 
+// Desert loading frames — emoji scenes cycle every 5s
+const DESERT_FRAMES = [
+  { emoji: "🌵", label: "Summoning the desert spirits…" },
+  { emoji: "🦅", label: "Eagle-eyed strategists at work…" },
+  { emoji: "☀️", label: "Arizona sun powering your posts…" },
+  { emoji: "🌵🌵", label: "Double-cactus energy activated…" },
+  { emoji: "🦎", label: "Lizard brain engaged for messaging…" },
+  { emoji: "🌅", label: "Crafting your sunset moment…" },
+  { emoji: "🐍", label: "Slithering through the talking points…" },
+  { emoji: "🌵☀️🌵", label: "Peak desert vibes loading…" },
+  { emoji: "🦩", label: "Flamingo-level finesse incoming…" },
+  { emoji: "🌵", label: "Almost there — cacti never rush…" },
+];
+
 const globalCSS = `
   @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -61,8 +75,13 @@ const globalCSS = `
   button:active { transform: scale(0.97); }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes slideDown { from { opacity:0; transform:translateY(-8px);} to {opacity:1;transform:translateY(0);} }
+  @keyframes fadeSwap { 0%{opacity:0;transform:scale(0.7) translateY(8px);} 20%{opacity:1;transform:scale(1) translateY(0);} 80%{opacity:1;transform:scale(1) translateY(0);} 100%{opacity:0;transform:scale(0.8) translateY(-8px);} }
+  @keyframes pulseGlow { 0%,100%{box-shadow:0 0 0 0 rgba(62,207,178,0.3);} 50%{box-shadow:0 0 0 18px rgba(62,207,178,0);} }
+  @keyframes tumbleweed { 0%{transform:translateX(-40px) rotate(0deg);opacity:0;} 20%{opacity:1;} 80%{opacity:1;} 100%{transform:translateX(40px) rotate(360deg);opacity:0;} }
   .spin-anim { animation: spin 0.8s linear infinite; display: inline-block; }
   .slide-down { animation: slideDown 0.2s ease; }
+  .desert-emoji { animation: fadeSwap 5s ease-in-out; display:inline-block; }
+  .tumbleweed-anim { animation: tumbleweed 4s ease-in-out infinite; display:inline-block; font-size:28px; }
   .line-clamp2 { overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
   @media (max-width: 520px) {
     .platform-grid { grid-template-columns: 1fr !important; }
@@ -165,9 +184,93 @@ const S = {
   },
 };
 
+/* ── Desert Loading Screen ── */
+const DESERT_FRAMES = [
+  { emoji: "🌵", label: "Summoning the desert spirits…" },
+  { emoji: "🦅", label: "Eagle-eyed strategists at work…" },
+  { emoji: "☀️", label: "Arizona sun powering your posts…" },
+  { emoji: "🌵🌵", label: "Double-cactus energy activated…" },
+  { emoji: "🦎", label: "Lizard brain engaged for messaging…" },
+  { emoji: "🌅", label: "Crafting your sunset moment…" },
+  { emoji: "🐍", label: "Slithering through the talking points…" },
+  { emoji: "🌵☀️🌵", label: "Peak desert vibes loading…" },
+  { emoji: "🦩", label: "Flamingo-level finesse incoming…" },
+  { emoji: "🌵", label: "Almost there — cacti never rush…" },
+];
+
+function DesertLoader() {
+  const [frameIdx, setFrameIdx] = useState(0);
+  const [animKey, setAnimKey] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrameIdx(i => (i + 1) % DESERT_FRAMES.length);
+      setAnimKey(k => k + 1);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const frame = DESERT_FRAMES[frameIdx];
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: "linear-gradient(160deg, #1D5C4A 0%, #0f3329 50%, #2a1a08 100%)",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
+      padding: 32,
+    }}>
+      {/* Stars */}
+      <div style={{ position:"absolute", inset:0, overflow:"hidden", pointerEvents:"none" }}>
+        {[...Array(18)].map((_,i) => (
+          <div key={i} style={{
+            position:"absolute",
+            left: `${(i * 37 + 11) % 100}%`,
+            top: `${(i * 53 + 7) % 60}%`,
+            width: i % 3 === 0 ? 3 : 2,
+            height: i % 3 === 0 ? 3 : 2,
+            borderRadius: "50%",
+            background: "#F5C842",
+            opacity: 0.3 + (i % 4) * 0.15,
+          }} />
+        ))}
+      </div>
+
+      {/* Emoji scene */}
+      <div key={animKey} className="desert-emoji" style={{ fontSize: 80, marginBottom: 24, lineHeight: 1 }}>
+        {frame.emoji}
+      </div>
+
+      {/* Tumbleweed */}
+      <div style={{ marginBottom: 28, height: 40, display:"flex", alignItems:"center", overflow:"hidden", width:180 }}>
+        <span className="tumbleweed-anim">🌾</span>
+      </div>
+
+      {/* Dots */}
+      <div style={{ display:"flex", gap:10, marginBottom:24 }}>
+        {[0,1,2].map(i => (
+          <div key={i} style={{
+            width: 10, height: 10, borderRadius: "50%",
+            background: i === frameIdx % 3 ? "#F5C842" : "rgba(255,255,255,0.25)",
+            transition: "background 0.4s",
+          }} />
+        ))}
+      </div>
+
+      <div style={{ fontFamily:"'Atkinson Hyperlegible', Georgia, serif", fontSize:20, fontWeight:700, color:"#F5C842", letterSpacing:"0.03em", textAlign:"center", marginBottom:10, minHeight:32 }}>
+        {frame.label}
+      </div>
+      <div style={{ fontFamily:"'Atkinson Hyperlegible', Georgia, serif", fontSize:14, color:"rgba(255,255,255,0.5)", letterSpacing:"0.08em", textTransform:"uppercase" }}>
+        Generating your posts…
+      </div>
+    </div>
+  );
+}
+
 /* ── Platform Message Card ── */
 function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading }) {
   const [localOpt, setLocalOpt] = useState("");
+  const [expanded, setExpanded] = useState(false);
   const charCount = (message || "").length;
   const over = charCount > p.maxChars;
 
@@ -179,59 +282,50 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
 
   return (
     <div style={{ ...S.card, borderWidth: 3, overflow: 'hidden', padding: 0 }}>
-      {/* Colored platform header */}
-      <div style={{ background: p.bg, color: p.text, padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
+      {/* Colored platform header — tap to expand/collapse */}
+      <button
+        onClick={() => setExpanded(v => !v)}
+        style={{
+          width:"100%", background: p.bg, color: p.text,
+          padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12,
+          border: "none", cursor: "pointer", textAlign: "left",
+        }}
+        aria-expanded={expanded}
+        aria-label={`${p.name} — ${expanded ? "collapse" : "expand"}`}
+      >
         <span style={{ ...S.platformBadge, width: 32, height: 32, fontSize: 11, background: 'rgba(255,255,255,0.2)', color: p.text }}>{p.abbr}</span>
         <span style={{ fontWeight: 900, fontSize: 18, letterSpacing: '0.02em' }}>{p.name}</span>
-        <span style={{ marginLeft: 'auto', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: over ? '#fca5a5' : 'rgba(255,255,255,0.7)' }}>
+        <span style={{ marginLeft: 'auto', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: over ? '#fca5a5' : 'rgba(255,255,255,0.7)', marginRight: 10 }}>
           {charCount.toLocaleString()} / {p.maxChars.toLocaleString()}
         </span>
-      </div>
-      <div style={{ padding: 24 }}>
+        <span style={{ fontSize: 16, opacity: 0.85, flexShrink: 0 }}>{expanded ? "▲" : "▼"}</span>
+      </button>
 
-      {loading ? (
-        <div style={{ display:"flex", alignItems:"center", gap:14, padding:"32px 0", color:T.textMid }}>
-          <span className="spin-anim" style={{ ...S.spinner, border:"3px solid #ccc", borderTopColor:T.text }} />
-          <span style={{ fontSize:18, fontWeight:600 }}>Regenerating…</span>
+      {expanded && (
+        <div style={{ padding: 24 }}>
+          {loading ? (
+            <div style={{ display:"flex", alignItems:"center", gap:14, padding:"32px 0", color:T.textMid }}>
+              <span className="spin-anim" style={{ ...S.spinner, border:"3px solid #ccc", borderTopColor:T.text }} />
+              <span style={{ fontSize:18, fontWeight:600 }}>Regenerating…</span>
+            </div>
+          ) : (
+            <textarea
+              rows={8}
+              style={{ ...S.textarea, resize:"vertical" }}
+              value={message || ""}
+              onChange={e => onUpdate(p.id, e.target.value)}
+              aria-label={`${p.name} message text`}
+            />
+          )}
+
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:14, flexWrap:"wrap" }}>
+            <button style={S.btnDark} onClick={() => onCopy(message || "", p.name)}>Copy Text</button>
+            <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => handleQuick("shorten")} title="Regenerate a shorter version">Shorten</button>
+            <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => handleQuick("expand")} title="Regenerate a more detailed version">Expand</button>
+            <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => onRegen(p.id, "")} title="Rephrase this message">Rephrase</button>
+          </div>
         </div>
-      ) : (
-        <textarea
-          rows={5}
-          style={{ ...S.textarea, resize:"vertical" }}
-          value={message || ""}
-          onChange={e => onUpdate(p.id, e.target.value)}
-          aria-label={`${p.name} message text`}
-        />
       )}
-
-      <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:14, flexWrap:"wrap" }}>
-        <button style={S.btnDark} onClick={() => onCopy(message || "", p.name)}>Copy Text</button>
-        <button
-          style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }}
-          disabled={loading}
-          onClick={() => handleQuick("shorten")}
-          title="Regenerate a shorter version"
-        >
-          Shorten
-        </button>
-        <button
-          style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }}
-          disabled={loading}
-          onClick={() => handleQuick("expand")}
-          title="Regenerate a more detailed version"
-        >
-          Expand
-        </button>
-        <button
-          style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }}
-          disabled={loading}
-          onClick={() => onRegen(p.id, "")}
-          title="Rephrase this message"
-        >
-          Rephrase
-        </button>
-      </div>
-      </div>
     </div>
   );
 }
@@ -243,6 +337,7 @@ export default function App() {
   const [fromResearch, setFromResearch] = useState(false);
   const [messages, setMessages]     = useState({});
   const [generating, setGenerating] = useState(false);
+  const [showLoader, setShowLoader] = useState(false);
   const [platLoad, setPlatLoad]     = useState({});
   const [campaigns, setCampaigns]   = useState([]);
   const [saveModal, setSaveModal]   = useState(false);
@@ -368,11 +463,15 @@ Format: {"platform_id": "message text"}`;
 
   const generateAll = async () => {
     const err = validate(); if (err) { notify(err,"err"); return; }
-    setGenerating(true); setHashtags(null); setGenError(null);
+    setGenerating(true); setShowLoader(true); setHashtags(null); setGenError(null);
     try {
       const r = await callAPI(buildPrompt(formData.platforms, formData.regenOption));
-      setMessages(r); setView("results");
+      setMessages(r);
+      setShowLoader(false);
+      setView("results");
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch(e) {
+      setShowLoader(false);
       if (e.type === "content_flagged") {
         setGenError("flagged");
       } else {
@@ -439,7 +538,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
     } catch { notify("Save failed — please try again.", "err"); }
   };
 
-  const loadCampaign = (c) => { setFormData(c.formData); setMessages(c.messages); setHashtags(null); setView("results"); notify(`Loaded: ${c.name}`); };
+  const loadCampaign = (c) => { setFormData(c.formData); setMessages(c.messages); setHashtags(null); setView("results"); notify(`Loaded: ${c.name}`); window.scrollTo({ top: 0, behavior: "smooth" }); };
 
   const deleteCampaign = async (id) => {
     try {
@@ -476,6 +575,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
   return (
     <div style={{ minHeight:"100vh", background:T.pageBg, color:T.text, fontFamily:"'Atkinson Hyperlegible', Georgia, serif" }}>
       <style>{globalCSS}</style>
+      {showLoader && <DesertLoader />}
 
       {/* HEADER */}
       <header style={{ background:T.pageBg, borderBottom:`4px solid ${T.borderStrong}`, position:"sticky", top:0, zIndex:40 }}>
@@ -724,9 +824,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   display:"flex", alignItems:"center", justifyContent:"center", gap:14,
                   opacity: generating ? 0.65 : 1, cursor: generating ? "not-allowed" : "pointer",
                 }}>
-                  {generating
-                    ? <><span className="spin-anim" style={{ ...S.spinner, borderTopColor:"#fff" }} /> Generating Messages…</>
-                    : "Generate Messages →"}
+                  Generate Messages →
                 </button>
                 <button onClick={startNewCampaign} style={{
                   ...S.btnSecondary, fontSize:18, padding:"18px 22px", whiteSpace:"nowrap",
