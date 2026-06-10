@@ -37,6 +37,7 @@ async function listFolders(drive, folderId) {
     pageSize: 100,
     supportsAllDrives: true,
     includeItemsFromAllDrives: true,
+    corpora: 'allDrives',
   });
   return (res.data.files || []).map(f => ({
     id: f.id,
@@ -58,6 +59,7 @@ async function listFiles(drive, folderId) {
     pageSize: 200,
     supportsAllDrives: true,
     includeItemsFromAllDrives: true,
+    corpora: 'allDrives',
   });
 
   return (res.data.files || []).map(f => {
@@ -129,6 +131,7 @@ exports.handler = async (event) => {
       pageSize: 20,
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
+      corpora: 'allDrives',
     });
     console.log(`[browse-drive] ALL items in folder (first 20): ${JSON.stringify(allItemsRes.data.files)}`);
 
