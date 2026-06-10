@@ -50,8 +50,8 @@ const T = {
 const DESERT_FRAMES = [
   { emoji: "🌵", label: "Summoning the desert spirits…" },
   { emoji: "🦅", label: "Eagle-eyed strategists at work…" },
-  { emoji: "☀️", label: "Arizona sun powering your posts…" },
-  { emoji: "🌵🌵", label: "Double-cactus energy activated…" },
+  { emoji: "🥵", label: "Arizona heat activating your posts…" },
+  { emoji: "🏜️", label: "Grand Canyon depth incoming…" },
   { emoji: "🦎", label: "Lizard brain engaged for messaging…" },
   { emoji: "🌅", label: "Crafting your sunset moment…" },
   { emoji: "🐍", label: "Slithering through the talking points…" },
@@ -78,10 +78,10 @@ const globalCSS = `
   @keyframes fadeSwap { 0%{opacity:0;transform:scale(0.7) translateY(8px);} 20%{opacity:1;transform:scale(1) translateY(0);} 80%{opacity:1;transform:scale(1) translateY(0);} 100%{opacity:0;transform:scale(0.8) translateY(-8px);} }
   @keyframes pulseGlow { 0%,100%{box-shadow:0 0 0 0 rgba(62,207,178,0.3);} 50%{box-shadow:0 0 0 18px rgba(62,207,178,0);} }
   @keyframes tumbleweed { 0%{transform:translateX(-40px) rotate(0deg);opacity:0;} 20%{opacity:1;} 80%{opacity:1;} 100%{transform:translateX(40px) rotate(360deg);opacity:0;} }
+  @keyframes sunrise { 0%{left:-20px;opacity:0;transform:translateY(6px);} 10%{opacity:1;transform:translateY(0);} 85%{opacity:1;} 100%{left:200px;opacity:0;transform:translateY(-4px);} }
   .spin-anim { animation: spin 0.8s linear infinite; display: inline-block; }
   .slide-down { animation: slideDown 0.2s ease; }
   .desert-emoji { animation: fadeSwap 5s ease-in-out; display:inline-block; }
-  .tumbleweed-anim { animation: tumbleweed 4s ease-in-out infinite; display:inline-block; font-size:28px; }
   .line-clamp2 { overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
   @media (max-width: 520px) {
     .platform-grid { grid-template-columns: 1fr !important; }
@@ -228,9 +228,16 @@ function DesertLoader() {
         {frame.emoji}
       </div>
 
-      {/* Tumbleweed */}
-      <div style={{ marginBottom: 28, height: 40, display:"flex", alignItems:"center", overflow:"hidden", width:180 }}>
-        <span className="tumbleweed-anim">🌾</span>
+      {/* Sun rising left → right */}
+      <div style={{ marginBottom: 28, height: 44, width: 220, position: "relative", overflow: "hidden" }}>
+        <span key={`sun-${animKey}`} style={{
+          position: "absolute",
+          fontSize: 32,
+          animation: "sunrise 5s ease-in-out infinite",
+          bottom: 4,
+        }}>☀️</span>
+        {/* Horizon line */}
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: "rgba(245,200,66,0.25)", borderRadius: 1 }} />
       </div>
 
       {/* Dots */}
@@ -462,7 +469,7 @@ Format: {"platform_id": "message text"}`;
       if (e.type === "content_flagged") {
         setGenError("flagged");
       } else {
-        notify("Generation failed — check your connection and try again.","err");
+        setGenError("connection");
       }
     }
     setGenerating(false);
@@ -470,15 +477,17 @@ Format: {"platform_id": "message text"}`;
 
   const regenPlatform = async (platformId, regenOpt) => {
     setPlatLoad(p=>({...p,[platformId]:true}));
+    setGenError(null);
     try {
-      const r = await callAPI(buildPrompt([platformId],regenOpt));
+      // Expand needs more tokens — give it extra headroom
+      const maxTok = regenOpt === "expand" ? 1600 : 1000;
+      const r = await callAPI(buildPrompt([platformId], regenOpt), maxTok);
       setMessages(p=>({...p,...r}));
     } catch(e) {
       if (e.type === "content_flagged") {
         setGenError("flagged");
-        setView("form");
       } else {
-        notify("Regeneration failed — check your connection and try again.","err");
+        setGenError("connection");
       }
     }
     setPlatLoad(p=>({...p,[platformId]:false}));
@@ -648,6 +657,34 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </ul>
                 <p style={{ fontSize:15, color:T.textMid, marginTop:14, lineHeight:1.6 }}>
                   <strong>Try:</strong> Rephrase using factual, policy-focused language. Instead of characterizing intent, describe documented actions. You can name officials and cite their record — just keep the framing grounded in fact.
+                </p>
+              </div>
+            )}
+
+            {genError === "connection" && (
+              <div role="alert" style={{
+                background:"#fff8f0", border:`3px solid #c1673a`,
+                borderRadius:12, padding:"20px 24px", marginBottom:28,
+                position:"relative",
+              }}>
+                <button
+                  onClick={() => setGenError(null)}
+                  aria-label="Dismiss error"
+                  style={{
+                    position:"absolute", top:14, right:16,
+                    background:"none", border:"none", cursor:"pointer",
+                    fontSize:22, color:"#c1673a", fontWeight:900, lineHeight:1,
+                    fontFamily:"inherit",
+                  }}
+                >✕</button>
+                <p style={{ fontSize:18, fontWeight:900, color:"#c1673a", marginBottom:10 }}>
+                  ⚠️ Generation failed
+                </p>
+                <p style={{ fontSize:16, color:T.textMid, lineHeight:1.6, marginBottom:10 }}>
+                  The request timed out or couldn't connect. This can happen with longer content or the <strong style={{ color:T.text }}>Expand</strong> hint on slower connections.
+                </p>
+                <p style={{ fontSize:15, color:T.textMid, lineHeight:1.6 }}>
+                  <strong>Try:</strong> Hit Generate again — it usually works on a second attempt. If you're using Expand, try without it first, then use the Expand button on individual platforms once results load.
                 </p>
               </div>
             )}
@@ -853,6 +890,23 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
             </div>
 
             <div style={{ display:"flex", flexDirection:"column", gap:22 }}>
+              {/* Error panels in results view (from Expand/Shorten/Rephrase failures) */}
+              {genError === "connection" && (
+                <div role="alert" style={{ background:"#fff8f0", border:`3px solid #c1673a`, borderRadius:12, padding:"18px 22px", position:"relative" }}>
+                  <button onClick={() => setGenError(null)} aria-label="Dismiss" style={{ position:"absolute", top:12, right:14, background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#c1673a", fontWeight:900, fontFamily:"inherit" }}>✕</button>
+                  <p style={{ fontSize:17, fontWeight:900, color:"#c1673a", marginBottom:8 }}>⚠️ Regeneration failed</p>
+                  <p style={{ fontSize:15, color:T.textMid, lineHeight:1.6 }}>
+                    The request timed out. With <strong style={{ color:T.text }}>Expand</strong>, try hitting the button again — it usually works on a retry. On slow connections, generate first without Expand, then use the per-platform Expand button.
+                  </p>
+                </div>
+              )}
+              {genError === "flagged" && (
+                <div role="alert" style={{ background:"#fff5f5", border:`3px solid #b91c1c`, borderRadius:12, padding:"18px 22px", position:"relative" }}>
+                  <button onClick={() => setGenError(null)} aria-label="Dismiss" style={{ position:"absolute", top:12, right:14, background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#b91c1c", fontWeight:900, fontFamily:"inherit" }}>✕</button>
+                  <p style={{ fontSize:17, fontWeight:900, color:"#b91c1c", marginBottom:8 }}>⚠️ Generation was blocked</p>
+                  <p style={{ fontSize:15, color:T.textMid, lineHeight:1.6 }}>The AI declined this request. Use <strong style={{ color:T.text }}>Edit Parameters</strong> to rephrase the issue content and try again.</p>
+                </div>
+              )}
               {PLATFORMS.filter(p=>messages[p.id]!==undefined).map(p => (
                 <PlatformCard key={p.id} platform={p} message={messages[p.id]}
                   onUpdate={(id,text)=>setMessages(prev=>({...prev,[id]:text}))}
