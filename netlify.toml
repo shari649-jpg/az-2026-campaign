@@ -12,6 +12,9 @@
 [functions."generate-rebuttal"]
   timeout = 26
 
+[functions."browse-drive"]
+  timeout = 26
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
