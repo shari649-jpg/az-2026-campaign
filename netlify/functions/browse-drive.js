@@ -96,12 +96,45 @@ exports.handler = async (event) => {
     const { mode, folderId } = body;
     const targetFolder = folderId || ROOT_FOLDER_ID;
 
+    console.log(`[browse-drive] mode=${mode} targetFolder=${targetFolder}`);
+
     const auth = getAuthClient();
     const drive = google.drive({ version: 'v3', auth });
 
+    // ── DIAGNOSTIC: verify we can see the target folder at all ──
+    try {
+      const folderMeta = await drive.files.get({
+        fileId: targetFolder,
+        fields: 'id, name, mimeType, owners',
+        supportsAllDrives: true,
+      });
+      console.log(`[browse-drive] folder meta: ${JSON.stringify(folderMeta.data)}`);
+    } catch (metaErr) {
+      console.error(`[browse-drive] CANNOT ACCESS FOLDER: ${metaErr.message}`);
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          success: false,
+          error: `Cannot access folder: ${metaErr.message}`,
+          folders: [], files: [], folderName: 'Error',
+        }),
+      };
+    }
+
+    // ── DIAGNOSTIC: list ALL items (no mime filter) to see what's there ──
+    const allItemsRes = await drive.files.list({
+      q: `'${targetFolder}' in parents and trashed = false`,
+      fields: 'files(id, name, mimeType)',
+      pageSize: 20,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+    console.log(`[browse-drive] ALL items in folder (first 20): ${JSON.stringify(allItemsRes.data.files)}`);
+
     if (mode === 'folders') {
       const folders = await listFolders(drive, targetFolder);
-      // Also get the root folder name if browsing root
+      console.log(`[browse-drive] found ${folders.length} subfolders`);
       let folderName = 'Media';
       if (folderId && folderId !== ROOT_FOLDER_ID) {
         try {
@@ -118,6 +151,7 @@ exports.handler = async (event) => {
 
     if (mode === 'files') {
       const files = await listFiles(drive, targetFolder);
+      console.log(`[browse-drive] found ${files.length} media files`);
       let folderName = 'Media';
       try {
         const meta = await drive.files.get({ fileId: targetFolder, fields: 'name', supportsAllDrives: true });
