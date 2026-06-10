@@ -185,19 +185,6 @@ const S = {
 };
 
 /* ── Desert Loading Screen ── */
-const DESERT_FRAMES = [
-  { emoji: "🌵", label: "Summoning the desert spirits…" },
-  { emoji: "🦅", label: "Eagle-eyed strategists at work…" },
-  { emoji: "☀️", label: "Arizona sun powering your posts…" },
-  { emoji: "🌵🌵", label: "Double-cactus energy activated…" },
-  { emoji: "🦎", label: "Lizard brain engaged for messaging…" },
-  { emoji: "🌅", label: "Crafting your sunset moment…" },
-  { emoji: "🐍", label: "Slithering through the talking points…" },
-  { emoji: "🌵☀️🌵", label: "Peak desert vibes loading…" },
-  { emoji: "🦩", label: "Flamingo-level finesse incoming…" },
-  { emoji: "🌵", label: "Almost there — cacti never rush…" },
-];
-
 function DesertLoader() {
   const [frameIdx, setFrameIdx] = useState(0);
   const [animKey, setAnimKey] = useState(0);
