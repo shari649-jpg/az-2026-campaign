@@ -281,7 +281,7 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
   const handleQuick = (opt) => {
     const next = localOpt === opt ? "" : opt;
     setLocalOpt(next);
-    onRegen(p.id, next);
+    onRegen(p.id, next, message);
   };
 
   return (
@@ -326,7 +326,7 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
             <button style={S.btnDark} onClick={() => onCopy(message || "", p.name)}>Copy Text</button>
             <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => handleQuick("shorten")} title="Regenerate a shorter version">Shorten</button>
             <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => handleQuick("expand")} title="Regenerate a more detailed version">Expand</button>
-            <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => onRegen(p.id, "")} title="Rephrase this message">Rephrase</button>
+            <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => onRegen(p.id, "", message)} title="Rephrase this message">Rephrase</button>
           </div>
         </div>
       )}
@@ -441,6 +441,42 @@ Only include these platform ids: ${platforms.join(", ")}
 Format: {"platform_id": "message text"}`;
   };
 
+  // Used for Shorten / Expand / Rephrase — works from the CURRENT message text
+  const buildRegenPrompt = (platformId, currentText, regenOpt) => {
+    const platform = PLATFORMS.find(p => p.id === platformId);
+    const currentLen = currentText.length;
+    const audienceLabel = formData.audience || DEFAULT_AUDIENCE;
+    const styleObj = STYLES.find(s=>s.id===(formData.style||DEFAULT_STYLE));
+    const styleLabel = styleObj ? styleObj.label : "Neutral";
+    const modifierLine = formData.modifier ? `Tone modifier: ${formData.modifier}` : "";
+
+    const instruction = regenOpt === "shorten"
+      ? `SHORTEN this message. It is currently ${currentLen} characters. You MUST produce a version that is meaningfully shorter — at least 20% fewer characters. Keep the core message and call to action but cut filler, reduce examples, and tighten every sentence. Do not add new content.`
+      : regenOpt === "expand"
+      ? `EXPAND this message with more detail, context, and persuasive depth. Keep the same tone and platform style. Do not change the core message.`
+      : `REPHRASE this message. Keep the same length, meaning, and platform style but use different wording, sentence structure, and framing.`;
+
+    return `You are an expert political messaging strategist for a legitimate Arizona Democratic campaign coalition.
+
+Your task is to rewrite the following existing ${platform?.name} post.
+
+CURRENT MESSAGE (${currentLen} characters):
+${currentText}
+
+INSTRUCTION: ${instruction}
+
+Context:
+- Platform: ${platform?.name} (max ${platform?.maxChars} chars)
+- Target Audience: ${audienceLabel}
+- Style: ${styleLabel}
+${modifierLine}
+- Original issue: ${formData.issue}
+
+IMPORTANT: Do NOT include hashtags. Write clean prose only.
+YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation.
+Format: {"${platformId}": "rewritten message text"}`;
+  };
+
   const callAPI = async (prompt, maxTokens=1000) => {
     const res = await fetch("/.netlify/functions/generate-message", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -485,13 +521,17 @@ Format: {"platform_id": "message text"}`;
     setGenerating(false);
   };
 
-  const regenPlatform = async (platformId, regenOpt) => {
+  const regenPlatform = async (platformId, regenOpt, currentText) => {
     setPlatLoad(p=>({...p,[platformId]:true}));
     setGenError(null);
     try {
-      // Expand needs more tokens — give it extra headroom
       const maxTok = regenOpt === "expand" ? 1600 : 1000;
-      const r = await callAPI(buildPrompt([platformId], regenOpt), maxTok);
+      // Use the current message text as the base — so Shorten/Expand/Rephrase
+      // work from what's actually on screen, not a fresh generation
+      const prompt = currentText
+        ? buildRegenPrompt(platformId, currentText, regenOpt)
+        : buildPrompt([platformId], regenOpt);
+      const r = await callAPI(prompt, maxTok);
       setMessages(p=>({...p,...r}));
     } catch(e) {
       if (e.type === "content_flagged") {
