@@ -78,7 +78,13 @@ const globalCSS = `
   @keyframes fadeSwap { 0%{opacity:0;transform:scale(0.7) translateY(8px);} 20%{opacity:1;transform:scale(1) translateY(0);} 80%{opacity:1;transform:scale(1) translateY(0);} 100%{opacity:0;transform:scale(0.8) translateY(-8px);} }
   @keyframes pulseGlow { 0%,100%{box-shadow:0 0 0 0 rgba(62,207,178,0.3);} 50%{box-shadow:0 0 0 18px rgba(62,207,178,0);} }
   @keyframes tumbleweed { 0%{transform:translateX(-40px) rotate(0deg);opacity:0;} 20%{opacity:1;} 80%{opacity:1;} 100%{transform:translateX(40px) rotate(360deg);opacity:0;} }
-  @keyframes sunrise { 0%{left:-20px;opacity:0;transform:translateY(6px);} 10%{opacity:1;transform:translateY(0);} 85%{opacity:1;} 100%{left:200px;opacity:0;transform:translateY(-4px);} }
+  @keyframes sunrise { 
+    0%   { left: 0%;   bottom: 0px;  opacity: 0;   transform: scale(0.7); }
+    10%  { opacity: 1; }
+    50%  { left: 42%;  bottom: 52px; opacity: 1;   transform: scale(1.15); }
+    90%  { opacity: 1; }
+    100% { left: 84%;  bottom: 0px;  opacity: 0;   transform: scale(0.7); }
+  }
   .spin-anim { animation: spin 0.8s linear infinite; display: inline-block; }
   .slide-down { animation: slideDown 0.2s ease; }
   .desert-emoji { animation: fadeSwap 5s ease-in-out; display:inline-block; }
@@ -228,16 +234,15 @@ function DesertLoader() {
         {frame.emoji}
       </div>
 
-      {/* Sun rising left → right */}
-      <div style={{ marginBottom: 28, height: 44, width: 220, position: "relative", overflow: "hidden" }}>
+      {/* Sun arching sunrise → sunset over the scene */}
+      <div style={{ marginBottom: 28, height: 80, width: 240, position: "relative" }}>
         <span key={`sun-${animKey}`} style={{
           position: "absolute",
-          fontSize: 32,
+          fontSize: 28,
           animation: "sunrise 5s ease-in-out infinite",
-          bottom: 4,
         }}>☀️</span>
         {/* Horizon line */}
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: "rgba(245,200,66,0.25)", borderRadius: 1 }} />
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: "rgba(245,200,66,0.3)", borderRadius: 1 }} />
       </div>
 
       {/* Dots */}
