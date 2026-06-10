@@ -554,6 +554,7 @@ export default function RapidResponseReader() {
         setPushed(false);
         setView("reader");
         localStorage.removeItem("rr_load_article");
+        window.scrollTo({ top: 0, behavior: "smooth" });
       }
     } catch {}
   }, []);
@@ -603,6 +604,7 @@ export default function RapidResponseReader() {
       const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
       setArticle({ ...parsed, url: targetUrl, id: `article_${Date.now()}`, isManual: false });
       setLoading(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch {
       setLoading(false);
       setError("scrape");
@@ -629,6 +631,7 @@ export default function RapidResponseReader() {
       const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
       setArticle({ ...parsed, url: srcUrl, id: `article_${Date.now()}`, isManual });
       setLoading(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch {
       setLoading(false);
       setError("parse");
