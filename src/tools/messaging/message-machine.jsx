@@ -78,12 +78,14 @@ const globalCSS = `
   @keyframes fadeSwap { 0%{opacity:0;transform:scale(0.7) translateY(8px);} 20%{opacity:1;transform:scale(1) translateY(0);} 80%{opacity:1;transform:scale(1) translateY(0);} 100%{opacity:0;transform:scale(0.8) translateY(-8px);} }
   @keyframes pulseGlow { 0%,100%{box-shadow:0 0 0 0 rgba(62,207,178,0.3);} 50%{box-shadow:0 0 0 18px rgba(62,207,178,0);} }
   @keyframes tumbleweed { 0%{transform:translateX(-40px) rotate(0deg);opacity:0;} 20%{opacity:1;} 80%{opacity:1;} 100%{transform:translateX(40px) rotate(360deg);opacity:0;} }
-  @keyframes sunrise { 
-    0%   { left: 0%;   bottom: 0px;  opacity: 0;   transform: scale(0.7); }
-    10%  { opacity: 1; }
-    50%  { left: 42%;  bottom: 52px; opacity: 1;   transform: scale(1.15); }
-    90%  { opacity: 1; }
-    100% { left: 84%;  bottom: 0px;  opacity: 0;   transform: scale(0.7); }
+  @keyframes sunArc { 
+    0%   { left: -10px; bottom: 28px; opacity: 0;   transform: scale(0.8); }
+    8%   { opacity: 1; }
+    25%  { left: 40px;  bottom: 90px; }
+    50%  { left: 95px;  bottom: 125px; transform: scale(1.2); }
+    75%  { left: 150px; bottom: 90px; }
+    92%  { opacity: 1; }
+    100% { left: 210px; bottom: 28px; opacity: 0;   transform: scale(0.8); }
   }
   .spin-anim { animation: spin 0.8s linear infinite; display: inline-block; }
   .slide-down { animation: slideDown 0.2s ease; }
@@ -229,20 +231,23 @@ function DesertLoader() {
         ))}
       </div>
 
-      {/* Emoji scene */}
-      <div key={animKey} className="desert-emoji" style={{ fontSize: 80, marginBottom: 24, lineHeight: 1 }}>
-        {frame.emoji}
-      </div>
-
-      {/* Sun arching sunrise → sunset over the scene */}
-      <div style={{ marginBottom: 28, height: 80, width: 240, position: "relative" }}>
+      {/* Scene: emoji on ground, sun arcing above it */}
+      <div style={{ position: "relative", width: 220, height: 160, marginBottom: 24 }}>
+        {/* Sun arcing above */}
         <span key={`sun-${animKey}`} style={{
           position: "absolute",
-          fontSize: 28,
-          animation: "sunrise 5s ease-in-out infinite",
+          fontSize: 30,
+          animation: "sunArc 5s ease-in-out infinite",
         }}>☀️</span>
         {/* Horizon line */}
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: "rgba(245,200,66,0.3)", borderRadius: 1 }} />
+        <div style={{ position: "absolute", bottom: 28, left: 0, right: 0, height: 2, background: "rgba(245,200,66,0.3)", borderRadius: 1 }} />
+        {/* Emoji sitting on the horizon */}
+        <div key={animKey} className="desert-emoji" style={{
+          position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%)",
+          fontSize: 64, lineHeight: 1,
+        }}>
+          {frame.emoji}
+        </div>
       </div>
 
       {/* Dots */}
@@ -609,6 +614,33 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
           boxShadow:"0 4px 24px rgba(0,0,0,0.35)", whiteSpace:"nowrap",
         }}>
           {notif.msg}
+        </div>
+      )}
+
+      {/* FIXED BOTTOM ERROR BANNER — visible wherever user is on page */}
+      {genError && (
+        <div className="slide-down" role="alert" aria-live="assertive" style={{
+          position:"fixed", bottom: 24, left:"50%", transform:"translateX(-50%)", zIndex:150,
+          maxWidth: 520, width:"calc(100% - 48px)",
+          background: genError === "flagged" ? "#7f1d1d" : "#7a3820",
+          color:"#fff",
+          border:`2px solid ${genError === "flagged" ? "#b91c1c" : "#c1673a"}`,
+          borderRadius:12, padding:"14px 48px 14px 20px",
+          boxShadow:"0 8px 32px rgba(0,0,0,0.45)",
+        }}>
+          <button onClick={() => setGenError(null)} aria-label="Dismiss" style={{
+            position:"absolute", top:10, right:14,
+            background:"none", border:"none", cursor:"pointer",
+            fontSize:20, color:"rgba(255,255,255,0.8)", fontWeight:900, fontFamily:"inherit", lineHeight:1,
+          }}>✕</button>
+          <p style={{ fontSize:16, fontWeight:900, marginBottom:4 }}>
+            {genError === "flagged" ? "⚠️ Generation blocked" : "⚠️ Generation failed"}
+          </p>
+          <p style={{ fontSize:14, color:"rgba(255,255,255,0.85)", lineHeight:1.5 }}>
+            {genError === "flagged"
+              ? "The AI declined this request. Edit the Issue / Content field and try again."
+              : "Request timed out. Try again — or generate without Expand first, then expand per platform."}
+          </p>
         </div>
       )}
 
