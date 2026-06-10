@@ -7,6 +7,7 @@ import RebuttalPage from "./tools/rebuttal/RebuttalPage";
 import RapidResponsePage from "./tools/rapid-response/RapidResponsePage";
 import ResourcesPage from "./tools/resources/ResourcesPage";
 import LibraryPage from "./tools/library/LibraryPage";
+import MediaPage from "./tools/media/MediaPage";
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="/rapid-response" element={<RapidResponsePage />} />
           <Route path="/resources" element={<ResourcesPage />} />
           <Route path="/library" element={<LibraryPage />} />
+          <Route path="/media" element={<ToolPage><MediaPage /></ToolPage>} />
         </Route>
       </Routes>
     </BrowserRouter>
