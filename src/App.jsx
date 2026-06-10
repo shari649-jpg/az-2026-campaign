@@ -21,7 +21,7 @@ export default function App() {
           <Route path="/rapid-response" element={<RapidResponsePage />} />
           <Route path="/resources" element={<ResourcesPage />} />
           <Route path="/library" element={<LibraryPage />} />
-          <Route path="/media" element={<ToolPage><MediaPage /></ToolPage>} />
+          <Route path="/media" element={<MediaPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
