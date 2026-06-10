@@ -35,6 +35,8 @@ async function listFolders(drive, folderId) {
     fields: 'files(id, name, modifiedTime)',
     orderBy: 'name',
     pageSize: 100,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
   });
   return (res.data.files || []).map(f => ({
     id: f.id,
@@ -54,6 +56,8 @@ async function listFiles(drive, folderId) {
     fields: 'files(id, name, mimeType, size, modifiedTime, thumbnailLink, imageMediaMetadata)',
     orderBy: 'name',
     pageSize: 200,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
   });
 
   return (res.data.files || []).map(f => {
@@ -101,7 +105,7 @@ exports.handler = async (event) => {
       let folderName = 'Media';
       if (folderId && folderId !== ROOT_FOLDER_ID) {
         try {
-          const meta = await drive.files.get({ fileId: folderId, fields: 'name' });
+          const meta = await drive.files.get({ fileId: folderId, fields: 'name', supportsAllDrives: true });
           folderName = meta.data.name;
         } catch {}
       }
@@ -116,7 +120,7 @@ exports.handler = async (event) => {
       const files = await listFiles(drive, targetFolder);
       let folderName = 'Media';
       try {
-        const meta = await drive.files.get({ fileId: targetFolder, fields: 'name' });
+        const meta = await drive.files.get({ fileId: targetFolder, fields: 'name', supportsAllDrives: true });
         folderName = meta.data.name;
       } catch {}
       return {
