@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { path: "/messaging",      short: "Messaging" },
   { path: "/rebuttal",       short: "Rebuttal" },
   { path: "/rapid-response", short: "Rapid Response" },
+  { path: "/media",          short: "Media" },
   { path: "/resources",      short: "Resources" },
   { path: "/library",        short: "Library" },
 ];
@@ -273,6 +274,7 @@ export default function AppShell() {
               { label: "Message Machine",     path: "/messaging" },
               { label: "Rebuttal Generator",  path: "/rebuttal" },
               { label: "Rapid Response",      path: "/rapid-response" },
+              { label: "Media Library",       path: "/media" },
               { label: "Shared Library",      path: "/library" },
             ]} />
             <FooterLinkGroup title="Resources" links={[
