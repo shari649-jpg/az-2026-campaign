@@ -29,8 +29,6 @@ function getDrive() {
 function mapFile(f) {
   const isVideo = VIDEO_MIMES.includes(f.mimeType);
   const isGif   = f.mimeType === GIF_MIME;
-  // Use the reliable thumbnail endpoint — works for public files
-  const thumbnail = `https://drive.google.com/thumbnail?id=${f.id}&sz=w400`;
   return {
     id: f.id,
     name: f.name,
@@ -38,10 +36,12 @@ function mapFile(f) {
     size: f.size ? parseInt(f.size) : null,
     modifiedTime: f.modifiedTime,
     type: isVideo ? 'video' : isGif ? 'gif' : 'image',
-    thumbnailLink: thumbnail,
+    thumbnailLink: f.thumbnailLink
+      ? f.thumbnailLink.replace(/=s\d+/, '=s400')
+      : null,
     downloadUrl: `https://drive.google.com/uc?export=download&id=${f.id}`,
     viewUrl: !isVideo
-      ? `https://drive.google.com/thumbnail?id=${f.id}&sz=w1200`
+      ? `https://drive.google.com/uc?export=view&id=${f.id}`
       : null,
   };
 }
