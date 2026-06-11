@@ -338,7 +338,6 @@ function CampaignOutput({ output, onCopy, onSave, onShare, onPushToMachine, onEd
         <button style={btnOutline(saved)} onClick={saved ? undefined : onSave}>
           {saved ? "✓ Saved" : "Save to Library"}
         </button>
-        <button style={btnOutline(false)} onClick={onShare}>Share</button>
         <button style={btnOutline(false)} onClick={onEdit}>Edit &amp; Regenerate</button>
       </div>
     </div>
