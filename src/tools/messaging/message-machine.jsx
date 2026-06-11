@@ -369,7 +369,7 @@ export default function App() {
         setFormData(f => ({ ...f, issue: p.issueText || "", focalPoint: "", platforms: Object.keys(p.messages || {}) }));
         setView("results");
         localStorage.removeItem("rebuttal_push_results");
-        localStorageSafe(() => localStorage.removeItem(MM_DRAFT_KEY));
+        try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
         return;
       }
     } catch {}
@@ -382,7 +382,7 @@ export default function App() {
         setFormData(f => ({ ...f, issue: p.issueText || "", focalPoint: p.focalPoint || "" }));
         setFromResearch(true);
         localStorage.removeItem("rr_pending_article");
-        localStorageSafe(() => localStorage.removeItem(MM_DRAFT_KEY));
+        try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
         return;
       }
     } catch {}
@@ -397,7 +397,7 @@ export default function App() {
         setHashtags(null);
         setView(Object.keys(c.messages || {}).length > 0 ? "results" : "form");
         localStorage.removeItem("mm_load_campaign");
-        localStorageSafe(() => localStorage.removeItem(MM_DRAFT_KEY));
+        try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
         return;
       }
     } catch {}
@@ -631,7 +631,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
   const [formKey, setFormKey] = useState(0);
 
   const startNewCampaign = () => {
-    localStorageSafe(() => localStorage.removeItem(MM_DRAFT_KEY));
+    try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
     setFormData({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", regenOption:"", platforms:[] });
     setFromResearch(false);
     setMessages({});
@@ -646,9 +646,11 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
   useEffect(() => {
     const hasContent = formData.issue.trim() || Object.keys(messages).length > 0;
     if (!hasContent) return;
-    localStorageSafe(() => localStorage.setItem(MM_DRAFT_KEY, JSON.stringify({
-      formData, messages, view, savedAt: new Date().toISOString(),
-    })));
+    try {
+      localStorage.setItem(MM_DRAFT_KEY, JSON.stringify({
+        formData, messages, view, savedAt: new Date().toISOString(),
+      }));
+    } catch {}
   }, [formData, messages, view]);
 
   const hasMessages = Object.keys(messages).length > 0;
@@ -708,7 +710,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               </button>
               <button
                 onClick={() => {
-                  localStorageSafe(() => localStorage.removeItem(MM_DRAFT_KEY));
+                  try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
                   setDraftModal(false); setPendingDraft(null);
                 }}
                 style={{ ...S.btnSecondary, fontSize:16, padding:"12px", width:"100%" }}
