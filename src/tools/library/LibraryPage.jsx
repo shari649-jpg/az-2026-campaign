@@ -324,11 +324,10 @@ export default function LibraryPage() {
                     {a.linkedCampaigns?.length > 0 && (
                       <p style={{ fontSize: 12, color: TEAL, fontWeight: 700, marginTop: 8 }}>🔗 {a.linkedCampaigns.length} campaign{a.linkedCampaigns.length !== 1 ? "s" : ""} created from this article</p>
                     )}
-                    {a.savedBy && <p style={{ fontSize: 12, color: "#888", marginTop: 6 }}>Saved by {a.savedBy}{a.savedAt ? ` · ${a.savedAt}` : ""}</p>}
+                    {a.savedBy && <p style={{ fontSize: 12, color: "#888", marginTop: 6 }}>Saved by {a.savedBy}{a.savedAt ? ` · ${(() => { try { const t = a.savedAt; if (t?.seconds) return new Date(t.seconds * 1000).toLocaleDateString("en-US", {month:"short",day:"numeric",year:"numeric"}); return t; } catch { return ""; } })()}` : ""}</p>}
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
                     <button onClick={() => loadArticleInRR(a)} style={btnStyle(TEAL, "#fff")}>Push to Message Machine →</button>
-                    <button onClick={() => pushArticleToMachine(a)} style={btnStyle(TEAL)}>Push to Message Machine →</button>
                     <button onClick={() => handleDeleteArticle(a.id)} style={btnStyle(RED)}>Delete</button>
                   </div>
                 </div>
