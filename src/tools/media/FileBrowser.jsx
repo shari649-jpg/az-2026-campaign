@@ -71,7 +71,7 @@ function Lightbox({ file, onClose }) {
           }}
         >✕</button>
         <img
-          src={`https://drive.google.com/thumbnail?id=${file.id}&sz=w1200`}
+          src={file.thumbnailLink ? file.thumbnailLink.replace('=s400', '=s1200') : ''}
           alt={file.name}
           style={{ width: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 8, display: "block" }}
         />
