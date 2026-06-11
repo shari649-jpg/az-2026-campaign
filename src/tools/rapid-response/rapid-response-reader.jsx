@@ -740,14 +740,9 @@ export default function RapidResponseReader() {
             {article && (
               <button onClick={reset} style={{ ...S.btnSmall, marginRight: 8 }}>+ New Article</button>
             )}
-            {[
-              { id: "reader", label: "Reader" },
-              { id: "library", label: `Library (${library.length})` },
-            ].map(tab => (
-              <button key={tab.id} onClick={() => setView(tab.id)} style={tabStyle(view === tab.id)}>
-                {tab.label}
-              </button>
-            ))}
+            <button onClick={() => setView("library")} style={tabStyle(view === "library")}>
+              Library ({library.length})
+            </button>
             {/* Profile chip */}
             <div style={{
               display: "flex", alignItems: "center", gap: 8,
