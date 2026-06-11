@@ -92,10 +92,24 @@ export default function LibraryPage() {
   };
 
   const loadArticleInRR = (article) => {
+    // Skip RR reader — push straight to Message Machine
+    // User can't edit or post from RR reader anyway; MM is the destination
+    const payload = {
+      sourceArticleId:   article.id,
+      sourceTitle:       article.title,
+      sourcePublication: article.publication,
+      sourceDate:        article.date,
+      sourceUrl:         article.url,
+      issueText: `${article.title}\n\n${article.summary}\n\nKey Points:\n${(article.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join("\n")}`,
+      focalPoint:        "",
+      pushedAt:          new Date().toISOString(),
+    };
     try {
-      localStorage.setItem("rr_load_article", JSON.stringify(article));
-    } catch {}
-    navigate("/rapid-response");
+      localStorage.setItem("rr_pending_article", JSON.stringify(payload));
+      navigate("/messaging");
+    } catch {
+      notify("Could not push to Message Machine.", "err");
+    }
   };
 
   const pushArticleToMachine = (article) => {
