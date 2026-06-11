@@ -343,6 +343,9 @@ export default function App() {
   const [generating, setGenerating] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
   const [platLoad, setPlatLoad]     = useState({});
+  const [draftModal, setDraftModal] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState(null);
+  const [arrivalSource, setArrivalSource] = useState(null);
   const [campaigns, setCampaigns]   = useState([]);
   const [saveModal, setSaveModal]   = useState(false);
   const [campName, setCampName]     = useState("");
@@ -353,20 +356,24 @@ export default function App() {
 
   useEffect(() => {
     loadCampaigns();
-    // Check for rebuttal push → load directly into results view with pre-filled platform cards
+    // Detect arrival source BEFORE consuming keys
+    const source = detectArrivalSource();
+    if (source) setArrivalSource(source);
+
+    // Check for rebuttal push → load directly into results view
     try {
       const rebuttalPush = localStorage.getItem("rebuttal_push_results");
       if (rebuttalPush) {
         const p = JSON.parse(rebuttalPush);
-        // p.messages = { facebook, instagram, threads, bluesky, twitter, tiktok }
-        // p.issueText = anchor phrase + lenses (for Edit Parameters)
         setMessages(p.messages || {});
         setFormData(f => ({ ...f, issue: p.issueText || "", focalPoint: "", platforms: Object.keys(p.messages || {}) }));
         setView("results");
         localStorage.removeItem("rebuttal_push_results");
-        return; // skip other localStorage checks
+        localStorageSafe(() => localStorage.removeItem(MM_DRAFT_KEY));
+        return;
       }
     } catch {}
+
     // Check if Rapid Response or Research pushed content
     try {
       const pending = localStorage.getItem("rr_pending_article");
@@ -375,9 +382,12 @@ export default function App() {
         setFormData(f => ({ ...f, issue: p.issueText || "", focalPoint: p.focalPoint || "" }));
         setFromResearch(true);
         localStorage.removeItem("rr_pending_article");
+        localStorageSafe(() => localStorage.removeItem(MM_DRAFT_KEY));
+        return;
       }
     } catch {}
-    // Check if Library pushed a saved campaign to load
+
+    // Check if Library pushed a saved campaign
     try {
       const saved = localStorage.getItem("mm_load_campaign");
       if (saved) {
@@ -387,6 +397,20 @@ export default function App() {
         setHashtags(null);
         setView(Object.keys(c.messages || {}).length > 0 ? "results" : "form");
         localStorage.removeItem("mm_load_campaign");
+        localStorageSafe(() => localStorage.removeItem(MM_DRAFT_KEY));
+        return;
+      }
+    } catch {}
+
+    // Check for saved draft — offer to resume
+    try {
+      const draft = localStorage.getItem(MM_DRAFT_KEY);
+      if (draft) {
+        const d = JSON.parse(draft);
+        if (d.formData?.issue?.trim() || Object.keys(d.messages || {}).length > 0) {
+          setPendingDraft(d);
+          setDraftModal(true);
+        }
       }
     } catch {}
   }, []);
@@ -441,7 +465,17 @@ Only include these platform ids: ${platforms.join(", ")}
 Format: {"platform_id": "message text"}`;
   };
 
-  // Used for Shorten / Expand / Rephrase — works from the CURRENT message text
+  const MM_DRAFT_KEY = "mm_draft_session";
+
+// Detect arrival source from localStorage push keys
+function detectArrivalSource() {
+  try {
+    if (localStorage.getItem("rebuttal_push_results")) return "Rebuttal Generator";
+    if (localStorage.getItem("rr_pending_article"))    return "Rapid Response";
+    if (localStorage.getItem("mm_load_campaign"))      return "Library";
+  } catch {}
+  return null;
+}
   const buildRegenPrompt = (platformId, currentText, regenOpt) => {
     const platform = PLATFORMS.find(p => p.id === platformId);
     const currentLen = currentText.length;
@@ -594,17 +628,28 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
     } catch { notify("Delete failed — please try again.", "err"); }
   };
 
-  const [formKey, setFormKey] = useState(0); // increment to force form field reset
+  const [formKey, setFormKey] = useState(0);
 
   const startNewCampaign = () => {
+    localStorageSafe(() => localStorage.removeItem(MM_DRAFT_KEY));
     setFormData({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", regenOption:"", platforms:[] });
     setFromResearch(false);
     setMessages({});
     setHashtags(null);
     setGenError(null);
-    setFormKey(k => k + 1); // force re-render so fields visibly clear
+    setArrivalSource(null);
+    setFormKey(k => k + 1);
     setView("form");
   };
+
+  // Auto-save draft whenever formData or messages change
+  useEffect(() => {
+    const hasContent = formData.issue.trim() || Object.keys(messages).length > 0;
+    if (!hasContent) return;
+    localStorageSafe(() => localStorage.setItem(MM_DRAFT_KEY, JSON.stringify({
+      formData, messages, view, savedAt: new Date().toISOString(),
+    })));
+  }, [formData, messages, view]);
 
   const hasMessages = Object.keys(messages).length > 0;
 
@@ -619,27 +664,89 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
   /* ─────── RENDER ─────── */
   return (
-    <div style={{ minHeight:"100vh", background:T.pageBg, color:T.text, fontFamily:"'Atkinson Hyperlegible', Georgia, serif" }}>
+    <div style={{ minHeight:"100vh", background: view === "results" ? "#fafaf7" : T.pageBg, color:T.text, fontFamily:"'Atkinson Hyperlegible', Georgia, serif" }}>
       <style>{globalCSS}</style>
       {showLoader && <DesertLoader />}
 
+      {/* DRAFT RESUME MODAL */}
+      {draftModal && pendingDraft && (
+        <div style={{
+          position:"fixed", inset:0, zIndex:300,
+          background:"rgba(0,0,0,0.55)",
+          display:"flex", alignItems:"center", justifyContent:"center",
+          padding:24,
+        }}>
+          <div style={{
+            background:"#fff", borderRadius:14,
+            border:`3px solid ${T.teal}`,
+            padding:"32px 28px", maxWidth:440, width:"100%",
+            boxShadow:"0 12px 48px rgba(0,0,0,0.25)",
+          }}>
+            <div style={{ fontSize:32, marginBottom:12, textAlign:"center" }}>✏️</div>
+            <h2 style={{ fontSize:22, fontWeight:900, color:T.text, textAlign:"center", marginBottom:10 }}>
+              Resume Last Session?
+            </h2>
+            <p style={{ fontSize:16, color:T.textMid, textAlign:"center", lineHeight:1.6, marginBottom:24 }}>
+              You have unsaved work from a previous session.
+              {pendingDraft.formData?.issue ? (
+                <span style={{ display:"block", marginTop:10, fontStyle:"italic", color:T.textMute, fontSize:14 }}>
+                  "{pendingDraft.formData.issue.slice(0, 80)}{pendingDraft.formData.issue.length > 80 ? "…" : ""}"
+                </span>
+              ) : null}
+            </p>
+            <div style={{ display:"flex", gap:12, flexDirection:"column" }}>
+              <button
+                onClick={() => {
+                  setFormData(pendingDraft.formData || {});
+                  setMessages(pendingDraft.messages || {});
+                  if (Object.keys(pendingDraft.messages || {}).length > 0) setView("results");
+                  setDraftModal(false); setPendingDraft(null);
+                }}
+                style={{ ...S.btnPrimary, fontSize:17, padding:"14px", width:"100%" }}
+              >
+                Resume Last Session
+              </button>
+              <button
+                onClick={() => {
+                  localStorageSafe(() => localStorage.removeItem(MM_DRAFT_KEY));
+                  setDraftModal(false); setPendingDraft(null);
+                }}
+                style={{ ...S.btnSecondary, fontSize:16, padding:"12px", width:"100%" }}
+              >
+                Start New
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HEADER */}
       <header style={{ background:T.pageBg, borderBottom:`4px solid ${T.borderStrong}`, position:"sticky", top:0, zIndex:40 }}>
-        <div style={{ maxWidth:860, margin:"0 auto", padding:"14px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:16, flexWrap:"wrap" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:14 }}>
-            <div style={{ width:48, height:48, background:T.teal, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:24, color:"#fff" }}>M</div>
-            <h1 style={{ fontSize:26, fontWeight:900, color:T.text }}>Message Machine</h1>
+        <div style={{ maxWidth:860, margin:"0 auto", padding:"14px 20px", display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
+          <div style={{ width:48, height:48, background:T.teal, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:24, color:"#fff", flexShrink:0 }}>M</div>
+          <div>
+            <h1 style={{ fontSize:26, fontWeight:900, color:T.text, lineHeight:1.1 }}>Message Machine</h1>
+            <p style={{ fontSize:13, color:T.textMute, fontWeight:700, letterSpacing:"0.06em", textTransform:"uppercase", marginTop:2 }}>
+              {view === "results" ? "Results · Edit & Copy" : "Create"}
+            </p>
           </div>
-          <nav style={{ display:"flex", gap:6, alignItems:"center" }} role="navigation" aria-label="Main navigation">
-            {[
-              ...(hasMessages ? [{ id:"results", label:"Messages" }] : []),
-              { id:"campaigns", label:`Saved (${campaigns.length})` },
-            ].map(tab => (
-              <button key={tab.id} onClick={()=>setView(tab.id)} style={tabStyle(view===tab.id)} aria-current={view===tab.id?"page":undefined}>
-                {tab.label}
-              </button>
-            ))}
-          </nav>
+          {/* Arrival source pill */}
+          {arrivalSource && (
+            <div style={{
+              marginLeft: 4,
+              background: T.tealLight,
+              border: `2px solid ${T.teal}`,
+              borderRadius: 20,
+              padding: "4px 12px",
+              fontSize: 13,
+              fontWeight: 700,
+              color: T.teal,
+              display: "flex", alignItems: "center", gap: 6,
+              flexShrink: 0,
+            }}>
+              ← {arrivalSource}
+            </div>
+          )}
         </div>
       </header>
 
@@ -918,7 +1025,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </fieldset>
               </section>
 
-              {/* Generate + New Campaign buttons at bottom */}
+              {/* Generate button */}
               <div style={{ display:"flex", gap:14, flexWrap:"wrap", marginTop:8 }}>
                 <button onClick={generateAll} disabled={generating} style={{
                   ...S.btnPrimary, flex:1, minWidth:200, fontSize:20, padding:"18px 24px",
@@ -927,11 +1034,11 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 }}>
                   Generate Messages →
                 </button>
-                <button onClick={startNewCampaign} style={{
-                  ...S.btnSecondary, fontSize:18, padding:"18px 22px", whiteSpace:"nowrap",
-                }}>
-                  + New Campaign
-                </button>
+                {hasMessages && (
+                  <button onClick={()=>setView("results")} style={{ ...S.btnSecondary, fontSize:16, padding:"18px 20px", whiteSpace:"nowrap" }}>
+                    ← Back to Results
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -940,28 +1047,30 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
         {/* ══════ RESULTS VIEW ══════ */}
         {view==="results" && (
           <div style={{ maxWidth:740, margin:"0 auto" }}>
-            {/* Sticky action bar */}
+            {/* Sticky action bar — clean hierarchy */}
             <div style={{
               position:"sticky", top:76, zIndex:30,
-              background:T.pageBg, borderBottom:`3px solid ${T.borderStrong}`,
+              background:"#fafaf7", borderBottom:`3px solid ${T.borderStrong}`,
               marginBottom:28, marginLeft:-20, marginRight:-20, paddingLeft:20, paddingRight:20,
               paddingTop:12, paddingBottom:12,
             }}>
-              <div style={{ display:"flex", gap:10, flexWrap:"wrap", maxWidth:740, margin:"0 auto" }}>
-                <button onClick={startNewCampaign} style={{ ...S.btnSecondary, fontSize:16, padding:"10px 18px" }}>
-                  + New Campaign
-                </button>
-                <button onClick={()=>setView("form")} style={{ ...S.btnSecondary, fontSize:16, padding:"10px 18px" }}>
+              <div style={{ display:"flex", gap:10, flexWrap:"wrap", maxWidth:740, margin:"0 auto", alignItems:"center" }}>
+                {/* Secondary actions — text weight */}
+                <button onClick={()=>setView("form")} style={{ ...S.btnSecondary, fontSize:15, padding:"9px 16px" }}>
                   ✎ Edit Parameters
                 </button>
                 <button onClick={generateAll} disabled={generating}
-                  style={{ ...S.btnSecondary, fontSize:16, padding:"10px 18px", opacity: generating ? 0.65 : 1, cursor: generating ? "not-allowed" : "pointer" }}>
+                  style={{ ...S.btnSecondary, fontSize:15, padding:"9px 16px", opacity: generating ? 0.65 : 1, cursor: generating ? "not-allowed" : "pointer" }}>
                   {generating
                     ? <><span className="spin-anim" style={{ ...S.spinner }} /> Regenerating…</>
                     : "↺ Regenerate All"}
                 </button>
-                <button onClick={()=>setSaveModal(true)} style={{ ...S.btnPrimary, fontSize:16, padding:"10px 18px", marginLeft:"auto" }}>
-                  Save Campaign
+                <button onClick={startNewCampaign} style={{ ...S.btnSecondary, fontSize:15, padding:"9px 16px" }}>
+                  + New
+                </button>
+                {/* Primary action — gold, right-aligned */}
+                <button onClick={()=>setSaveModal(true)} style={{ ...S.btnPrimary, fontSize:15, padding:"9px 18px", marginLeft:"auto" }}>
+                  Save to Library
                 </button>
               </div>
             </div>
