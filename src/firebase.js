@@ -1,14 +1,19 @@
 import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
+// Your web app's Firebase configuration
+// These values are safe to expose in client-side code — security is enforced by Firebase Rules
 const firebaseConfig = {
-  apiKey: "AIzaSyA5dpbMc_xwpa9YPUjZV0Fvq1L8zm-k1mA",
-  authDomain: "az-coalition-socials.firebaseapp.com",
-  projectId: "az-coalition-socials",
-  storageBucket: "az-coalition-socials.firebasestorage.app",
-  messagingSenderId: "508190384448",
-  appId: "1:508190384448:web:731e1da4f6de0e0ac6daa5"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 const app = initializeApp(firebaseConfig);
+
+export const auth = getAuth(app);
 export const db = getFirestore(app);
