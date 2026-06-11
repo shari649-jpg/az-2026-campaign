@@ -143,11 +143,8 @@ export default function AppShell() {
               </NavLink>
             ))}
 
-            {/* More ▾ dropdown */}
-            <div style={{ position: "relative" }}
-              onMouseEnter={() => setMoreOpen(true)}
-              onMouseLeave={() => setMoreOpen(false)}
-            >
+            {/* More ▾ dropdown — click to open, close on outside click */}
+            <div style={{ position: "relative" }}>
               <button
                 onClick={() => setMoreOpen(v => !v)}
                 style={{
@@ -177,32 +174,39 @@ export default function AppShell() {
               </button>
 
               {moreOpen && (
-                <div style={{
-                  position: "absolute", top: "calc(100% + 6px)", right: 0,
-                  background: "var(--bg)",
-                  border: "2px solid var(--border)",
-                  borderRadius: 10,
-                  boxShadow: "0 8px 32px rgba(74,69,88,0.15)",
-                  minWidth: 160, zIndex: 200,
-                  overflow: "hidden",
-                }}>
-                  {MORE_ITEMS.map(item => (
-                    <NavLink
-                      key={item.path}
-                      to={item.path}
-                      onClick={() => setMoreOpen(false)}
-                      className={({ isActive }) => "nav-link" + (isActive ? " active" : "")}
-                      style={{
-                        display: "block",
-                        padding: "12px 18px",
-                        borderBottom: "1px solid var(--surface-alt)",
-                        borderRadius: 0,
-                      }}
-                    >
-                      {item.short}
-                    </NavLink>
-                  ))}
-                </div>
+                <>
+                  {/* Invisible overlay to catch outside clicks */}
+                  <div
+                    onClick={() => setMoreOpen(false)}
+                    style={{ position: "fixed", inset: 0, zIndex: 199 }}
+                  />
+                  <div style={{
+                    position: "absolute", top: "100%", right: 0,
+                    background: "var(--bg)",
+                    border: "2px solid var(--border)",
+                    borderRadius: 10,
+                    boxShadow: "0 8px 32px rgba(74,69,88,0.15)",
+                    minWidth: 160, zIndex: 200,
+                    overflow: "hidden",
+                  }}>
+                    {MORE_ITEMS.map(item => (
+                      <NavLink
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setMoreOpen(false)}
+                        className={({ isActive }) => "nav-link" + (isActive ? " active" : "")}
+                        style={{
+                          display: "block",
+                          padding: "12px 18px",
+                          borderBottom: "1px solid var(--surface-alt)",
+                          borderRadius: 0,
+                        }}
+                      >
+                        {item.short}
+                      </NavLink>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           </nav>
