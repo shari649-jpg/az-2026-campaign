@@ -37,7 +37,7 @@ export default function LoginPage() {
     }}>
       {/* Logo + name */}
       <div style={{ textAlign: "center", marginBottom: 32 }}>
-        <img src="/azc-logo-teal.png" alt="Arizona Coalition" style={{ height: 64, marginBottom: 12, filter: "brightness(0) invert(1)" }} />
+        <img src="/azc-logo.png" alt="Arizona Coalition" style={{ height: 64, marginBottom: 12 }} />
         <div style={{ fontFamily: "var(--font-display)", fontSize: 24, color: "#fff", letterSpacing: "-0.01em" }}>
           Arizona Coalition
         </div>
