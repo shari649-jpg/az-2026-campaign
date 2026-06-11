@@ -71,7 +71,7 @@ function Lightbox({ file, onClose }) {
           }}
         >✕</button>
         <img
-          src={file.viewUrl}
+          src={`https://drive.google.com/thumbnail?id=${file.id}&sz=w1200`}
           alt={file.name}
           style={{ width: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 8, display: "block" }}
         />
@@ -154,12 +154,13 @@ function FileCard({ file, onClick }) {
             </span>
           </div>
         )}
-        {/* Video play overlay */}
+        {/* Video overlay — download only, no in-browser play */}
         {file.type === "video" && (
           <div style={{
             position: "absolute", inset: 0,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            background: "rgba(0,0,0,0.25)",
+            display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", gap: 6,
+            background: "rgba(0,0,0,0.3)",
           }}>
             <div style={{
               width: 44, height: 44, borderRadius: "50%",
@@ -168,6 +169,11 @@ function FileCard({ file, onClick }) {
             }}>
               <span style={{ fontSize: 18, marginLeft: 3 }}>▶</span>
             </div>
+            <span style={{
+              fontSize: 10, fontWeight: 700, color: "#fff",
+              letterSpacing: "0.06em", textTransform: "uppercase",
+              background: "rgba(0,0,0,0.5)", padding: "2px 8px", borderRadius: 4,
+            }}>Download to play</span>
           </div>
         )}
       </div>
