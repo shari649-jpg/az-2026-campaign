@@ -225,7 +225,7 @@ function parseOutput(text) {
 }
 
 // ── Structured output renderer ────────────────────────────────────────────
-function CampaignOutput({ output, onCopy, onSave, onShare, onPushToMachine, onEdit, copied, saved }) {
+function CampaignOutput({ output, onCopy, onSave, onPushToMachine, onEdit, copied, saved }) {
   const [copiedPlat, setCopiedPlat] = useState(null);
   const parsed = parseOutput(output);
   const hasPlatforms = Object.keys(parsed.platforms).length > 0;
@@ -375,8 +375,7 @@ export default function RebuttalGenerator() {
   const [saved,       setSaved]       = useState(false);
   const [library,     setLibrary]     = useState([]);
   const [showLib,     setShowLib]     = useState(false);
-  const [showShare,   setShowShare]   = useState(false);
-  const [shareCopied, setShareCopied] = useState(false);
+  const [showShare,   setShowShare]   = useState(false); // kept for safety, unused
 
   // Load library on mount, also check for library-pushed campaign
   useEffect(() => {
@@ -487,22 +486,6 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
       setCopied(true); setTimeout(() => setCopied(false), 2200);
     }).catch(() => {
       setError({ heading: "Copy failed.", body: "Your browser blocked the clipboard. Try selecting the text manually and copying with Ctrl/Cmd+C." });
-    });
-  };
-
-  // ── Share ───────────────────────────────────────────────────────────────
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({ title: "Rapid Rebuttal Campaign", text: output })
-        .catch(() => setShowShare(true)); // native share failed (e.g. iframe restriction) — show modal
-    } else {
-      setShowShare(true);
-    }
-  };
-
-  const handleShareCopy = () => {
-    copyText(output).then(() => {
-      setShareCopied(true); setTimeout(() => setShareCopied(false), 2200);
     });
   };
 
@@ -757,7 +740,6 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
               output={output}
               onCopy={handleCopy}
               onSave={saveToLibrary}
-              onShare={handleShare}
               onPushToMachine={pushToMachine}
               onEdit={editAndRegenerate}
               copied={copied}
@@ -766,25 +748,6 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
           </>
         )}
       </main>
-
-      {/* ── Share modal ── */}
-      {showShare && (
-        <div style={S.overlay} onClick={() => setShowShare(false)}>
-          <div style={S.modal} onClick={e => e.stopPropagation()}>
-            <div style={S.mHead}>
-              <span style={S.mTitle}>Share Campaign</span>
-              <button style={{ ...btnSmall(), border: "none" }} onClick={() => setShowShare(false)}>✕ Close</button>
-            </div>
-            <div style={S.mBody}>{output}</div>
-            <div style={S.mFoot}>
-              <button style={btnOutline(shareCopied)} onClick={handleShareCopy}>
-                {shareCopied ? "✓ Copied" : "Copy All"}
-              </button>
-              <button style={btnSmall()} onClick={() => setShowShare(false)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Back to top ── */}
       {output && (
