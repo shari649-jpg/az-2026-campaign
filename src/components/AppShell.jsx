@@ -3,17 +3,21 @@ import { useState } from "react";
 
 const NAV_ITEMS = [
   { path: "/",               short: "Home" },
-  { path: "/research",       short: "Research" },
   { path: "/messaging",      short: "Messaging" },
-  { path: "/rebuttal",       short: "Rebuttal" },
+  { path: "/research",       short: "Research" },
   { path: "/rapid-response", short: "Rapid Response" },
-  { path: "/media",          short: "Media" },
-  { path: "/resources",      short: "Resources" },
-  { path: "/library",        short: "Library" },
+  { path: "/rebuttal",       short: "Rebuttal" },
+];
+
+const MORE_ITEMS = [
+  { path: "/media",     short: "Media" },
+  { path: "/library",   short: "Library" },
+  { path: "/resources", short: "Resources" },
 ];
 
 export default function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
@@ -127,7 +131,7 @@ export default function AppShell() {
           </NavLink>
 
           {/* Desktop nav */}
-          <nav className="nav-links-desktop" style={{ display: "flex", gap: 28, alignItems: "center" }}>
+          <nav className="nav-links-desktop" style={{ display: "flex", gap: 24, alignItems: "center" }}>
             {NAV_ITEMS.map(item => (
               <NavLink
                 key={item.path}
@@ -138,6 +142,69 @@ export default function AppShell() {
                 {item.short}
               </NavLink>
             ))}
+
+            {/* More ▾ dropdown */}
+            <div style={{ position: "relative" }}
+              onMouseEnter={() => setMoreOpen(true)}
+              onMouseLeave={() => setMoreOpen(false)}
+            >
+              <button
+                onClick={() => setMoreOpen(v => !v)}
+                style={{
+                  fontFamily: "var(--font-body)",
+                  fontSize: 13, fontWeight: 700,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: moreOpen ? "var(--teal)" : "var(--charcoal)",
+                  background: "none", border: "none",
+                  borderBottom: `3px solid ${moreOpen ? "var(--gold)" : "transparent"}`,
+                  padding: "6px 2px",
+                  cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 4,
+                  transition: "color 0.15s, border-color 0.15s",
+                }}
+                aria-expanded={moreOpen}
+                aria-haspopup="true"
+              >
+                More
+                <span style={{
+                  fontSize: 9,
+                  display: "inline-block",
+                  transform: moreOpen ? "rotate(180deg)" : "none",
+                  transition: "transform 0.15s",
+                  marginTop: 1,
+                }}>▼</span>
+              </button>
+
+              {moreOpen && (
+                <div style={{
+                  position: "absolute", top: "calc(100% + 6px)", right: 0,
+                  background: "var(--bg)",
+                  border: "2px solid var(--border)",
+                  borderRadius: 10,
+                  boxShadow: "0 8px 32px rgba(74,69,88,0.15)",
+                  minWidth: 160, zIndex: 200,
+                  overflow: "hidden",
+                }}>
+                  {MORE_ITEMS.map(item => (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => setMoreOpen(false)}
+                      className={({ isActive }) => "nav-link" + (isActive ? " active" : "")}
+                      style={{
+                        display: "block",
+                        padding: "12px 18px",
+                        borderBottom: "1px solid var(--surface-alt)",
+                        borderRadius: 0,
+                      }}
+                    >
+                      {item.short}
+                    </NavLink>
+                  ))}
+                </div>
+              )}
+            </div>
           </nav>
 
           {/* Hamburger */}
@@ -170,6 +237,17 @@ export default function AppShell() {
             key={item.path}
             to={item.path}
             end={item.path === "/"}
+            className={({ isActive }) => "mobile-nav-link" + (isActive ? " active" : "")}
+            onClick={() => setMenuOpen(false)}
+          >
+            {item.short}
+          </NavLink>
+        ))}
+        <div style={{ borderTop: "2px solid var(--gold)", margin: "4px 0" }} />
+        {MORE_ITEMS.map(item => (
+          <NavLink
+            key={item.path}
+            to={item.path}
             className={({ isActive }) => "mobile-nav-link" + (isActive ? " active" : "")}
             onClick={() => setMenuOpen(false)}
           >
