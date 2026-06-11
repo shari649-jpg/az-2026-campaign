@@ -7,6 +7,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -54,20 +55,14 @@ export default function LoginPage() {
         maxWidth: 420,
         boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
       }}>
-        <h1 style={{
-          fontFamily: "var(--font-display)",
-          fontSize: 22,
-          color: "var(--teal)",
-          marginBottom: 6,
-          marginTop: 0,
-        }}>
+        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--teal)", marginBottom: 6, marginTop: 0 }}>
           Sign In
         </h1>
         <p style={{ fontSize: 14, color: "var(--text-mute)", marginBottom: 28, marginTop: 0 }}>
           Coalition members only · Internal use
         </p>
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <form onSubmit={handleSubmit} autoComplete="on" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div>
             <label style={labelStyle}>Email</label>
             <input
@@ -76,6 +71,7 @@ export default function LoginPage() {
               onChange={e => setEmail(e.target.value)}
               required
               autoFocus
+              autoComplete="email"
               placeholder="you@example.com"
               style={inputStyle}
             />
@@ -83,25 +79,30 @@ export default function LoginPage() {
 
           <div>
             <label style={labelStyle}>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              placeholder="••••••••"
-              style={inputStyle}
-            />
+            <div style={{ position: "relative" }}>
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                placeholder="••••••••"
+                style={{ ...inputStyle, paddingRight: 44 }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                tabIndex={-1}
+                style={eyeButtonStyle}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff /> : <EyeOn />}
+              </button>
+            </div>
           </div>
 
           {error && (
-            <div style={{
-              background: "#fdf2f2",
-              border: "1px solid #f5c6c6",
-              borderRadius: 8,
-              padding: "10px 14px",
-              fontSize: 13,
-              color: "#c41e1e",
-            }}>
+            <div style={{ background: "#fdf2f2", border: "1px solid #f5c6c6", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#c41e1e" }}>
               {error}
             </div>
           )}
@@ -112,16 +113,10 @@ export default function LoginPage() {
             style={{
               marginTop: 4,
               background: loading ? "var(--teal-mid)" : "var(--teal)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 8,
-              padding: "13px 0",
-              fontSize: 15,
-              fontWeight: 700,
-              fontFamily: "var(--font-body)",
-              letterSpacing: "0.04em",
-              cursor: loading ? "not-allowed" : "pointer",
-              transition: "background 0.15s",
+              color: "#fff", border: "none", borderRadius: 8,
+              padding: "13px 0", fontSize: 15, fontWeight: 700,
+              fontFamily: "var(--font-body)", letterSpacing: "0.04em",
+              cursor: loading ? "not-allowed" : "pointer", transition: "background 0.15s",
             }}
           >
             {loading ? "Signing in…" : "Sign In"}
@@ -140,28 +135,43 @@ export default function LoginPage() {
 }
 
 const labelStyle = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 700,
-  letterSpacing: "0.08em",
-  textTransform: "uppercase",
-  color: "var(--charcoal)",
-  marginBottom: 6,
+  display: "block", fontSize: 12, fontWeight: 700,
+  letterSpacing: "0.08em", textTransform: "uppercase",
+  color: "var(--charcoal)", marginBottom: 6,
 };
 
 const inputStyle = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "11px 14px",
-  fontSize: 15,
-  fontFamily: "var(--font-body)",
-  border: "2px solid var(--border)",
-  borderRadius: 8,
-  background: "var(--bg)",
-  color: "var(--charcoal)",
-  outline: "none",
-  transition: "border-color 0.15s",
+  width: "100%", boxSizing: "border-box", padding: "11px 14px",
+  fontSize: 15, fontFamily: "var(--font-body)",
+  border: "2px solid var(--border)", borderRadius: 8,
+  background: "var(--bg)", color: "var(--charcoal)",
+  outline: "none", transition: "border-color 0.15s",
 };
+
+const eyeButtonStyle = {
+  position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+  background: "none", border: "none", cursor: "pointer",
+  color: "var(--text-mute)", padding: 2, display: "flex", alignItems: "center",
+};
+
+function EyeOn() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  );
+}
+
+function EyeOff() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
+      <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
+      <line x1="1" y1="1" x2="23" y2="23"/>
+    </svg>
+  );
+}
 
 function friendlyError(code) {
   switch (code) {
