@@ -75,7 +75,7 @@ export default function RegisterPage() {
     }}>
       {/* Logo */}
       <div style={{ textAlign: "center", marginBottom: 32 }}>
-        <img src="/azc-logo.png" alt="Arizona Coalition" style={{ height: 64, marginBottom: 12 }} />
+        <img src="/azc-logo-teal.png" alt="Arizona Coalition" style={{ height: 64, marginBottom: 12 }} />
         <div style={{ fontFamily: "var(--font-display)", fontSize: 24, color: "#fff", letterSpacing: "-0.01em" }}>Arizona Coalition</div>
         <div style={{ fontFamily: "var(--font-body)", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--gold)", marginTop: 4 }}>
           Comms Hub · 2026
