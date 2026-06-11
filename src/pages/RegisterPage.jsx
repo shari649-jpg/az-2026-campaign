@@ -10,15 +10,12 @@ export default function RegisterPage() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
-    fullName: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-    primaryPlatform: "",
-    primaryHandle: "",
-    secondaryPlatform: "",
-    secondaryHandle: "",
+    fullName: "", email: "", password: "", confirmPassword: "",
+    primaryPlatform: "", primaryHandle: "",
+    secondaryPlatform: "", secondaryHandle: "",
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -46,32 +43,22 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       const { user } = await createUserWithEmailAndPassword(auth, form.email, form.password);
-
-      // Set display name on Firebase Auth profile
       await updateProfile(user, { displayName: form.fullName.trim() });
 
-      // Write user doc to Firestore
       const userDoc = {
         uid: user.uid,
         fullName: form.fullName.trim(),
         email: form.email.toLowerCase().trim(),
-        role: "user", // Default role — upgraded manually or via Admin page
-        primarySocial: {
-          platform: form.primaryPlatform,
-          handle: form.primaryHandle.trim(),
-        },
+        role: "user",
+        primarySocial: { platform: form.primaryPlatform, handle: form.primaryHandle.trim() },
         createdAt: serverTimestamp(),
       };
 
       if (form.secondaryPlatform && form.secondaryHandle.trim()) {
-        userDoc.secondarySocial = {
-          platform: form.secondaryPlatform,
-          handle: form.secondaryHandle.trim(),
-        };
+        userDoc.secondarySocial = { platform: form.secondaryPlatform, handle: form.secondaryHandle.trim() };
       }
 
       await setDoc(doc(db, "users", user.uid), userDoc);
-
       navigate("/");
     } catch (err) {
       setError(friendlyError(err.code));
@@ -82,20 +69,14 @@ export default function RegisterPage() {
 
   return (
     <div style={{
-      minHeight: "100vh",
-      background: "var(--teal)",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "24px",
+      minHeight: "100vh", background: "var(--teal)",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", padding: "24px",
     }}>
-      {/* Logo + name */}
+      {/* Logo */}
       <div style={{ textAlign: "center", marginBottom: 32 }}>
         <img src="/azc-logo-teal.png" alt="Arizona Coalition" style={{ height: 64, marginBottom: 12, filter: "brightness(0) invert(1)" }} />
-        <div style={{ fontFamily: "var(--font-display)", fontSize: 24, color: "#fff", letterSpacing: "-0.01em" }}>
-          Arizona Coalition
-        </div>
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 24, color: "#fff", letterSpacing: "-0.01em" }}>Arizona Coalition</div>
         <div style={{ fontFamily: "var(--font-body)", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--gold)", marginTop: 4 }}>
           Comms Hub · 2026
         </div>
@@ -103,75 +84,91 @@ export default function RegisterPage() {
 
       {/* Card */}
       <div style={{
-        background: "var(--bg)",
-        borderRadius: 16,
-        padding: "40px 36px",
-        width: "100%",
-        maxWidth: 460,
-        boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
+        background: "var(--bg)", borderRadius: 16, padding: "40px 36px",
+        width: "100%", maxWidth: 460, boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
       }}>
-        <h1 style={{
-          fontFamily: "var(--font-display)",
-          fontSize: 22,
-          color: "var(--teal)",
-          marginBottom: 6,
-          marginTop: 0,
-        }}>
+        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--teal)", marginBottom: 6, marginTop: 0 }}>
           Create Account
         </h1>
         <p style={{ fontSize: 14, color: "var(--text-mute)", marginBottom: 28, marginTop: 0 }}>
           Coalition members only · Internal use
         </p>
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <form onSubmit={handleSubmit} autoComplete="on" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
           {/* Full name */}
           <div>
             <label style={labelStyle}>Full Name <Required /></label>
-            <input type="text" value={form.fullName} onChange={set("fullName")} required placeholder="Jane Doe" style={inputStyle} />
+            <input
+              type="text" value={form.fullName} onChange={set("fullName")}
+              required autoComplete="name" placeholder="Jane Doe" style={inputStyle}
+            />
           </div>
 
           {/* Email */}
           <div>
             <label style={labelStyle}>Email <Required /></label>
-            <input type="email" value={form.email} onChange={set("email")} required placeholder="you@example.com" style={inputStyle} />
+            <input
+              type="email" value={form.email} onChange={set("email")}
+              required autoComplete="email" placeholder="you@example.com" style={inputStyle}
+            />
           </div>
 
           {/* Password */}
           <div>
             <label style={labelStyle}>Password <Required /></label>
-            <input type="password" value={form.password} onChange={set("password")} required placeholder="Min. 8 characters" style={inputStyle} />
+            <div style={{ position: "relative" }}>
+              <input
+                type={showPassword ? "text" : "password"}
+                value={form.password} onChange={set("password")}
+                required autoComplete="new-password"
+                placeholder="Min. 8 characters"
+                style={{ ...inputStyle, paddingRight: 44 }}
+              />
+              <button type="button" onClick={() => setShowPassword(v => !v)}
+                tabIndex={-1} style={eyeButtonStyle} aria-label={showPassword ? "Hide password" : "Show password"}>
+                {showPassword ? <EyeOff /> : <EyeOn />}
+              </button>
+            </div>
           </div>
 
           {/* Confirm password */}
           <div>
             <label style={labelStyle}>Confirm Password <Required /></label>
-            <input type="password" value={form.confirmPassword} onChange={set("confirmPassword")} required placeholder="Re-enter password" style={inputStyle} />
+            <div style={{ position: "relative" }}>
+              <input
+                type={showConfirm ? "text" : "password"}
+                value={form.confirmPassword} onChange={set("confirmPassword")}
+                required autoComplete="new-password"
+                placeholder="Re-enter password"
+                style={{ ...inputStyle, paddingRight: 44 }}
+              />
+              <button type="button" onClick={() => setShowConfirm(v => !v)}
+                tabIndex={-1} style={eyeButtonStyle} aria-label={showConfirm ? "Hide password" : "Show password"}>
+                {showConfirm ? <EyeOff /> : <EyeOn />}
+              </button>
+            </div>
           </div>
 
-          {/* Divider */}
+          {/* Social media section */}
           <div style={{ borderTop: "1px solid var(--surface-alt)", paddingTop: 8, marginTop: 4 }}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--teal)", marginBottom: 14 }}>
               Social Media Accounts
             </div>
 
-            {/* Primary social */}
             <label style={labelStyle}>Primary Account <Required /></label>
             <div style={{ display: "flex", gap: 10 }}>
               <select
-                value={form.primaryPlatform}
-                onChange={set("primaryPlatform")}
-                required
+                value={form.primaryPlatform} onChange={set("primaryPlatform")}
+                required autoComplete="off"
                 style={{ ...inputStyle, width: 160, flexShrink: 0 }}
               >
                 <option value="">Platform…</option>
                 {SOCIAL_PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
               <input
-                type="text"
-                value={form.primaryHandle}
-                onChange={set("primaryHandle")}
-                placeholder="@handle or username"
+                type="text" value={form.primaryHandle} onChange={set("primaryHandle")}
+                autoComplete="off" placeholder="@handle or username"
                 style={{ ...inputStyle, flex: 1 }}
               />
             </div>
@@ -180,55 +177,39 @@ export default function RegisterPage() {
           {/* Secondary social */}
           <div>
             <label style={labelStyle}>
-              Secondary Account <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--text-mute)", fontSize: 11 }}>(optional)</span>
+              Secondary Account{" "}
+              <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--text-mute)", fontSize: 11 }}>(optional)</span>
             </label>
             <div style={{ display: "flex", gap: 10 }}>
               <select
-                value={form.secondaryPlatform}
-                onChange={set("secondaryPlatform")}
+                value={form.secondaryPlatform} onChange={set("secondaryPlatform")}
+                autoComplete="off"
                 style={{ ...inputStyle, width: 160, flexShrink: 0 }}
               >
                 <option value="">Platform…</option>
                 {SOCIAL_PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
               <input
-                type="text"
-                value={form.secondaryHandle}
-                onChange={set("secondaryHandle")}
-                placeholder="@handle or username"
+                type="text" value={form.secondaryHandle} onChange={set("secondaryHandle")}
+                autoComplete="off" placeholder="@handle or username"
                 style={{ ...inputStyle, flex: 1 }}
               />
             </div>
           </div>
 
           {error && (
-            <div style={{
-              background: "#fdf2f2",
-              border: "1px solid #f5c6c6",
-              borderRadius: 8,
-              padding: "10px 14px",
-              fontSize: 13,
-              color: "#c41e1e",
-            }}>
+            <div style={{ background: "#fdf2f2", border: "1px solid #f5c6c6", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#c41e1e" }}>
               {error}
             </div>
           )}
 
           <button
-            type="submit"
-            disabled={loading}
+            type="submit" disabled={loading}
             style={{
-              marginTop: 4,
-              background: loading ? "var(--teal-mid)" : "var(--teal)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 8,
-              padding: "13px 0",
-              fontSize: 15,
-              fontWeight: 700,
-              fontFamily: "var(--font-body)",
-              letterSpacing: "0.04em",
-              cursor: loading ? "not-allowed" : "pointer",
+              marginTop: 4, background: loading ? "var(--teal-mid)" : "var(--teal)",
+              color: "#fff", border: "none", borderRadius: 8, padding: "13px 0",
+              fontSize: 15, fontWeight: 700, fontFamily: "var(--font-body)",
+              letterSpacing: "0.04em", cursor: loading ? "not-allowed" : "pointer",
               transition: "background 0.15s",
             }}
           >
@@ -238,9 +219,7 @@ export default function RegisterPage() {
 
         <div style={{ marginTop: 24, textAlign: "center", fontSize: 14, color: "var(--text-mute)" }}>
           Already have an account?{" "}
-          <Link to="/login" style={{ color: "var(--teal)", fontWeight: 700, textDecoration: "none" }}>
-            Sign in
-          </Link>
+          <Link to="/login" style={{ color: "var(--teal)", fontWeight: 700, textDecoration: "none" }}>Sign in</Link>
         </div>
       </div>
     </div>
@@ -252,28 +231,43 @@ function Required() {
 }
 
 const labelStyle = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 700,
-  letterSpacing: "0.08em",
-  textTransform: "uppercase",
-  color: "var(--charcoal)",
-  marginBottom: 6,
+  display: "block", fontSize: 12, fontWeight: 700,
+  letterSpacing: "0.08em", textTransform: "uppercase",
+  color: "var(--charcoal)", marginBottom: 6,
 };
 
 const inputStyle = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "11px 14px",
-  fontSize: 15,
-  fontFamily: "var(--font-body)",
-  border: "2px solid var(--border)",
-  borderRadius: 8,
-  background: "var(--bg)",
-  color: "var(--charcoal)",
-  outline: "none",
-  transition: "border-color 0.15s",
+  width: "100%", boxSizing: "border-box", padding: "11px 14px",
+  fontSize: 15, fontFamily: "var(--font-body)",
+  border: "2px solid var(--border)", borderRadius: 8,
+  background: "var(--bg)", color: "var(--charcoal)",
+  outline: "none", transition: "border-color 0.15s",
 };
+
+const eyeButtonStyle = {
+  position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+  background: "none", border: "none", cursor: "pointer",
+  color: "var(--text-mute)", padding: 2, display: "flex", alignItems: "center",
+};
+
+function EyeOn() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  );
+}
+
+function EyeOff() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
+      <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
+      <line x1="1" y1="1" x2="23" y2="23"/>
+    </svg>
+  );
+}
 
 function friendlyError(code) {
   switch (code) {
