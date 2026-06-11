@@ -1,5 +1,6 @@
-import { Outlet, NavLink } from "react-router-dom";
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
 
 const NAV_ITEMS = [
   { path: "/",               short: "Home" },
@@ -18,6 +19,23 @@ const MORE_ITEMS = [
 export default function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const { user, profile, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const displayName = profile?.fullName || user?.displayName || user?.email || "User";
+  const initials = displayName
+    .split(" ")
+    .map(w => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  async function handleLogout() {
+    setUserMenuOpen(false);
+    await logout();
+    navigate("/login");
+  }
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
@@ -79,9 +97,12 @@ export default function AppShell() {
         @media (max-width: 900px) {
           .nav-links-desktop { display: none !important; }
           .hamburger { display: flex !important; }
+          .user-menu-desktop { display: none !important; }
+          .user-menu-mobile-btn { display: flex !important; }
         }
         @media (min-width: 901px) {
           .mobile-menu { display: none !important; }
+          .user-menu-mobile-btn { display: none !important; }
         }
       `}</style>
 
@@ -175,7 +196,6 @@ export default function AppShell() {
 
               {moreOpen && (
                 <>
-                  {/* Invisible overlay to catch outside clicks */}
                   <div
                     onClick={() => setMoreOpen(false)}
                     style={{ position: "fixed", inset: 0, zIndex: 199 }}
@@ -211,16 +231,116 @@ export default function AppShell() {
             </div>
           </nav>
 
-          {/* Hamburger */}
-          <button
-            className="hamburger"
-            onClick={() => setMenuOpen(v => !v)}
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
-          >
-            <span style={{ transform: menuOpen ? "rotate(45deg) translateY(7px)" : "none" }} />
-            <span style={{ opacity: menuOpen ? 0 : 1 }} />
-            <span style={{ transform: menuOpen ? "rotate(-45deg) translateY(-7px)" : "none" }} />
-          </button>
+          {/* ── Right side: User avatar (desktop) + Hamburger (mobile) ── */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+
+            {/* Desktop user menu */}
+            <div className="user-menu-desktop" style={{ position: "relative" }}>
+              <button
+                onClick={() => setUserMenuOpen(v => !v)}
+                title={displayName}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "50%",
+                  background: "var(--teal)",
+                  color: "#fff",
+                  border: "2px solid var(--gold)",
+                  fontFamily: "var(--font-body)",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  letterSpacing: "0.04em",
+                  transition: "background 0.15s",
+                  flexShrink: 0,
+                }}
+              >
+                {initials}
+              </button>
+
+              {userMenuOpen && (
+                <>
+                  <div
+                    onClick={() => setUserMenuOpen(false)}
+                    style={{ position: "fixed", inset: 0, zIndex: 199 }}
+                  />
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 8px)", right: 0,
+                    background: "var(--bg)",
+                    border: "2px solid var(--border)",
+                    borderRadius: 10,
+                    boxShadow: "0 8px 32px rgba(74,69,88,0.15)",
+                    minWidth: 200, zIndex: 200,
+                    overflow: "hidden",
+                  }}>
+                    {/* User info */}
+                    <div style={{
+                      padding: "14px 16px",
+                      borderBottom: "1px solid var(--surface-alt)",
+                    }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--charcoal)" }}>
+                        {displayName}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text-mute)", marginTop: 2 }}>
+                        {user?.email}
+                      </div>
+                      <div style={{
+                        marginTop: 6,
+                        display: "inline-block",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: "0.1em",
+                        textTransform: "uppercase",
+                        background: profile?.role === "administrator" ? "var(--gold)" :
+                                    profile?.role === "manager" ? "var(--turquoise)" : "var(--surface-alt)",
+                        color: profile?.role === "administrator" ? "var(--teal)" :
+                               profile?.role === "manager" ? "var(--teal)" : "var(--text-mute)",
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                      }}>
+                        {profile?.role ?? "user"}
+                      </div>
+                    </div>
+                    {/* Sign out */}
+                    <button
+                      onClick={handleLogout}
+                      style={{
+                        width: "100%",
+                        padding: "13px 16px",
+                        background: "none",
+                        border: "none",
+                        textAlign: "left",
+                        fontSize: 14,
+                        fontFamily: "var(--font-body)",
+                        color: "#c41e1e",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        transition: "background 0.1s",
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = "#fdf2f2"}
+                      onMouseLeave={e => e.currentTarget.style.background = "none"}
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Hamburger */}
+            <button
+              className="hamburger"
+              onClick={() => setMenuOpen(v => !v)}
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+            >
+              <span style={{ transform: menuOpen ? "rotate(45deg) translateY(7px)" : "none" }} />
+              <span style={{ opacity: menuOpen ? 0 : 1 }} />
+              <span style={{ transform: menuOpen ? "rotate(-45deg) translateY(-7px)" : "none" }} />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -258,6 +378,44 @@ export default function AppShell() {
             {item.short}
           </NavLink>
         ))}
+
+        {/* Mobile user section */}
+        <div style={{ borderTop: "2px solid var(--gold)", margin: "4px 0" }} />
+        <div style={{ padding: "14px 24px 10px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: "50%",
+            background: "var(--teal)", color: "#fff",
+            border: "2px solid var(--gold)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 13, fontWeight: 700, flexShrink: 0,
+          }}>
+            {initials}
+          </div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--charcoal)" }}>{displayName}</div>
+            <div style={{ fontSize: 12, color: "var(--text-mute)" }}>{user?.email}</div>
+          </div>
+        </div>
+        <button
+          onClick={() => { setMenuOpen(false); handleLogout(); }}
+          style={{
+            display: "block",
+            width: "100%",
+            padding: "14px 24px",
+            background: "none",
+            border: "none",
+            borderTop: "1px solid var(--surface-alt)",
+            textAlign: "left",
+            fontSize: 16,
+            fontFamily: "var(--font-body)",
+            fontWeight: 700,
+            color: "#c41e1e",
+            cursor: "pointer",
+            letterSpacing: "0.03em",
+          }}
+        >
+          Sign Out
+        </button>
       </div>
 
       {/* ── Page content ── */}
