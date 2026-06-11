@@ -197,7 +197,7 @@ export default function LibraryPage() {
       {/* Header */}
       <div style={{ background: TEAL, borderBottom: `4px solid ${GOLD}`, padding: "32px 24px 28px" }}>
         <div style={{ maxWidth: 900, margin: "0 auto" }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: GOLD, marginBottom: 8 }}>Coalition Ops Hub</div>
+          <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: GOLD, marginBottom: 8 }}>Coalition Comms Hub</div>
           <h1 style={{ fontSize: 38, fontWeight: 900, color: "#fff", marginBottom: 8 }}>Shared Library</h1>
           <p style={{ fontSize: 18, color: "rgba(255,255,255,0.8)", lineHeight: 1.5 }}>
             All saved campaigns and articles from Message Machine, Rebuttal Generator, and Rapid Response.
@@ -327,7 +327,7 @@ export default function LibraryPage() {
                     {a.savedBy && <p style={{ fontSize: 12, color: "#888", marginTop: 6 }}>Saved by {a.savedBy}{a.savedAt ? ` · ${a.savedAt}` : ""}</p>}
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
-                    <button onClick={() => loadArticleInRR(a)} style={btnStyle("#fff", TEAL)}>Open in Rapid Response</button>
+                    <button onClick={() => loadArticleInRR(a)} style={btnStyle(TEAL, "#fff")}>Push to Message Machine →</button>
                     <button onClick={() => pushArticleToMachine(a)} style={btnStyle(TEAL)}>Push to Message Machine →</button>
                     <button onClick={() => handleDeleteArticle(a.id)} style={btnStyle(RED)}>Delete</button>
                   </div>
