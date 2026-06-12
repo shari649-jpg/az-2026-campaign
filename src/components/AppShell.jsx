@@ -20,7 +20,7 @@ export default function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const { user, profile, logout } = useAuth();
+  const { user, profile, logout, isAdmin } = useAuth();
   const navigate = useNavigate();
 
   const displayName = profile?.fullName || user?.displayName || user?.email || "User";
@@ -304,6 +304,18 @@ export default function AppShell() {
                         {profile?.role ?? "user"}
                       </div>
                     </div>
+                    {/* Admin link */}
+                    {isAdmin && (
+                      <NavLink
+                        to="/admin"
+                        onClick={() => setUserMenuOpen(false)}
+                        style={{ display: "block", padding: "12px 16px", fontSize: 14, fontWeight: 700, color: "var(--teal)", textDecoration: "none", borderBottom: "1px solid var(--surface-alt)", background: "none" }}
+                        onMouseEnter={e => e.currentTarget.style.background = "var(--teal-light)"}
+                        onMouseLeave={e => e.currentTarget.style.background = "none"}
+                      >
+                        ⚙️ Admin
+                      </NavLink>
+                    )}
                     {/* Sign out */}
                     <button
                       onClick={handleLogout}
@@ -379,6 +391,16 @@ export default function AppShell() {
           </NavLink>
         ))}
 
+        {/* Mobile admin link */}
+        {isAdmin && (
+          <NavLink
+            to="/admin"
+            onClick={() => setMenuOpen(false)}
+            className={({ isActive }) => "mobile-nav-link" + (isActive ? " active" : "")}
+          >
+            ⚙️ Admin
+          </NavLink>
+        )}
         {/* Mobile user section */}
         <div style={{ borderTop: "2px solid var(--gold)", margin: "4px 0" }} />
         <div style={{ padding: "14px 24px 10px", display: "flex", alignItems: "center", gap: 12 }}>
