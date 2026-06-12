@@ -5,6 +5,7 @@ import AppShell from "./components/AppShell";
 import HomePage from "./components/HomePage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import AdminPage from "./pages/AdminPage";
 import ResearchPage from "./tools/research/ResearchPage";
 import MessagingPage from "./tools/messaging/MessagingPage";
 import RebuttalPage from "./tools/rebuttal/RebuttalPage";
@@ -18,11 +19,11 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Public routes — no auth required */}
+          {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 
-          {/* Protected routes — all wrapped in AuthGuard */}
+          {/* Protected routes */}
           <Route element={
             <AuthGuard>
               <AppShell />
@@ -36,6 +37,7 @@ export default function App() {
             <Route path="/resources" element={<ResourcesPage />} />
             <Route path="/library" element={<LibraryPage />} />
             <Route path="/media" element={<MediaPage />} />
+            <Route path="/admin" element={<AdminPage />} />
           </Route>
         </Routes>
       </AuthProvider>
