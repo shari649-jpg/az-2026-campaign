@@ -163,7 +163,7 @@ export default function QuickStartPage() {
 
         {/* Workflow diagram */}
         <div style={{
-          background: "var(--bg)", border: "1.5px solid var(--border)",
+          background: "var(--surface)", border: "1.5px solid var(--border)",
           borderRadius: 14, padding: "24px 28px 20px",
           marginBottom: 28,
         }}>
@@ -171,33 +171,43 @@ export default function QuickStartPage() {
             How the tools connect
           </div>
 
-          {/* Top row: 3 inputs */}
-          <div style={{ display: "flex", gap: 12, marginBottom: 0, justifyContent: "center" }}>
-            {[
-              { label: "Research",           bg: "#E0F2EC", bord: "#A8D9C8", tc: TEAL },
-              { label: "Rapid Response",     bg: "#FDE8D8", bord: "#F0C4A8", tc: "#7A3010" },
-              { label: "Rebuttal Generator", bg: "#FFF0E8", bord: "#F0C4A8", tc: TERRA },
-            ].map(item => (
-              <div key={item.label} style={{
-                flex: 1, textAlign: "center",
-                background: item.bg, border: `1.5px solid ${item.bord}`,
-                borderRadius: 10, padding: "10px 8px",
-                fontSize: 13, fontWeight: 700, color: item.tc,
-              }}>
-                {item.label}
+          {/* Top row + converging lines as a single CSS layout */}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+
+            {/* Left box + vertical line */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ width: "100%", textAlign: "center", background: "#E0F2EC", border: "1.5px solid #A8D9C8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: TEAL }}>
+                Research
               </div>
-            ))}
+              <div style={{ width: 1.5, height: 20, background: "#B0C4BC" }} />
+              <div style={{ width: "50%", height: 1.5, background: "#B0C4BC", alignSelf: "flex-end" }} />
+            </div>
+
+            {/* Center box + straight vertical line */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ width: "100%", textAlign: "center", background: "#FDE8D8", border: "1.5px solid #F0C4A8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: "#7A3010" }}>
+                Rapid Response
+              </div>
+              <div style={{ width: 1.5, height: 20, background: "#B0C4BC" }} />
+            </div>
+
+            {/* Right box + vertical line */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ width: "100%", textAlign: "center", background: "#FFF0E8", border: "1.5px solid #F0C4A8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: TERRA }}>
+                Rebuttal Generator
+              </div>
+              <div style={{ width: 1.5, height: 20, background: "#B0C4BC" }} />
+              <div style={{ width: "50%", height: 1.5, background: "#B0C4BC", alignSelf: "flex-start" }} />
+            </div>
+
           </div>
 
-          {/* Converging arrows */}
-          <div style={{ position: "relative", height: 48, margin: "0 auto", maxWidth: 480 }}>
-            <svg width="100%" height="48" viewBox="0 0 480 48" preserveAspectRatio="none" style={{ display: "block" }}>
-              <polyline points="80,0 80,28 240,28" fill="none" stroke="#B0C4BC" strokeWidth="1.5" />
-              <line x1="240" y1="0" x2="240" y2="28" stroke="#B0C4BC" strokeWidth="1.5" />
-              <polyline points="400,0 400,28 240,28" fill="none" stroke="#B0C4BC" strokeWidth="1.5" />
-              <line x1="240" y1="28" x2="240" y2="44" stroke="#B0C4BC" strokeWidth="1.5" />
-              <polygon points="234,40 246,40 240,48" fill="#B0C4BC" />
-            </svg>
+          {/* Arrow down to MM */}
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ width: 1.5, height: 14, background: "#B0C4BC" }} />
+              <div style={{ width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid #B0C4BC" }} />
+            </div>
           </div>
 
           {/* Message Machine hub */}
@@ -212,12 +222,12 @@ export default function QuickStartPage() {
             </div>
           </div>
 
-          {/* Arrow down */}
-          <div style={{ display: "flex", justifyContent: "center", height: 32 }}>
-            <svg width="12" height="32" style={{ display: "block" }}>
-              <line x1="6" y1="0" x2="6" y2="24" stroke="#B0C4BC" strokeWidth="1.5" />
-              <polygon points="0,20 12,20 6,30" fill="#B0C4BC" />
-            </svg>
+          {/* Arrow down to outputs */}
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ width: 1.5, height: 14, background: "#B0C4BC" }} />
+              <div style={{ width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid #B0C4BC" }} />
+            </div>
           </div>
 
           {/* Output row */}
@@ -263,7 +273,7 @@ export default function QuickStartPage() {
           borderRadius: 14, padding: "18px 22px",
           display: "flex", alignItems: "center", justifyContent: "space-between",
           gap: 16, flexWrap: "wrap",
-          background: "var(--bg)",
+          background: "var(--surface)",
         }}>
           <div>
             <div style={{ fontFamily: "var(--font-display)", fontSize: 17, color: CHARCOAL, marginBottom: 4 }}>
