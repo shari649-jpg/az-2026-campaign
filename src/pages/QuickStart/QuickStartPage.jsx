@@ -163,7 +163,7 @@ export default function QuickStartPage() {
 
         {/* Workflow diagram */}
         <div style={{
-          background: "var(--surface)", border: "1.5px solid var(--border)",
+          background: "var(--bg)", border: "1.5px solid var(--border)",
           borderRadius: 14, padding: "24px 28px 20px",
           marginBottom: 28,
         }}>
@@ -263,7 +263,7 @@ export default function QuickStartPage() {
           borderRadius: 14, padding: "18px 22px",
           display: "flex", alignItems: "center", justifyContent: "space-between",
           gap: 16, flexWrap: "wrap",
-          background: "var(--surface)",
+          background: "var(--bg)",
         }}>
           <div>
             <div style={{ fontFamily: "var(--font-display)", fontSize: 17, color: CHARCOAL, marginBottom: 4 }}>
