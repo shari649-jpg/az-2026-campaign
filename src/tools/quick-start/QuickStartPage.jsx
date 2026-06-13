@@ -1,15 +1,12 @@
+import { useNavigate } from "react-router-dom";
 import ToolPage from "../../components/ToolPage";
 
-// ─── Brand tokens (mirrors CSS variables already in the app) ───────────────
-const TEAL      = "#1D5C4A";
-const TURQ      = "#3ECFB2";
-const GOLD      = "#F5C842";
-const CHARCOAL  = "#4A4558";
-const TERRA     = "#C1673A";
-const WHITE     = "#FFFFFF";
-const BG        = "#F5F4F0";
+const TEAL     = "#1D5C4A";
+const GOLD     = "#F5C842";
+const CHARCOAL = "#4A4558";
+const TERRA    = "#C1673A";
+const WHITE    = "#FFFFFF";
 
-// Card colour definitions per tool
 const TOOLS = [
   {
     num:   "1",
@@ -21,11 +18,7 @@ const TOOLS = [
       "Check facts, quotes, or vulnerabilities with checkboxes",
       'Click "Send to Message Machine" in the floating bar',
     ],
-    bg:    "#E0F2EC",
-    bord:  "#A8D9C8",
-    titc:  TEAL,
-    numc:  TEAL,
-    icon:  "🔍",
+    bg: "#E0F2EC", bord: "#A8D9C8", titc: TEAL, numc: TEAL, icon: "🔍",
   },
   {
     num:   "2",
@@ -37,11 +30,7 @@ const TOOLS = [
       "Review the AI summary of key claims & quotes",
       'Click "Send to Message Machine"',
     ],
-    bg:    "#FDE8D8",
-    bord:  "#F0C4A8",
-    titc:  "#7A3010",
-    numc:  "#7A3010",
-    icon:  "⚡",
+    bg: "#FDE8D8", bord: "#F0C4A8", titc: "#7A3010", numc: "#7A3010", icon: "⚡",
   },
   {
     num:   "3",
@@ -53,11 +42,7 @@ const TOOLS = [
       "Set tone & profile (optional — defaults work well)",
       "Generate, then Push to Message Machine",
     ],
-    bg:    "#FFF0E8",
-    bord:  "#F0C4A8",
-    titc:  TERRA,
-    numc:  TERRA,
-    icon:  "🛡️",
+    bg: "#FFF0E8", bord: "#F0C4A8", titc: TERRA, numc: TERRA, icon: "🛡️",
   },
   {
     num:   "4",
@@ -70,15 +55,11 @@ const TOOLS = [
       "Review & refine: expand, shorten, rephrase",
       "Optional: More menu → Media drive or Graphics Studio",
     ],
-    bg:    "#E0FAF5",
-    bord:  "#9DD8CC",
-    titc:  "#085041",
-    numc:  "#085041",
-    icon:  "⚙️",
+    bg: "#E0FAF5", bord: "#9DD8CC", titc: "#085041", numc: "#085041", icon: "⚙️",
   },
   {
     num:   "5",
-    label: "Copy & Post or Save",
+    label: "Copy & Post or Save to Library",
     sub:   "Publish or store your campaign",
     path:  null,
     steps: [
@@ -86,54 +67,31 @@ const TOOLS = [
       "Save to Library to store the full campaign",
       "Do one or both — nothing saves automatically",
     ],
-    bg:    "#EEF1F8",
-    bord:  "#C5CDE8",
-    titc:  CHARCOAL,
-    numc:  CHARCOAL,
-    icon:  "🚀",
+    bg: "#EEF1F8", bord: "#C5CDE8", titc: CHARCOAL, numc: CHARCOAL, icon: "🚀",
   },
 ];
 
-// ─── Sub-components ────────────────────────────────────────────────────────
-
-function FlowPill({ label }) {
-  return (
-    <span style={{
-      background: "rgba(29,92,74,0.12)",
-      border: "1.5px solid rgba(29,92,74,0.2)",
-      borderRadius: 20,
-      padding: "3px 13px",
-      fontSize: 13,
-      fontWeight: 700,
-      color: TEAL,
-      whiteSpace: "nowrap",
-    }}>
-      {label}
-    </span>
-  );
-}
-
-function ToolCard({ tool, navigate }) {
-  const isClickable = !!tool.path;
+function ToolCard({ tool, onClick }) {
+  const clickable = !!tool.path;
   return (
     <div
-      onClick={() => isClickable && navigate(tool.path)}
+      onClick={() => clickable && onClick(tool.path)}
       style={{
         background: tool.bg,
         border: `1.5px solid ${tool.bord}`,
         borderRadius: 16,
         padding: "22px 24px",
         display: "flex",
-        gap: 18,
+        gap: 20,
         alignItems: "flex-start",
-        cursor: isClickable ? "pointer" : "default",
+        cursor: clickable ? "pointer" : "default",
         transition: "transform 0.12s, box-shadow 0.12s",
         boxShadow: "0 2px 8px rgba(74,69,88,0.07)",
       }}
       onMouseEnter={e => {
-        if (isClickable) {
+        if (clickable) {
           e.currentTarget.style.transform = "translateY(-2px)";
-          e.currentTarget.style.boxShadow = "0 6px 20px rgba(74,69,88,0.12)";
+          e.currentTarget.style.boxShadow = "0 6px 20px rgba(74,69,88,0.13)";
         }
       }}
       onMouseLeave={e => {
@@ -141,67 +99,40 @@ function ToolCard({ tool, navigate }) {
         e.currentTarget.style.boxShadow = "0 2px 8px rgba(74,69,88,0.07)";
       }}
     >
-      {/* Left: number + icon */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flexShrink: 0, width: 56 }}>
+      {/* Number + icon column */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flexShrink: 0, width: 54 }}>
         <div style={{
-          width: 48,
-          height: 48,
-          borderRadius: "50%",
+          width: 46, height: 46, borderRadius: "50%",
           background: tool.numc,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontFamily: "var(--font-display)",
-          fontSize: 22,
-          fontWeight: 700,
-          color: WHITE,
-          flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 700, color: WHITE,
         }}>
           {tool.num}
         </div>
-        <span style={{ fontSize: 26, lineHeight: 1 }}>{tool.icon}</span>
+        <span style={{ fontSize: 24, lineHeight: 1 }}>{tool.icon}</span>
       </div>
 
-      {/* Right: content */}
+      {/* Content column */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 2 }}>
           <span style={{
-            fontFamily: "var(--font-display)",
-            fontSize: 20,
-            fontWeight: 700,
-            color: tool.titc,
-            lineHeight: 1.2,
+            fontFamily: "var(--font-display)", fontSize: 19,
+            color: tool.titc, lineHeight: 1.2,
           }}>
             {tool.label}
           </span>
-          {isClickable && (
-            <span style={{ fontSize: 12, color: tool.titc, opacity: 0.6, fontWeight: 600 }}>
-              Open →
-            </span>
+          {clickable && (
+            <span style={{ fontSize: 12, color: tool.titc, opacity: 0.55, fontWeight: 600 }}>Open →</span>
           )}
         </div>
-        <div style={{
-          fontSize: 13,
-          fontWeight: 500,
-          color: tool.titc,
-          opacity: 0.65,
-          fontStyle: "italic",
-          marginBottom: 12,
-        }}>
+        <div style={{ fontSize: 13, color: tool.titc, opacity: 0.6, fontStyle: "italic", marginBottom: 12 }}>
           {tool.sub}
         </div>
-
-        <div style={{
-          height: 1,
-          background: tool.bord,
-          marginBottom: 12,
-          opacity: 0.8,
-        }} />
-
+        <div style={{ height: 1, background: tool.bord, marginBottom: 12 }} />
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
           {tool.steps.map((step, i) => (
             <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-              <span style={{ color: tool.numc, fontWeight: 700, fontSize: 14, flexShrink: 0, marginTop: 1 }}>•</span>
+              <span style={{ color: tool.numc, fontWeight: 700, fontSize: 13, flexShrink: 0, marginTop: 2 }}>•</span>
               <span style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.5 }}>{step}</span>
             </div>
           ))}
@@ -211,29 +142,14 @@ function ToolCard({ tool, navigate }) {
   );
 }
 
-function FooterNote({ icon, text }) {
-  return (
-    <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-      <span style={{ fontSize: 16, flexShrink: 0 }}>{icon}</span>
-      <span style={{ fontSize: 14, fontWeight: 500, color: TEAL, lineHeight: 1.5 }}>{text}</span>
-    </div>
-  );
-}
-
-// ─── Main page ─────────────────────────────────────────────────────────────
-
 export default function QuickStartPage() {
-  // Inline navigate using window.location as a fallback
-  // (replace with useNavigate() once wired into the router)
-  function navigate(path) {
-    window.location.href = path;
-  }
+  const navigate = useNavigate();
 
   function handleDownload() {
-    const link = document.createElement("a");
-    link.href = "/quick-start-reel.png";
-    link.download = "AZ_Coalition_Comms_Hub_Quick_Start.png";
-    link.click();
+    const a = document.createElement("a");
+    a.href = "/quick-start-reel.png";
+    a.download = "AZ_Coalition_Comms_Hub_Quick_Start.png";
+    a.click();
   }
 
   return (
@@ -245,105 +161,127 @@ export default function QuickStartPage() {
     >
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "36px 24px 64px" }}>
 
-        {/* ── Workflow flow strip ─────────────────────────────────── */}
+        {/* Workflow diagram */}
         <div style={{
-          background: GOLD,
-          borderRadius: 14,
-          padding: "18px 24px",
-          marginBottom: 32,
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 8,
-          alignItems: "center",
+          background: "var(--bg)", border: "1.5px solid var(--border)",
+          borderRadius: 14, padding: "24px 28px 20px",
+          marginBottom: 28,
         }}>
-          <span style={{
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            color: TEAL,
-            marginRight: 4,
-            whiteSpace: "nowrap",
-          }}>
-            Workflow
-          </span>
-          <FlowPill label="Research" />
-          <span style={{ color: TEAL, opacity: 0.45, fontSize: 16 }}>→</span>
-          <FlowPill label="Rapid Response" />
-          <span style={{ color: TEAL, opacity: 0.45, fontSize: 16 }}>→</span>
-          <FlowPill label="Rebuttal Generator" />
-          <span style={{ color: TEAL, opacity: 0.45, fontSize: 16 }}>→</span>
-          <FlowPill label="Message Machine" />
-          <span style={{ color: TEAL, opacity: 0.45, fontSize: 16 }}>→</span>
-          <FlowPill label="Copy & Post / Save to Library" />
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text-mute)", marginBottom: 18 }}>
+            How the tools connect
+          </div>
+
+          {/* Top row: 3 inputs */}
+          <div style={{ display: "flex", gap: 12, marginBottom: 0, justifyContent: "center" }}>
+            {[
+              { label: "Research",           bg: "#E0F2EC", bord: "#A8D9C8", tc: TEAL },
+              { label: "Rapid Response",     bg: "#FDE8D8", bord: "#F0C4A8", tc: "#7A3010" },
+              { label: "Rebuttal Generator", bg: "#FFF0E8", bord: "#F0C4A8", tc: TERRA },
+            ].map(item => (
+              <div key={item.label} style={{
+                flex: 1, textAlign: "center",
+                background: item.bg, border: `1.5px solid ${item.bord}`,
+                borderRadius: 10, padding: "10px 8px",
+                fontSize: 13, fontWeight: 700, color: item.tc,
+              }}>
+                {item.label}
+              </div>
+            ))}
+          </div>
+
+          {/* Converging arrows */}
+          <div style={{ position: "relative", height: 48, margin: "0 auto", maxWidth: 480 }}>
+            <svg width="100%" height="48" viewBox="0 0 480 48" preserveAspectRatio="none" style={{ display: "block" }}>
+              <polyline points="80,0 80,28 240,28" fill="none" stroke="#B0C4BC" strokeWidth="1.5" />
+              <line x1="240" y1="0" x2="240" y2="28" stroke="#B0C4BC" strokeWidth="1.5" />
+              <polyline points="400,0 400,28 240,28" fill="none" stroke="#B0C4BC" strokeWidth="1.5" />
+              <line x1="240" y1="28" x2="240" y2="44" stroke="#B0C4BC" strokeWidth="1.5" />
+              <polygon points="234,40 246,40 240,48" fill="#B0C4BC" />
+            </svg>
+          </div>
+
+          {/* Message Machine hub */}
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
+            <div style={{
+              background: "#E0FAF5", border: "2px solid #3ECFB2",
+              borderRadius: 12, padding: "12px 32px",
+              fontSize: 15, fontWeight: 700, color: "#085041",
+              textAlign: "center",
+            }}>
+              Message Machine
+            </div>
+          </div>
+
+          {/* Arrow down */}
+          <div style={{ display: "flex", justifyContent: "center", height: 32 }}>
+            <svg width="12" height="32" style={{ display: "block" }}>
+              <line x1="6" y1="0" x2="6" y2="24" stroke="#B0C4BC" strokeWidth="1.5" />
+              <polygon points="0,20 12,20 6,30" fill="#B0C4BC" />
+            </svg>
+          </div>
+
+          {/* Output row */}
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center" }}>
+            <div style={{ background: GOLD, borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: TEAL }}>
+              Copy & Post
+            </div>
+            <span style={{ fontSize: 13, color: "var(--text-mute)", fontStyle: "italic" }}>and / or</span>
+            <div style={{ background: TEAL, borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: WHITE }}>
+              Save to Library
+            </div>
+          </div>
         </div>
 
-        {/* ── Tool cards ─────────────────────────────────────────── */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 32 }}>
+        {/* Tool cards */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 28 }}>
           {TOOLS.map(tool => (
-            <ToolCard key={tool.num} tool={tool} navigate={navigate} />
+            <ToolCard key={tool.num} tool={tool} onClick={navigate} />
           ))}
         </div>
 
-        {/* ── Reminders box ──────────────────────────────────────── */}
+        {/* Reminders */}
         <div style={{
-          background: "#E0F2EC",
-          border: "1.5px solid #A8D9C8",
-          borderRadius: 14,
-          padding: "20px 24px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-          marginBottom: 32,
+          background: "#E0F2EC", border: "1.5px solid #A8D9C8",
+          borderRadius: 14, padding: "18px 22px",
+          display: "flex", flexDirection: "column", gap: 10, marginBottom: 28,
         }}>
-          <FooterNote icon="⚠️" text="All AI output is a draft — always verify facts and claims before publishing." />
-          <FooterNote icon="💾" text="Nothing saves automatically — click Save to Library to keep your work." />
-          <FooterNote icon="👥" text="The Library is shared — all coalition staff see the same campaigns in real time." />
+          {[
+            ["⚠️", "All AI output is a draft — always verify facts and claims before publishing."],
+            ["💾", "Nothing saves automatically — click Save to Library to keep your work."],
+            ["👥", "The Library is shared — all coalition staff see the same campaigns in real time."],
+          ].map(([icon, text]) => (
+            <div key={text} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 16, flexShrink: 0 }}>{icon}</span>
+              <span style={{ fontSize: 14, fontWeight: 500, color: TEAL, lineHeight: 1.5 }}>{text}</span>
+            </div>
+          ))}
         </div>
 
-        {/* ── Download strip ─────────────────────────────────────── */}
+        {/* Download strip */}
         <div style={{
-          border: `2px solid var(--border, #e2dfe8)`,
-          borderRadius: 14,
-          padding: "20px 24px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
-          flexWrap: "wrap",
-          background: "var(--surface, #fff)",
+          border: "2px solid var(--border)",
+          borderRadius: 14, padding: "18px 22px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: 16, flexWrap: "wrap",
+          background: "var(--bg)",
         }}>
           <div>
-            <div style={{
-              fontFamily: "var(--font-display)",
-              fontSize: 17,
-              color: CHARCOAL,
-              marginBottom: 4,
-            }}>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: 17, color: CHARCOAL, marginBottom: 4 }}>
               Quick Start — Vertical Reel
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-mute, #888)", lineHeight: 1.5 }}>
+            <div style={{ fontSize: 13, color: "var(--text-mute)", lineHeight: 1.5 }}>
               1080 × 1920 px PNG · Save to your phone or share with your team
             </div>
           </div>
           <button
             onClick={handleDownload}
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "10px 22px",
-              background: TEAL,
-              color: WHITE,
-              border: "none",
-              borderRadius: 8,
-              fontSize: 14,
-              fontWeight: 700,
-              fontFamily: "var(--font-body)",
-              letterSpacing: "0.04em",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              transition: "background 0.15s",
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "10px 22px", background: TEAL, color: WHITE,
+              border: "none", borderRadius: 8,
+              fontSize: 14, fontWeight: 700,
+              fontFamily: "var(--font-body)", letterSpacing: "0.04em",
+              cursor: "pointer", whiteSpace: "nowrap", transition: "background 0.15s",
             }}
             onMouseEnter={e => e.currentTarget.style.background = "#164535"}
             onMouseLeave={e => e.currentTarget.style.background = TEAL}
