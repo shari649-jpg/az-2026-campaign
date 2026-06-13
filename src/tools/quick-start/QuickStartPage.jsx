@@ -171,74 +171,42 @@ export default function QuickStartPage() {
             How the tools connect
           </div>
 
-          {/* Top row + converging lines as a single CSS layout */}
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-
-            {/* Left box + vertical line */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <div style={{ width: "100%", textAlign: "center", background: "#E0F2EC", border: "1.5px solid #A8D9C8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: TEAL }}>
-                Research
-              </div>
-              <div style={{ width: 1.5, height: 20, background: "#B0C4BC" }} />
-              <div style={{ width: "50%", height: 1.5, background: "#B0C4BC", alignSelf: "flex-end" }} />
-            </div>
-
-            {/* Center box + straight vertical line */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <div style={{ width: "100%", textAlign: "center", background: "#FDE8D8", border: "1.5px solid #F0C4A8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: "#7A3010" }}>
-                Rapid Response
-              </div>
-              <div style={{ width: 1.5, height: 20, background: "#B0C4BC" }} />
-            </div>
-
-            {/* Right box + vertical line */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <div style={{ width: "100%", textAlign: "center", background: "#FFF0E8", border: "1.5px solid #F0C4A8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: TERRA }}>
-                Rebuttal Generator
-              </div>
-              <div style={{ width: 1.5, height: 20, background: "#B0C4BC" }} />
-              <div style={{ width: "50%", height: 1.5, background: "#B0C4BC", alignSelf: "flex-start" }} />
-            </div>
-
+          {/* Input boxes row */}
+          <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ flex: 1, textAlign: "center", background: "#E0F2EC", border: "1.5px solid #A8D9C8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: TEAL }}>Research</div>
+            <div style={{ flex: 1, textAlign: "center", background: "#FDE8D8", border: "1.5px solid #F0C4A8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: "#7A3010" }}>Rapid Response</div>
+            <div style={{ flex: 1, textAlign: "center", background: "#FFF0E8", border: "1.5px solid #F0C4A8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: TERRA }}>Rebuttal Generator</div>
           </div>
 
-          {/* Arrow down to MM */}
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <div style={{ width: 1.5, height: 14, background: "#B0C4BC" }} />
-              <div style={{ width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid #B0C4BC" }} />
-            </div>
-          </div>
+          {/* Converging lines — SVG with fixed viewBox, no stretching */}
+          <svg viewBox="0 0 300 40" height="40" style={{ display: "block", width: "100%", overflow: "visible" }}>
+            <line x1="50"  y1="0" x2="50"  y2="20" stroke="#B0C4BC" strokeWidth="1" />
+            <line x1="50"  y1="20" x2="150" y2="20" stroke="#B0C4BC" strokeWidth="1" />
+            <line x1="150" y1="0" x2="150" y2="20" stroke="#B0C4BC" strokeWidth="1" />
+            <line x1="250" y1="0" x2="250" y2="20" stroke="#B0C4BC" strokeWidth="1" />
+            <line x1="250" y1="20" x2="150" y2="20" stroke="#B0C4BC" strokeWidth="1" />
+            <line x1="150" y1="20" x2="150" y2="38" stroke="#B0C4BC" strokeWidth="1" />
+            <polygon points="145,33 155,33 150,40" fill="#B0C4BC" />
+          </svg>
 
           {/* Message Machine hub */}
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
-            <div style={{
-              background: "#E0FAF5", border: "2px solid #3ECFB2",
-              borderRadius: 12, padding: "12px 32px",
-              fontSize: 15, fontWeight: 700, color: "#085041",
-              textAlign: "center",
-            }}>
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <div style={{ background: "#E0FAF5", border: "2px solid #3ECFB2", borderRadius: 12, padding: "12px 32px", fontSize: 15, fontWeight: 700, color: "#085041" }}>
               Message Machine
             </div>
           </div>
 
-          {/* Arrow down to outputs */}
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <div style={{ width: 1.5, height: 14, background: "#B0C4BC" }} />
-              <div style={{ width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid #B0C4BC" }} />
-            </div>
-          </div>
+          {/* Arrow down */}
+          <svg viewBox="0 0 300 30" height="30" style={{ display: "block", width: "100%" }}>
+            <line x1="150" y1="0" x2="150" y2="22" stroke="#B0C4BC" strokeWidth="1" />
+            <polygon points="145,18 155,18 150,26" fill="#B0C4BC" />
+          </svg>
 
           {/* Output row */}
           <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center" }}>
-            <div style={{ background: GOLD, borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: TEAL }}>
-              Copy & Post
-            </div>
+            <div style={{ background: GOLD, borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: TEAL }}>Copy & Post</div>
             <span style={{ fontSize: 13, color: "var(--text-mute)", fontStyle: "italic" }}>and / or</span>
-            <div style={{ background: TEAL, borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: WHITE }}>
-              Save to Library
-            </div>
+            <div style={{ background: TEAL, borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: WHITE }}>Save to Library</div>
           </div>
         </div>
 
