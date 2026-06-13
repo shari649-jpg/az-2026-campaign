@@ -161,28 +161,75 @@ export default function QuickStartPage() {
     >
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "36px 24px 64px" }}>
 
-        {/* Workflow strip */}
+        {/* Workflow diagram */}
         <div style={{
-          background: GOLD, borderRadius: 14, padding: "16px 22px",
-          marginBottom: 28, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center",
+          background: "var(--surface)", border: "1.5px solid var(--border)",
+          borderRadius: 14, padding: "24px 28px 20px",
+          marginBottom: 28,
         }}>
-          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: TEAL, marginRight: 4 }}>
-            Workflow
-          </span>
-          {["Research", "Rapid Response", "Rebuttal Generator", "Message Machine", "Copy & Post / Save to Library"].map((label, i, arr) => (
-            <span key={label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{
-                background: "rgba(29,92,74,0.14)", border: "1.5px solid rgba(29,92,74,0.22)",
-                borderRadius: 20, padding: "3px 12px",
-                fontSize: 13, fontWeight: 700, color: TEAL,
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text-mute)", marginBottom: 18 }}>
+            How the tools connect
+          </div>
+
+          {/* Top row: 3 inputs */}
+          <div style={{ display: "flex", gap: 12, marginBottom: 0, justifyContent: "center" }}>
+            {[
+              { label: "Research",           bg: "#E0F2EC", bord: "#A8D9C8", tc: TEAL },
+              { label: "Rapid Response",     bg: "#FDE8D8", bord: "#F0C4A8", tc: "#7A3010" },
+              { label: "Rebuttal Generator", bg: "#FFF0E8", bord: "#F0C4A8", tc: TERRA },
+            ].map(item => (
+              <div key={item.label} style={{
+                flex: 1, textAlign: "center",
+                background: item.bg, border: `1.5px solid ${item.bord}`,
+                borderRadius: 10, padding: "10px 8px",
+                fontSize: 13, fontWeight: 700, color: item.tc,
               }}>
-                {label}
-              </span>
-              {i < arr.length - 1 && (
-                <span style={{ color: TEAL, opacity: 0.4, fontSize: 15 }}>→</span>
-              )}
-            </span>
-          ))}
+                {item.label}
+              </div>
+            ))}
+          </div>
+
+          {/* Converging arrows */}
+          <div style={{ position: "relative", height: 48, margin: "0 auto", maxWidth: 480 }}>
+            <svg width="100%" height="48" viewBox="0 0 480 48" preserveAspectRatio="none" style={{ display: "block" }}>
+              <polyline points="80,0 80,28 240,28" fill="none" stroke="#B0C4BC" strokeWidth="1.5" />
+              <line x1="240" y1="0" x2="240" y2="28" stroke="#B0C4BC" strokeWidth="1.5" />
+              <polyline points="400,0 400,28 240,28" fill="none" stroke="#B0C4BC" strokeWidth="1.5" />
+              <line x1="240" y1="28" x2="240" y2="44" stroke="#B0C4BC" strokeWidth="1.5" />
+              <polygon points="234,40 246,40 240,48" fill="#B0C4BC" />
+            </svg>
+          </div>
+
+          {/* Message Machine hub */}
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
+            <div style={{
+              background: "#E0FAF5", border: "2px solid #3ECFB2",
+              borderRadius: 12, padding: "12px 32px",
+              fontSize: 15, fontWeight: 700, color: "#085041",
+              textAlign: "center",
+            }}>
+              Message Machine
+            </div>
+          </div>
+
+          {/* Arrow down */}
+          <div style={{ display: "flex", justifyContent: "center", height: 32 }}>
+            <svg width="12" height="32" style={{ display: "block" }}>
+              <line x1="6" y1="0" x2="6" y2="24" stroke="#B0C4BC" strokeWidth="1.5" />
+              <polygon points="0,20 12,20 6,30" fill="#B0C4BC" />
+            </svg>
+          </div>
+
+          {/* Output row */}
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center" }}>
+            <div style={{ background: GOLD, borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: TEAL }}>
+              Copy & Post
+            </div>
+            <span style={{ fontSize: 13, color: "var(--text-mute)", fontStyle: "italic" }}>and / or</span>
+            <div style={{ background: TEAL, borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: WHITE }}>
+              Save to Library
+            </div>
+          </div>
         </div>
 
         {/* Tool cards */}
