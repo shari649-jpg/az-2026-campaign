@@ -13,6 +13,7 @@ import RapidResponsePage from "./tools/rapid-response/RapidResponsePage";
 import ResourcesPage from "./tools/resources/ResourcesPage";
 import LibraryPage from "./tools/library/LibraryPage";
 import MediaPage from "./tools/media/MediaPage";
+import QuickStartPage from "./tools/quick-start/QuickStartPage";
 
 export default function App() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
             <Route path="/library" element={<LibraryPage />} />
             <Route path="/media" element={<MediaPage />} />
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/quick-start" element={<QuickStartPage />} />
           </Route>
         </Routes>
       </AuthProvider>
