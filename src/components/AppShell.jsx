@@ -11,9 +11,10 @@ const NAV_ITEMS = [
 ];
 
 const MORE_ITEMS = [
-  { path: "/media",     short: "Media" },
-  { path: "/library",   short: "Library" },
-  { path: "/resources", short: "Resources" },
+  { path: "/media",        short: "Media" },
+  { path: "/library",      short: "Library" },
+  { path: "/resources",    short: "Resources" },
+  { path: "/quick-start",  short: "Quick Start" },
 ];
 
 export default function AppShell() {
