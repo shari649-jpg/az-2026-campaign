@@ -171,35 +171,39 @@ export default function QuickStartPage() {
             How the tools connect
           </div>
 
-          {/* Input boxes row */}
+          {/* Top row: 3 inputs */}
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1, textAlign: "center", background: "#E0F2EC", border: "1.5px solid #A8D9C8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: TEAL }}>Research</div>
             <div style={{ flex: 1, textAlign: "center", background: "#FDE8D8", border: "1.5px solid #F0C4A8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: "#7A3010" }}>Rapid Response</div>
             <div style={{ flex: 1, textAlign: "center", background: "#FFF0E8", border: "1.5px solid #F0C4A8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: TERRA }}>Rebuttal Generator</div>
           </div>
 
-          {/* Converging lines — SVG with fixed viewBox, no stretching */}
-          <svg viewBox="0 0 300 40" height="40" style={{ display: "block", width: "100%", overflow: "visible" }}>
-            <line x1="50"  y1="0" x2="50"  y2="20" stroke="#B0C4BC" strokeWidth="1" />
-            <line x1="50"  y1="20" x2="150" y2="20" stroke="#B0C4BC" strokeWidth="1" />
-            <line x1="150" y1="0" x2="150" y2="20" stroke="#B0C4BC" strokeWidth="1" />
-            <line x1="250" y1="0" x2="250" y2="20" stroke="#B0C4BC" strokeWidth="1" />
-            <line x1="250" y1="20" x2="150" y2="20" stroke="#B0C4BC" strokeWidth="1" />
-            <line x1="150" y1="20" x2="150" y2="38" stroke="#B0C4BC" strokeWidth="1" />
-            <polygon points="145,33 155,33 150,40" fill="#B0C4BC" />
+          {/*
+            SVG viewBox is 300 wide. Three equal boxes = centers at 50, 150, 250.
+            No preserveAspectRatio distortion — we use xMidYMid meet so it scales
+            uniformly and stays centered. Height is fixed so it doesn't stretch vertically.
+          */}
+          <svg viewBox="0 0 300 44" width="100%" height="44" preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
+            <line x1="50"  y1="0"  x2="50"  y2="22" stroke="#B0C4BC" strokeWidth="1.5" />
+            <line x1="50"  y1="22" x2="150" y2="22" stroke="#B0C4BC" strokeWidth="1.5" />
+            <line x1="150" y1="0"  x2="150" y2="22" stroke="#B0C4BC" strokeWidth="1.5" />
+            <line x1="250" y1="0"  x2="250" y2="22" stroke="#B0C4BC" strokeWidth="1.5" />
+            <line x1="250" y1="22" x2="150" y2="22" stroke="#B0C4BC" strokeWidth="1.5" />
+            <line x1="150" y1="22" x2="150" y2="38" stroke="#B0C4BC" strokeWidth="1.5" />
+            <polygon points="144,35 156,35 150,44" fill="#B0C4BC" />
           </svg>
 
           {/* Message Machine hub */}
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <div style={{ background: "#E0FAF5", border: "2px solid #3ECFB2", borderRadius: 12, padding: "12px 32px", fontSize: 15, fontWeight: 700, color: "#085041" }}>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
+            <div style={{ background: "#E0FAF5", border: "2px solid #3ECFB2", borderRadius: 12, padding: "12px 32px", fontSize: 15, fontWeight: 700, color: "#085041", textAlign: "center" }}>
               Message Machine
             </div>
           </div>
 
           {/* Arrow down */}
-          <svg viewBox="0 0 300 30" height="30" style={{ display: "block", width: "100%" }}>
-            <line x1="150" y1="0" x2="150" y2="22" stroke="#B0C4BC" strokeWidth="1" />
-            <polygon points="145,18 155,18 150,26" fill="#B0C4BC" />
+          <svg viewBox="0 0 300 30" width="100%" height="30" preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
+            <line x1="150" y1="0"  x2="150" y2="20" stroke="#B0C4BC" strokeWidth="1.5" />
+            <polygon points="144,17 156,17 150,26" fill="#B0C4BC" />
           </svg>
 
           {/* Output row */}
@@ -208,8 +212,6 @@ export default function QuickStartPage() {
             <span style={{ fontSize: 13, color: "var(--text-mute)", fontStyle: "italic" }}>and / or</span>
             <div style={{ background: TEAL, borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: WHITE }}>Save to Library</div>
           </div>
-        </div>
-
         {/* Tool cards */}
         <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 28 }}>
           {TOOLS.map(tool => (
