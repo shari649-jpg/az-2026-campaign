@@ -79,6 +79,15 @@ FIRST COMMENT: [1 punchy sentence under 280 chars]
 POST: Hook line / Beat 1 / Beat 2 / Beat 3 / CTA line
 FIRST COMMENT: [1 punchy sentence]
 
+FACTUAL ACCURACY — NON-NEGOTIABLE:
+- NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date. If you do not have a verified figure from the content provided, do not include one.
+- NEVER fabricate or paraphrase quotes from real people. Only use quotes explicitly provided in the input.
+- NEVER name a specific person, organization, study, bill, court case, or law unless it was explicitly provided in the input content.
+- NEVER assert a specific factual claim you cannot verify from the input provided.
+- If the input does not contain a specific fact, write around it using general, non-falsifiable framing: "experts have documented," "public records show," "studies have found" — never invent what those experts, records, or studies say.
+- Posts must persuade through framing, values, and momentum — not through invented facts.
+- Violating this rule damages the credibility of a real political campaign. Treat factual accuracy as an absolute constraint, not a preference.
+
 RULES:
 - Write ALL posts and first comments in the third person. Never use "I" or "my". Write as if observing and reporting — "Communities are being silenced," not "I am outraged."
 - Anchor phrase must emerge from the specific narrative — never generic
@@ -379,30 +388,19 @@ export default function RebuttalGenerator() {
 
   // Load library on mount, also check for library-pushed campaign
   useEffect(() => {
-  loadLibrary();
-  try {
-    // From Library
-    const saved = localStorage.getItem("rebuttal_load_campaign");
-    if (saved) {
-      const entry = JSON.parse(saved);
-      setNarrative(entry.narrative || "");
-      setOutput(entry.output || "");
-      setTone(entry.tone ?? null);
-      setProfile(entry.profile ? (PROFILES.find(p => p.label === entry.profile)?.key ?? null) : null);
-      localStorage.removeItem("rebuttal_load_campaign");
-      return;
-    }
-  } catch {}
-  try {
-    // From Misinfo Monitor — pre-fills narrative only
-    const pushed = localStorage.getItem("rebuttal_push_results");
-    if (pushed) {
-      const entry = JSON.parse(pushed);
-      if (entry.narrative) setNarrative(entry.narrative);
-      localStorage.removeItem("rebuttal_push_results");
-    }
-  } catch {}
-}, []);
+    loadLibrary();
+    try {
+      const saved = localStorage.getItem("rebuttal_load_campaign");
+      if (saved) {
+        const entry = JSON.parse(saved);
+        setNarrative(entry.narrative || "");
+        setOutput(entry.output || "");
+        setTone(entry.tone ?? null);
+        setProfile(entry.profile ? (PROFILES.find(p => p.label === entry.profile)?.key ?? null) : null);
+        localStorage.removeItem("rebuttal_load_campaign");
+      }
+    } catch {}
+  }, []);
 
   async function loadLibrary() {
     try {
@@ -608,16 +606,13 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
 
       {/* ── Library button row — replaces the removed duplicate header ── */}
       <div style={{ borderBottom: `1px solid ${BORDER}`, padding: "10px 32px", display: "flex", gap: "8px", alignItems: "center", justifyContent: "flex-end", background: SURFACE }}>
-  <button style={btnSmall()} onClick={() => window.location.assign("/misinfo-monitor")}>
-    ← Misinfo Monitor
-  </button>
-  <button style={btnSmall()} onClick={() => setShowLib(v => !v)}>
-    {showLib ? "Hide Library" : `Rebuttal Library (${library.length})`}
-  </button>
-  {(output || narrative) && (
-    <button style={btnSmall()} onClick={reset}>↩ New Campaign</button>
-  )}
-</div>
+        <button style={btnSmall()} onClick={() => setShowLib(v => !v)}>
+          {showLib ? "Hide Library" : `Rebuttal Library (${library.length})`}
+        </button>
+        {(output || narrative) && (
+          <button style={btnSmall()} onClick={reset}>↩ New Campaign</button>
+        )}
+      </div>
 
       {/* ── Library panel ── */}
       {showLib && library.length > 0 && (
