@@ -1,0 +1,577 @@
+import { useState, useEffect, useCallback } from "react";
+
+// ── Brand tokens ────────────────────────────────────────────────────────────
+const TEAL      = "#1D5C4A";
+const GOLD      = "#F5C842";
+const CHARCOAL  = "#4A4558";
+const TURQUOISE = "#3ECFB2";
+const TERRA     = "#C1673A";
+const SURFACE   = "#F9F8F5";
+const BORDER    = "#E0DDD6";
+const TEAL_LITE = "#e0f2ec";
+const INK       = CHARCOAL;
+
+// ── Community Notes data source ─────────────────────────────────────────────
+// X publishes daily open TSV files at this URL pattern (no API key needed)
+const CN_NOTES_URL =
+  "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-00000.tsv";
+
+// ── Political keyword classifiers ───────────────────────────────────────────
+const REP_KEYWORDS = [
+  "republican","gop","trump","maga","desantis","rubio","mccain","lake","masters",
+  "hamadeh","finchem","conservative","right-wing","right wing","america first",
+  "2nd amendment","second amendment","border wall","illegal alien","critical race",
+  "deep state","election fraud","stolen election","patriot","woke","socialist",
+  "defund police","antifa","hunter biden","liberal","leftist","democrat lie",
+];
+const DEM_KEYWORDS = [
+  "democrat","democratic","biden","harris","obama","pelosi","schumer","gallego",
+  "stanton","progressive","liberal","left-wing","left wing","climate change lie",
+  "abortion ban","roe","medicaid","social security cut","obamacare","aca","union",
+  "minimum wage","lgbtq ban","book ban","voter suppression","gerrymandering",
+  "insurrection","january 6","disinformation","dark money","corporate greed",
+];
+
+const NARRATIVE_PATTERNS = [
+  { label: "Election Integrity Claims",    keywords: ["election","ballot","vote","fraud","rigged","stolen","mail-in","dominion"] },
+  { label: "Immigration Misinformation",   keywords: ["border","migrant","illegal","invasion","caravan","fentanyl","trafficking"] },
+  { label: "Economic Falsehoods",          keywords: ["inflation","economy","recession","gas price","unemploy","tax","deficit"] },
+  { label: "Health & Science Denial",      keywords: ["vaccine","covid","climate","fauci","mask","hydroxychloroquine","ivermectin"] },
+  { label: "Crime & Safety Distortions",   keywords: ["crime","murder","violent","defund","police","fentanyl","criminal"] },
+  { label: "Identity & Social Issues",     keywords: ["transgender","gender","groomer","woke","crt","critical race","lgbtq","drag"] },
+];
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function classifyText(text) {
+  const lower = text.toLowerCase();
+  const rScore = REP_KEYWORDS.filter(k => lower.includes(k)).length;
+  const dScore = DEM_KEYWORDS.filter(k => lower.includes(k)).length;
+  if (rScore === 0 && dScore === 0) return null;
+  if (rScore > dScore) return "R";
+  if (dScore > rScore) return "D";
+  return "both";
+}
+
+function detectNarratives(text) {
+  const lower = text.toLowerCase();
+  return NARRATIVE_PATTERNS.filter(p => p.keywords.some(k => lower.includes(k))).map(p => p.label);
+}
+
+function weekLabel(dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d)) return "Unknown";
+  const wk = new Date(d);
+  wk.setDate(d.getDate() - d.getDay());
+  return `${wk.getMonth()+1}/${wk.getDate()}`;
+}
+
+// ── Mini bar chart ───────────────────────────────────────────────────────────
+function BarChart({ data }) {
+  if (!data.length) return null;
+  const maxVal = Math.max(...data.map(d => Math.max(d.r, d.d)), 1);
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, minWidth: data.length * 52, height: 140, paddingBottom: 24, position: "relative" }}>
+        {data.map((week, i) => (
+          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flex: 1, minWidth: 44 }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 110 }}>
+              <div title={`Republican-targeting: ${week.r}`} style={{
+                width: 18, height: Math.max(2, (week.r / maxVal) * 110),
+                background: TERRA, borderRadius: "3px 3px 0 0", transition: "height 0.4s",
+              }} />
+              <div title={`Democrat-targeting: ${week.d}`} style={{
+                width: 18, height: Math.max(2, (week.d / maxVal) * 110),
+                background: TEAL, borderRadius: "3px 3px 0 0", transition: "height 0.4s",
+              }} />
+            </div>
+            <div style={{ fontSize: 10, color: "#999", whiteSpace: "nowrap", marginTop: 4 }}>{week.label}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 20, marginTop: 4 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: INK }}>
+          <span style={{ width: 12, height: 12, background: TERRA, borderRadius: 2, display: "inline-block" }} />
+          Flagging GOP-aligned claims
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: INK }}>
+          <span style={{ width: 12, height: 12, background: TEAL, borderRadius: 2, display: "inline-block" }} />
+          Flagging Dem-aligned claims
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── Narrative pill ──────────────────────────────────────────────────────────
+function NarrativePill({ label }) {
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 700, letterSpacing: "0.04em",
+      background: TEAL_LITE, color: TEAL, borderRadius: 4,
+      padding: "2px 7px", border: `1px solid #b2d9cc`,
+    }}>{label}</span>
+  );
+}
+
+// ── Note card ───────────────────────────────────────────────────────────────
+function NoteCard({ note, onSendToRebuttal }) {
+  const [sent, setSent] = useState(false);
+
+  function handleSend() {
+    try {
+      localStorage.setItem("rebuttal_push_results", JSON.stringify({
+        narrative: note.summary,
+        source: "Community Notes Monitor",
+        sentAt: new Date().toISOString(),
+      }));
+      setSent(true);
+      setTimeout(() => window.location.assign("/rebuttal"), 700);
+    } catch {
+      onSendToRebuttal(note.summary);
+    }
+  }
+
+  return (
+    <div style={{
+      background: "#fff",
+      border: `1.5px solid ${BORDER}`,
+      borderRadius: 10,
+      padding: "14px 16px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 10,
+    }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0, fontSize: 14, color: INK, lineHeight: 1.5 }}>
+            {note.summary.length > 280 ? note.summary.slice(0, 280) + "…" : note.summary}
+          </p>
+        </div>
+        <span style={{
+          flexShrink: 0,
+          fontSize: 11, fontWeight: 800, letterSpacing: "0.06em",
+          padding: "3px 9px", borderRadius: 5,
+          background: note.side === "R" ? "#fde8dc" : TEAL_LITE,
+          color: note.side === "R" ? TERRA : TEAL,
+          border: `1.5px solid ${note.side === "R" ? "#f3c4aa" : "#b2d9cc"}`,
+        }}>
+          {note.side === "R" ? "GOP-target" : note.side === "D" ? "Dem-target" : "Mixed"}
+        </span>
+      </div>
+
+      {note.narratives.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {note.narratives.map(n => <NarrativePill key={n} label={n} />)}
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ fontSize: 12, color: "#999" }}>
+          {note.date && <span>Flagged {note.date}</span>}
+          {note.helpfulness && <span style={{ marginLeft: 10 }}>· {note.helpfulness}% helpful ratings</span>}
+        </div>
+        <button
+          onClick={handleSend}
+          disabled={sent}
+          style={{
+            fontSize: 12, fontWeight: 700, fontFamily: "inherit",
+            padding: "5px 12px", borderRadius: 6, cursor: sent ? "default" : "pointer",
+            background: sent ? TEAL_LITE : GOLD,
+            color: sent ? TEAL : CHARCOAL,
+            border: `1.5px solid ${sent ? "#b2d9cc" : "#d4a800"}`,
+            transition: "all 0.2s",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {sent ? "✓ Sent to Rebuttal" : "Send to Rebuttal Generator →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Stat card ───────────────────────────────────────────────────────────────
+function StatCard({ label, value, sub, accent }) {
+  return (
+    <div style={{
+      background: "#fff", border: `1.5px solid ${BORDER}`, borderRadius: 10,
+      padding: "18px 20px", borderTop: `4px solid ${accent}`,
+      display: "flex", flexDirection: "column", gap: 4,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#999" }}>{label}</div>
+      <div style={{ fontSize: 32, fontWeight: 800, color: INK, lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+// ── Narrative leaderboard ────────────────────────────────────────────────────
+function NarrativeLeaderboard({ counts, side }) {
+  const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0,6);
+  const max = sorted[0]?.[1] || 1;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {sorted.map(([label, count]) => (
+        <div key={label} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 13, color: INK, fontWeight: 600 }}>{label}</span>
+            <span style={{ fontSize: 13, color: "#888", fontWeight: 700 }}>{count}</span>
+          </div>
+          <div style={{ height: 6, background: BORDER, borderRadius: 3, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", borderRadius: 3,
+              width: `${(count/max)*100}%`,
+              background: side === "R" ? TERRA : TEAL,
+              transition: "width 0.5s",
+            }} />
+          </div>
+        </div>
+      ))}
+      {sorted.length === 0 && <div style={{ fontSize: 13, color: "#aaa" }}>No data yet.</div>}
+    </div>
+  );
+}
+
+// ── Main component ──────────────────────────────────────────────────────────
+export default function MisinfoMonitor() {
+  const [status, setStatus]         = useState("idle"); // idle | loading | done | error
+  const [notes, setNotes]           = useState([]);
+  const [weeklyData, setWeeklyData] = useState([]);
+  const [repNarCounts, setRepNar]   = useState({});
+  const [demNarCounts, setDemNar]   = useState({});
+  const [totalR, setTotalR]         = useState(0);
+  const [totalD, setTotalD]         = useState(0);
+  const [lastFetch, setLastFetch]   = useState(null);
+  const [filter, setFilter]         = useState("all"); // all | R | D
+  const [narrativeFilter, setNarrativeFilter] = useState(null);
+  const [page, setPage]             = useState(0);
+  const [errorMsg, setErrorMsg]     = useState("");
+
+  const PER_PAGE = 12;
+
+  // ── Parse TSV from Community Notes ────────────────────────────────────────
+  const parseTSV = useCallback((raw) => {
+    const lines = raw.split("\n").filter(Boolean);
+    if (lines.length < 2) return [];
+    const headers = lines[0].split("\t");
+    const idx = {
+      noteId:      headers.indexOf("noteId"),
+      summary:     headers.indexOf("summary"),
+      createdAt:   headers.indexOf("createdAtMillis"),
+      helpful:     headers.indexOf("currentStatus"),
+      tweetId:     headers.indexOf("tweetId"),
+    };
+
+    const parsed = [];
+    for (let i = 1; i < Math.min(lines.length, 6000); i++) {
+      const cols = lines[i].split("\t");
+      const summary = cols[idx.summary] || "";
+      if (!summary.trim()) continue;
+      const side = classifyText(summary);
+      if (!side) continue;
+      const millis = parseInt(cols[idx.createdAt]) || 0;
+      const date = millis ? new Date(millis).toLocaleDateString("en-US",{ month:"short", day:"numeric" }) : "";
+      const weekLbl = millis ? weekLabel(new Date(millis).toISOString()) : "Unknown";
+      const narratives = detectNarratives(summary);
+      parsed.push({ summary, side, date, weekLbl, narratives, noteId: cols[idx.noteId] });
+    }
+    return parsed;
+  }, []);
+
+  // ── Aggregate stats ───────────────────────────────────────────────────────
+  const buildStats = useCallback((parsed) => {
+    const wkMap = {};
+    let rCount = 0, dCount = 0;
+    const rNar = {}, dNar = {};
+
+    parsed.forEach(n => {
+      // Weekly
+      const wk = n.weekLbl;
+      if (!wkMap[wk]) wkMap[wk] = { label: wk, r: 0, d: 0 };
+      if (n.side === "R" || n.side === "both") { wkMap[wk].r++; rCount++; }
+      if (n.side === "D" || n.side === "both") { wkMap[wk].d++; dCount++; }
+
+      // Narratives
+      n.narratives.forEach(nar => {
+        if (n.side === "R" || n.side === "both") rNar[nar] = (rNar[nar] || 0) + 1;
+        if (n.side === "D" || n.side === "both") dNar[nar] = (dNar[nar] || 0) + 1;
+      });
+    });
+
+    const sortedWeeks = Object.values(wkMap)
+      .sort((a,b) => {
+        const parse = s => { const p = s.split("/"); return parseInt(p[0])*100+parseInt(p[1]); };
+        return parse(a.label) - parse(b.label);
+      })
+      .slice(-8);
+
+    setWeeklyData(sortedWeeks);
+    setTotalR(rCount);
+    setTotalD(dCount);
+    setRepNar(rNar);
+    setDemNar(dNar);
+  }, []);
+
+  // ── Fetch data ────────────────────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    setStatus("loading");
+    setErrorMsg("");
+    try {
+      // Use a CORS proxy since browser can't hit ton.twimg.com directly
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(CN_NOTES_URL)}`;
+      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(25000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      const parsed = parseTSV(text);
+      if (!parsed.length) throw new Error("No political notes found in dataset.");
+      setNotes(parsed);
+      buildStats(parsed);
+      setLastFetch(new Date().toLocaleTimeString("en-US", { hour:"2-digit", minute:"2-digit" }));
+      setStatus("done");
+      setPage(0);
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(err.message || "Failed to load Community Notes data.");
+      // Load demo data so the page is still useful
+      loadDemoData();
+    }
+  }, [parseTSV, buildStats]);
+
+  // ── Demo / fallback data (always available) ───────────────────────────────
+  const loadDemoData = useCallback(() => {
+    const demo = [
+      { summary: "This post falsely claims that mail-in ballots were destroyed in Maricopa County during the 2024 election. Official records show no evidence of this.", side:"R", date:"Jun 10", weekLbl:"6/8", narratives:["Election Integrity Claims"] },
+      { summary: "False claim that illegal immigration has caused a 400% increase in crime in Arizona border towns. FBI data shows no such trend.", side:"R", date:"Jun 9", weekLbl:"6/8", narratives:["Immigration Misinformation","Crime & Safety Distortions"] },
+      { summary: "This post claims vaccines caused more deaths than COVID-19. CDC data directly contradicts this assertion.", side:"R", date:"Jun 8", weekLbl:"6/8", narratives:["Health & Science Denial"] },
+      { summary: "False: Democrats voted to defund the police in Arizona. No such bill was introduced or passed in the Arizona legislature.", side:"D", date:"Jun 10", weekLbl:"6/8", narratives:["Crime & Safety Distortions"] },
+      { summary: "Claim that Biden's economy added zero jobs is false — BLS data shows consistent monthly job growth throughout 2023-2024.", side:"D", date:"Jun 9", weekLbl:"6/8", narratives:["Economic Falsehoods"] },
+      { summary: "This post falsely attributes a quote about 'open borders' to Senator Mark Kelly. No such statement exists in the public record.", side:"D", date:"Jun 7", weekLbl:"6/1", narratives:["Immigration Misinformation"] },
+      { summary: "Claim that Trump was found guilty of election interference in Arizona is false — no such conviction occurred in Arizona courts.", side:"R", date:"Jun 6", weekLbl:"6/1", narratives:["Election Integrity Claims"] },
+      { summary: "False: Arizona banned all books about LGBTQ topics in schools. The legislation referenced only applied to explicit material and has specific criteria.", side:"D", date:"Jun 5", weekLbl:"6/1", narratives:["Identity & Social Issues"] },
+      { summary: "Post claims fentanyl seizures at legal ports of entry support the case for a border wall. Experts note most seizures occur at legal crossings, contradicting this framing.", side:"R", date:"Jun 4", weekLbl:"6/1", narratives:["Immigration Misinformation","Health & Science Denial"] },
+      { summary: "False claim that MAGA Republicans voted to cut Social Security by 30%. No such vote occurred in the current Congress.", side:"R", date:"Jun 3", weekLbl:"5/25", narratives:["Economic Falsehoods"] },
+      { summary: "This post falsely states that climate scientists receive government payments for favorable reports. No evidence of this practice exists.", side:"R", date:"Jun 2", weekLbl:"5/25", narratives:["Health & Science Denial"] },
+      { summary: "Viral post claiming Democrats passed a bill allowing abortion up to birth in Arizona is false. No such bill passed.", side:"D", date:"Jun 1", weekLbl:"5/25", narratives:["Identity & Social Issues"] },
+      { summary: "False: Ruben Gallego supports abolishing ICE. His voting record shows no such position.", side:"D", date:"May 31", weekLbl:"5/25", narratives:["Immigration Misinformation"] },
+      { summary: "Post falsely claims Arizona unemployment skyrocketed under Democratic leadership. BLS data shows it remained near historic lows.", side:"D", date:"May 30", weekLbl:"5/25", narratives:["Economic Falsehoods"] },
+      { summary: "Claim that transgender athletes have dominated every Arizona high school sports category is false. No documented cases of the scale described.", side:"R", date:"May 29", weekLbl:"5/25", narratives:["Identity & Social Issues"] },
+      { summary: "False: There were no Republican observers present during Maricopa County ballot counting. Observers from both parties were documented on-site.", side:"R", date:"May 28", weekLbl:"5/18", narratives:["Election Integrity Claims"] },
+    ];
+    setNotes(demo);
+    buildStats(demo);
+    setLastFetch("Demo data");
+    setStatus("done");
+    setPage(0);
+  }, [buildStats]);
+
+  useEffect(() => { loadDemoData(); }, [loadDemoData]);
+
+  // ── Filtered notes ────────────────────────────────────────────────────────
+  const filtered = notes.filter(n => {
+    if (filter === "R" && n.side !== "R" && n.side !== "both") return false;
+    if (filter === "D" && n.side !== "D" && n.side !== "both") return false;
+    if (narrativeFilter && !n.narratives.includes(narrativeFilter)) return false;
+    return true;
+  });
+  const paged = filtered.slice(page * PER_PAGE, (page+1) * PER_PAGE);
+  const totalPages = Math.ceil(filtered.length / PER_PAGE);
+
+  // ── UI ────────────────────────────────────────────────────────────────────
+  return (
+    <div style={{ minHeight: "80vh", background: SURFACE, fontFamily: "'Atkinson Hyperlegible', Georgia, serif" }}>
+
+      {/* Header */}
+      <div style={{
+        background: TEAL, borderBottom: `4px solid ${GOLD}`,
+        padding: "28px 24px 22px",
+      }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <span style={{ fontSize: 22, lineHeight: 1 }}>🔎</span>
+                <span style={{
+                  fontSize: 10, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase",
+                  background: GOLD, color: CHARCOAL, borderRadius: 4, padding: "2px 8px",
+                }}>Misinformation Monitor</span>
+              </div>
+              <h1 style={{ margin: 0, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", fontSize: 26, color: "#fff", fontWeight: 800, letterSpacing: "-0.01em" }}>
+                Community Notes Dashboard
+              </h1>
+              <p style={{ margin: "6px 0 0", fontSize: 14, color: "rgba(255,255,255,0.72)", lineHeight: 1.4 }}>
+                Tracking X Community Notes flags across Republican &amp; Democratic political claims · Weekly misinformation trend analysis
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              {lastFetch && (
+                <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", whiteSpace: "nowrap" }}>
+                  {status === "done" ? `Updated ${lastFetch}` : ""}
+                </span>
+              )}
+              <button
+                onClick={fetchData}
+                disabled={status === "loading"}
+                style={{
+                  fontFamily: "inherit", fontWeight: 700, fontSize: 13,
+                  padding: "8px 18px", borderRadius: 7, cursor: status === "loading" ? "default" : "pointer",
+                  background: status === "loading" ? "rgba(255,255,255,0.1)" : GOLD,
+                  color: status === "loading" ? "rgba(255,255,255,0.5)" : CHARCOAL,
+                  border: "none", letterSpacing: "0.03em",
+                  transition: "all 0.2s",
+                }}
+              >
+                {status === "loading" ? "⏳ Loading live data…" : "↻ Load Live Data"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 20px 60px" }}>
+
+        {/* Error banner */}
+        {errorMsg && (
+          <div style={{
+            background: "#fff8e8", border: `1.5px solid ${GOLD}`, borderRadius: 8,
+            padding: "12px 16px", marginBottom: 24, fontSize: 13, color: CHARCOAL,
+            display: "flex", gap: 10, alignItems: "flex-start",
+          }}>
+            <span style={{ fontSize: 16 }}>⚠️</span>
+            <div>
+              <strong>Live data unavailable:</strong> {errorMsg}<br />
+              <span style={{ color: "#888" }}>Showing representative demo data. Click "Load Live Data" to retry.</span>
+            </div>
+          </div>
+        )}
+
+        {/* Stat cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 28 }}>
+          <StatCard label="Total Flagged Notes" value={(totalR+totalD).toLocaleString()} sub="in dataset sample" accent={TURQUOISE} />
+          <StatCard label="GOP-Targeting Flags" value={totalR.toLocaleString()} sub="notes flagging R claims" accent={TERRA} />
+          <StatCard label="Dem-Targeting Flags" value={totalD.toLocaleString()} sub="notes flagging D claims" accent={TEAL} />
+          <StatCard
+            label="R vs D Ratio"
+            value={totalD ? `${(totalR/totalD).toFixed(1)}×` : "—"}
+            sub="GOP flags per Dem flag"
+            accent={GOLD}
+          />
+        </div>
+
+        {/* Weekly trend chart */}
+        <div style={{ background: "#fff", border: `1.5px solid ${BORDER}`, borderRadius: 12, padding: "20px 22px", marginBottom: 28 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#999", marginBottom: 3 }}>Weekly Trend</div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: INK }}>Community Notes Flags by Week</div>
+            </div>
+          </div>
+          <BarChart data={weeklyData} />
+        </div>
+
+        {/* Narrative leaderboards */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 28 }}>
+          {[
+            { title: "Top GOP-Targeting Narratives", counts: repNarCounts, side: "R", accent: TERRA },
+            { title: "Top Dem-Targeting Narratives", counts: demNarCounts, side: "D", accent: TEAL },
+          ].map(({ title, counts, side, accent }) => (
+            <div key={side} style={{ background: "#fff", border: `1.5px solid ${BORDER}`, borderRadius: 12, padding: "18px 20px", borderTop: `4px solid ${accent}` }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#999", marginBottom: 4 }}>Narrative Breakdown</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: INK, marginBottom: 16 }}>{title}</div>
+              <NarrativeLeaderboard counts={counts} side={side} />
+            </div>
+          ))}
+        </div>
+
+        {/* Filter bar */}
+        <div style={{
+          background: "#fff", border: `1.5px solid ${BORDER}`, borderRadius: 10,
+          padding: "14px 18px", marginBottom: 18,
+          display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap",
+        }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em" }}>Filter:</span>
+          {[
+            { key:"all", label:"All Notes" },
+            { key:"R",   label:"GOP-Targeting" },
+            { key:"D",   label:"Dem-Targeting" },
+          ].map(f => (
+            <button
+              key={f.key}
+              onClick={() => { setFilter(f.key); setPage(0); }}
+              style={{
+                fontFamily: "inherit", fontWeight: 700, fontSize: 12,
+                padding: "5px 13px", borderRadius: 6, cursor: "pointer",
+                background: filter === f.key ? (f.key==="R" ? TERRA : f.key==="D" ? TEAL : CHARCOAL) : "transparent",
+                color: filter === f.key ? "#fff" : INK,
+                border: `1.5px solid ${filter === f.key ? "transparent" : BORDER}`,
+                transition: "all 0.15s",
+              }}
+            >{f.label}</button>
+          ))}
+          <span style={{ width: 1, height: 20, background: BORDER, margin: "0 4px" }} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em" }}>Narrative:</span>
+          <select
+            value={narrativeFilter || ""}
+            onChange={e => { setNarrativeFilter(e.target.value || null); setPage(0); }}
+            style={{
+              fontFamily: "inherit", fontSize: 12, padding: "4px 10px",
+              borderRadius: 6, border: `1.5px solid ${BORDER}`, color: INK,
+              background: "#fff", cursor: "pointer",
+            }}
+          >
+            <option value="">All Narratives</option>
+            {NARRATIVE_PATTERNS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
+          </select>
+          <span style={{ marginLeft: "auto", fontSize: 12, color: "#999" }}>{filtered.length} notes</span>
+        </div>
+
+        {/* Note cards */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
+          {paged.map((note, i) => (
+            <NoteCard
+              key={note.noteId || i}
+              note={note}
+              onSendToRebuttal={(text) => {
+                try { localStorage.setItem("rebuttal_push_results", JSON.stringify({ narrative: text, source: "Community Notes Monitor", sentAt: new Date().toISOString() })); } catch {}
+                window.location.assign("/rebuttal");
+              }}
+            />
+          ))}
+          {paged.length === 0 && (
+            <div style={{ textAlign: "center", padding: "40px 20px", color: "#aaa", fontSize: 14 }}>
+              No notes match the current filter.
+            </div>
+          )}
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}>
+            <button
+              onClick={() => setPage(p => Math.max(0, p-1))}
+              disabled={page === 0}
+              style={{ fontFamily:"inherit", fontWeight:700, fontSize:13, padding:"6px 14px", borderRadius:6, cursor: page===0?"default":"pointer", background:"#fff", color: page===0?"#ccc":INK, border:`1.5px solid ${BORDER}` }}
+            >← Prev</button>
+            <span style={{ fontSize: 13, color: "#888" }}>Page {page+1} of {totalPages}</span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages-1, p+1))}
+              disabled={page === totalPages-1}
+              style={{ fontFamily:"inherit", fontWeight:700, fontSize:13, padding:"6px 14px", borderRadius:6, cursor: page===totalPages-1?"default":"pointer", background:"#fff", color: page===totalPages-1?"#ccc":INK, border:`1.5px solid ${BORDER}` }}
+            >Next →</button>
+          </div>
+        )}
+
+        {/* Data source note */}
+        <div style={{
+          marginTop: 40, padding: "16px 20px",
+          background: TEAL_LITE, borderRadius: 10, border: `1px solid #b2d9cc`,
+          fontSize: 12, color: "#556b62", lineHeight: 1.6,
+        }}>
+          <strong style={{ color: TEAL }}>Data source:</strong> X (Twitter) Community Notes publishes its full notes dataset as open TSV files daily at{" "}
+          <a href="https://communitynotes.x.com/guide/en/under-the-hood/download-data" target="_blank" rel="noreferrer" style={{ color: TEAL }}>
+            communitynotes.x.com ↗
+          </a>. Notes are classified by political alignment using keyword matching against their summary text. This tool samples up to 6,000 notes per fetch. Classification is heuristic — intended for trend analysis, not individual attribution. Click "Load Live Data" to pull the latest dataset directly.
+        </div>
+      </div>
+    </div>
+  );
+}
