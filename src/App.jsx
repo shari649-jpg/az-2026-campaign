@@ -14,6 +14,7 @@ import ResourcesPage from "./tools/resources/ResourcesPage";
 import LibraryPage from "./tools/library/LibraryPage";
 import MediaPage from "./tools/media/MediaPage";
 import QuickStartPage from "./tools/quick-start/QuickStartPage";
+import MisinfoMonitorPage from "./tools/misinfo-monitor/MisinfoMonitorPage";
 
 export default function App() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="/media" element={<MediaPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/quick-start" element={<QuickStartPage />} />
+            <Route path="/misinfo-monitor" element={<MisinfoMonitorPage />} />
           </Route>
         </Routes>
       </AuthProvider>
