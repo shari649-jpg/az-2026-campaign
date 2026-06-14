@@ -485,7 +485,7 @@ function detectArrivalSource() {
     if (rrRaw) {
       try {
         const p = JSON.parse(rrRaw);
-        if (p.sourcePublication === "AZ 2026 Candidate Research") return "Research";
+        if ((p.sourcePublication || "").includes("Research")) return "Research";
       } catch {}
       return "Rapid Response";
     }
