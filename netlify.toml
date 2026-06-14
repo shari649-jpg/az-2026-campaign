@@ -4,7 +4,7 @@
 
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["googleapis"]
+  external_node_modules = ["googleapis", "@netlify/blobs", "@netlify/functions"]
 
 [functions."query-candidates"]
   timeout = 26
