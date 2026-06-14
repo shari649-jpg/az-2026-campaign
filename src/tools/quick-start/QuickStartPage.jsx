@@ -128,36 +128,49 @@ export default function QuickStartPage() {
             How the tools connect
           </div>
 
-          {/* Three input boxes */}
-          <div style={{ display: "flex", gap: 12 }}>
-            <div style={{ flex: 1, textAlign: "center", background: "#E0F2EC", border: "1.5px solid #A8D9C8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: TEAL }}>Research</div>
-            <div style={{ flex: 1, textAlign: "center", background: "#FDE8D8", border: "1.5px solid #F0C4A8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: "#7A3010" }}>Rapid Response</div>
-            <div style={{ flex: 1, textAlign: "center", background: "#FFF0E8", border: "1.5px solid #F0C4A8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: TERRA }}>Rebuttal Generator</div>
+          {/* Workflow: 3 inputs → Message Machine → outputs
+               Uses a simple grid so lines are just borders on real elements */}
+
+          {/* Row 1: input boxes */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <div style={{ textAlign: "center", background: "#E0F2EC", border: "1.5px solid #A8D9C8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: TEAL }}>Research</div>
+            <div style={{ textAlign: "center", background: "#FDE8D8", border: "1.5px solid #F0C4A8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: "#7A3010" }}>Rapid Response</div>
+            <div style={{ textAlign: "center", background: "#FFF0E8", border: "1.5px solid #F0C4A8", borderRadius: 10, padding: "10px 8px", fontSize: 13, fontWeight: 700, color: TERRA }}>Rebuttal Generator</div>
           </div>
 
-          {/* Converging lines — viewBox 300 wide, box centers at 50/150/250 */}
-          <svg viewBox="0 0 300 44" width="100%" height="44" preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
-            <line x1="50"  y1="0"  x2="50"  y2="22" stroke="#B0C4BC" strokeWidth="1.5" />
-            <line x1="50"  y1="22" x2="150" y2="22" stroke="#B0C4BC" strokeWidth="1.5" />
-            <line x1="150" y1="0"  x2="150" y2="22" stroke="#B0C4BC" strokeWidth="1.5" />
-            <line x1="250" y1="0"  x2="250" y2="22" stroke="#B0C4BC" strokeWidth="1.5" />
-            <line x1="250" y1="22" x2="150" y2="22" stroke="#B0C4BC" strokeWidth="1.5" />
-            <line x1="150" y1="22" x2="150" y2="38" stroke="#B0C4BC" strokeWidth="1.5" />
-            <polygon points="144,35 156,35 150,44" fill="#B0C4BC" />
-          </svg>
+          {/* Row 2: vertical drops from each box down to MM level
+               Left column: line drops and turns right toward MM left edge
+               Center: straight drop to MM
+               Right column: line drops and turns left toward MM right edge */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, height: 40 }}>
+            {/* Left drop + horizontal to MM */}
+            <div style={{ position: "relative" }}>
+              <div style={{ position: "absolute", left: "50%", top: 0, width: 1.5, height: 20, background: "#B0C4BC" }} />
+              <div style={{ position: "absolute", left: "50%", top: 20, right: -6, height: 1.5, background: "#B0C4BC" }} />
+            </div>
+            {/* Center straight drop */}
+            <div style={{ position: "relative" }}>
+              <div style={{ position: "absolute", left: "50%", top: 0, width: 1.5, height: 40, background: "#B0C4BC" }} />
+            </div>
+            {/* Right drop + horizontal to MM */}
+            <div style={{ position: "relative" }}>
+              <div style={{ position: "absolute", right: "50%", top: 0, width: 1.5, height: 20, background: "#B0C4BC" }} />
+              <div style={{ position: "absolute", right: "50%", top: 20, left: -6, height: 1.5, background: "#B0C4BC" }} />
+            </div>
+          </div>
 
-          {/* Message Machine */}
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
-            <div style={{ background: "#E0FAF5", border: "2px solid #3ECFB2", borderRadius: 12, padding: "12px 32px", fontSize: 15, fontWeight: 700, color: "#085041", textAlign: "center" }}>
+          {/* Row 3: Message Machine centered */}
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <div style={{ background: "#E0FAF5", border: "2px solid #3ECFB2", borderRadius: 12, padding: "12px 32px", fontSize: 15, fontWeight: 700, color: "#085041" }}>
               Message Machine
             </div>
           </div>
 
-          {/* Arrow down */}
-          <svg viewBox="0 0 300 30" width="100%" height="30" preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
-            <line x1="150" y1="0"  x2="150" y2="20" stroke="#B0C4BC" strokeWidth="1.5" />
-            <polygon points="144,17 156,17 150,26" fill="#B0C4BC" />
-          </svg>
+          {/* Arrow down to outputs */}
+          <div style={{ display: "flex", justifyContent: "center", flexDirection: "column", alignItems: "center", height: 28 }}>
+            <div style={{ width: 1.5, height: 18, background: "#B0C4BC" }} />
+            <div style={{ width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid #B0C4BC" }} />
+          </div>
 
           {/* Outputs */}
           <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center" }}>
