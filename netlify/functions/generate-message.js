@@ -1,10 +1,15 @@
-exports.handler = async (event) => {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
+// netlify/functions/generate-message.mjs
+// Message Machine post generation — modern Netlify Functions runtime (ESM)
+
+const CORS_ORIGIN = "https://az-coalition-2026-election.netlify.app";
+
+export default async function (req) {
+  if (req.method !== "POST") {
+    return new Response("Method Not Allowed", { status: 405 });
   }
 
   try {
-    const { model, max_tokens, messages, system } = JSON.parse(event.body);
+    const { model, max_tokens, messages, system } = await req.json();
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -14,7 +19,7 @@ exports.handler = async (event) => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-       model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-5",
         max_tokens: max_tokens || 1000,
         messages,
         ...(system && { system }),
@@ -23,19 +28,20 @@ exports.handler = async (event) => {
 
     const data = await response.json();
 
-    return {
-      statusCode: 200,
+    return new Response(JSON.stringify(data), {
+      status: 200,
       headers: {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "https://az-coalition-2026-election.netlify.app",
+        "Access-Control-Allow-Origin": CORS_ORIGIN,
       },
-      body: JSON.stringify(data),
-    };
+    });
   } catch (err) {
-    return {
-      statusCode: 500,
-      headers: { "Access-Control-Allow-Origin": "https://az-coalition-2026-election.netlify.app" },
-      body: JSON.stringify({ error: err.message }),
-    };
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": CORS_ORIGIN,
+      },
+    });
   }
-};
+}
