@@ -480,8 +480,15 @@ Format: {"platform_id": "message text"}`;
 function detectArrivalSource() {
   try {
     if (localStorage.getItem("rebuttal_push_results")) return "Rebuttal Generator";
-    if (localStorage.getItem("rr_pending_article"))    return "Rapid Response";
     if (localStorage.getItem("mm_load_campaign"))      return "Library";
+    const rrRaw = localStorage.getItem("rr_pending_article");
+    if (rrRaw) {
+      try {
+        const p = JSON.parse(rrRaw);
+        if (p.sourcePublication === "AZ 2026 Candidate Research") return "Research";
+      } catch {}
+      return "Rapid Response";
+    }
   } catch {}
   return null;
 }
