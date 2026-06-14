@@ -11,10 +11,11 @@ const NAV_ITEMS = [
 ];
 
 const MORE_ITEMS = [
-  { path: "/media",        short: "Media" },
-  { path: "/library",      short: "Library" },
-  { path: "/resources",    short: "Resources" },
-  { path: "/quick-start",  short: "Quick Start" },
+  { path: "/media",             short: "Media" },
+  { path: "/library",           short: "Library" },
+  { path: "/resources",         short: "Resources" },
+  { path: "/quick-start",       short: "Quick Start" },
+  { path: "/misinfo-monitor",   short: "Misinfo Monitor" },
 ];
 
 export default function AppShell() {
@@ -532,14 +533,15 @@ export default function AppShell() {
 
           {/* Nav links */}
           <div style={{ display: "flex", gap: 48, flexWrap: "wrap" }}>
-            <FooterLinkGroup title="Tools" links={[
-              { label: "Candidate Research",  path: "/research" },
-              { label: "Message Machine",     path: "/messaging" },
-              { label: "Rebuttal Generator",  path: "/rebuttal" },
-              { label: "Rapid Response",      path: "/rapid-response" },
-              { label: "Media Library",       path: "/media" },
-              { label: "Shared Library",      path: "/library" },
-            ]} />
+           <FooterLinkGroup title="Tools" links={[
+  { label: "Candidate Research",  path: "/research" },
+  { label: "Message Machine",     path: "/messaging" },
+  { label: "Rebuttal Generator",  path: "/rebuttal" },
+  { label: "Rapid Response",      path: "/rapid-response" },
+  { label: "Media Library",       path: "/media" },
+  { label: "Shared Library",      path: "/library" },
+  { label: "Misinfo Monitor",     path: "/misinfo-monitor" },
+]} />
             <FooterLinkGroup title="Resources" links={[
               { label: "All Resources",       path: "/resources" },
               { label: "AZ SOS Elections",    href: "https://azsos.gov/elections" },
