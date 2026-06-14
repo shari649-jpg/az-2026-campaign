@@ -440,6 +440,15 @@ export default function App() {
 
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
 
+FACTUAL ACCURACY — NON-NEGOTIABLE:
+- NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date. If you do not have a verified figure from the content provided, do not include one.
+- NEVER fabricate or paraphrase quotes from real people. Only use quotes explicitly provided in the input.
+- NEVER name a specific person, organization, study, bill, court case, or law unless it was explicitly provided in the input content.
+- NEVER assert a specific factual claim you cannot verify from the input provided.
+- If the input does not contain a specific fact, write around it using general, non-falsifiable framing: "experts have documented," "public records show," "studies have found" — never invent what those experts, records, or studies say.
+- Posts must persuade through framing, values, and momentum — not through invented facts.
+- Violating this rule damages the credibility of a real political campaign. Treat factual accuracy as an absolute constraint, not a preference.
+
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
 Target Audience: ${audienceLabel}
@@ -491,6 +500,12 @@ function detectArrivalSource() {
       : `REPHRASE this message. Keep the same length, meaning, and platform style but use different wording, sentence structure, and framing.`;
 
     return `You are an expert political messaging strategist for a legitimate Arizona Democratic campaign coalition.
+
+FACTUAL ACCURACY — NON-NEGOTIABLE:
+- NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date.
+- NEVER fabricate quotes from real people or name specific studies, bills, or organizations not present in the original message.
+- NEVER add factual claims that were not in the original message. Only rewrite — do not embellish with invented facts.
+- Treat factual accuracy as an absolute constraint, not a preference.
 
 Your task is to rewrite the following existing ${platform?.name} post.
 
@@ -584,6 +599,8 @@ Format: {"${platformId}": "rewritten message text"}`;
     try {
       const platNames = PLATFORMS.filter(p=>formData.platforms.includes(p.id)).map(p=>p.name).join(", ");
       const prompt = `You are a social media expert for progressive political campaigns.
+
+FACTUAL ACCURACY — NON-NEGOTIABLE: Only suggest hashtags that are real, established, and verifiable. Do not invent hashtag campaigns that do not exist.
 
 Issue: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
