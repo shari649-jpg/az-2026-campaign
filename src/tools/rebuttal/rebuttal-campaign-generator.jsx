@@ -379,19 +379,30 @@ export default function RebuttalGenerator() {
 
   // Load library on mount, also check for library-pushed campaign
   useEffect(() => {
-    loadLibrary();
-    try {
-      const saved = localStorage.getItem("rebuttal_load_campaign");
-      if (saved) {
-        const entry = JSON.parse(saved);
-        setNarrative(entry.narrative || "");
-        setOutput(entry.output || "");
-        setTone(entry.tone ?? null);
-        setProfile(entry.profile ? (PROFILES.find(p => p.label === entry.profile)?.key ?? null) : null);
-        localStorage.removeItem("rebuttal_load_campaign");
-      }
-    } catch {}
-  }, []);
+  loadLibrary();
+  try {
+    // From Library
+    const saved = localStorage.getItem("rebuttal_load_campaign");
+    if (saved) {
+      const entry = JSON.parse(saved);
+      setNarrative(entry.narrative || "");
+      setOutput(entry.output || "");
+      setTone(entry.tone ?? null);
+      setProfile(entry.profile ? (PROFILES.find(p => p.label === entry.profile)?.key ?? null) : null);
+      localStorage.removeItem("rebuttal_load_campaign");
+      return;
+    }
+  } catch {}
+  try {
+    // From Misinfo Monitor — pre-fills narrative only
+    const pushed = localStorage.getItem("rebuttal_push_results");
+    if (pushed) {
+      const entry = JSON.parse(pushed);
+      if (entry.narrative) setNarrative(entry.narrative);
+      localStorage.removeItem("rebuttal_push_results");
+    }
+  } catch {}
+}, []);
 
   async function loadLibrary() {
     try {
@@ -597,13 +608,16 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
 
       {/* ── Library button row — replaces the removed duplicate header ── */}
       <div style={{ borderBottom: `1px solid ${BORDER}`, padding: "10px 32px", display: "flex", gap: "8px", alignItems: "center", justifyContent: "flex-end", background: SURFACE }}>
-        <button style={btnSmall()} onClick={() => setShowLib(v => !v)}>
-          {showLib ? "Hide Library" : `Rebuttal Library (${library.length})`}
-        </button>
-        {(output || narrative) && (
-          <button style={btnSmall()} onClick={reset}>↩ New Campaign</button>
-        )}
-      </div>
+  <button style={btnSmall()} onClick={() => window.location.assign("/misinfo-monitor")}>
+    ← Misinfo Monitor
+  </button>
+  <button style={btnSmall()} onClick={() => setShowLib(v => !v)}>
+    {showLib ? "Hide Library" : `Rebuttal Library (${library.length})`}
+  </button>
+  {(output || narrative) && (
+    <button style={btnSmall()} onClick={reset}>↩ New Campaign</button>
+  )}
+</div>
 
       {/* ── Library panel ── */}
       {showLib && library.length > 0 && (
