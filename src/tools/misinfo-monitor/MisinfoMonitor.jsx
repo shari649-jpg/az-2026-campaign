@@ -11,59 +11,15 @@ const BORDER    = "#E0DDD6";
 const TEAL_LITE = "#e0f2ec";
 const INK       = CHARCOAL;
 
-// ── Community Notes data source ─────────────────────────────────────────────
-// X publishes daily open TSV files at this URL pattern (no API key needed)
-const CN_NOTES_URL =
-  "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-00000.tsv";
-
-// ── Political keyword classifiers ───────────────────────────────────────────
-const REP_KEYWORDS = [
-  "republican","gop","trump","maga","desantis","rubio","mccain","lake","masters",
-  "hamadeh","finchem","conservative","right-wing","right wing","america first",
-  "2nd amendment","second amendment","border wall","illegal alien","critical race",
-  "deep state","election fraud","stolen election","patriot","woke","socialist",
-  "defund police","antifa","hunter biden","liberal","leftist","democrat lie",
+// ── Narrative category labels (used for filter dropdown) ────────────────────
+const NARRATIVE_LABELS = [
+  "Election Integrity Claims",
+  "Immigration Misinformation",
+  "Economic Falsehoods",
+  "Health & Science Denial",
+  "Crime & Safety Distortions",
+  "Identity & Social Issues",
 ];
-const DEM_KEYWORDS = [
-  "democrat","democratic","biden","harris","obama","pelosi","schumer","gallego",
-  "stanton","progressive","liberal","left-wing","left wing","climate change lie",
-  "abortion ban","roe","medicaid","social security cut","obamacare","aca","union",
-  "minimum wage","lgbtq ban","book ban","voter suppression","gerrymandering",
-  "insurrection","january 6","disinformation","dark money","corporate greed",
-];
-
-const NARRATIVE_PATTERNS = [
-  { label: "Election Integrity Claims",    keywords: ["election","ballot","vote","fraud","rigged","stolen","mail-in","dominion"] },
-  { label: "Immigration Misinformation",   keywords: ["border","migrant","illegal","invasion","caravan","fentanyl","trafficking"] },
-  { label: "Economic Falsehoods",          keywords: ["inflation","economy","recession","gas price","unemploy","tax","deficit"] },
-  { label: "Health & Science Denial",      keywords: ["vaccine","covid","climate","fauci","mask","hydroxychloroquine","ivermectin"] },
-  { label: "Crime & Safety Distortions",   keywords: ["crime","murder","violent","defund","police","fentanyl","criminal"] },
-  { label: "Identity & Social Issues",     keywords: ["transgender","gender","groomer","woke","crt","critical race","lgbtq","drag"] },
-];
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-function classifyText(text) {
-  const lower = text.toLowerCase();
-  const rScore = REP_KEYWORDS.filter(k => lower.includes(k)).length;
-  const dScore = DEM_KEYWORDS.filter(k => lower.includes(k)).length;
-  if (rScore === 0 && dScore === 0) return null;
-  if (rScore > dScore) return "R";
-  if (dScore > rScore) return "D";
-  return "both";
-}
-
-function detectNarratives(text) {
-  const lower = text.toLowerCase();
-  return NARRATIVE_PATTERNS.filter(p => p.keywords.some(k => lower.includes(k))).map(p => p.label);
-}
-
-function weekLabel(dateStr) {
-  const d = new Date(dateStr);
-  if (isNaN(d)) return "Unknown";
-  const wk = new Date(d);
-  wk.setDate(d.getDate() - d.getDay());
-  return `${wk.getMonth()+1}/${wk.getDate()}`;
-}
 
 // ── Mini bar chart ───────────────────────────────────────────────────────────
 function BarChart({ data }) {
@@ -249,95 +205,48 @@ export default function MisinfoMonitor() {
 
   const PER_PAGE = 12;
 
-  // ── Parse TSV from Community Notes ────────────────────────────────────────
-  const parseTSV = useCallback((raw) => {
-    const lines = raw.split("\n").filter(Boolean);
-    if (lines.length < 2) return [];
-    const headers = lines[0].split("\t");
-    const idx = {
-      noteId:      headers.indexOf("noteId"),
-      summary:     headers.indexOf("summary"),
-      createdAt:   headers.indexOf("createdAtMillis"),
-      helpful:     headers.indexOf("currentStatus"),
-      tweetId:     headers.indexOf("tweetId"),
-    };
-
-    const parsed = [];
-    for (let i = 1; i < Math.min(lines.length, 6000); i++) {
-      const cols = lines[i].split("\t");
-      const summary = cols[idx.summary] || "";
-      if (!summary.trim()) continue;
-      const side = classifyText(summary);
-      if (!side) continue;
-      const millis = parseInt(cols[idx.createdAt]) || 0;
-      const date = millis ? new Date(millis).toLocaleDateString("en-US",{ month:"short", day:"numeric" }) : "";
-      const weekLbl = millis ? weekLabel(new Date(millis).toISOString()) : "Unknown";
-      const narratives = detectNarratives(summary);
-      parsed.push({ summary, side, date, weekLbl, narratives, noteId: cols[idx.noteId] });
-    }
-    return parsed;
+  // ── Apply stats from server response ─────────────────────────────────────
+  const applyStats = useCallback((stats) => {
+    setWeeklyData(stats.weeklyData || []);
+    setTotalR(stats.totalR || 0);
+    setTotalD(stats.totalD || 0);
+    setRepNar(stats.repNar || {});
+    setDemNar(stats.demNar || {});
   }, []);
 
-  // ── Aggregate stats ───────────────────────────────────────────────────────
-  const buildStats = useCallback((parsed) => {
-    const wkMap = {};
-    let rCount = 0, dCount = 0;
-    const rNar = {}, dNar = {};
-
-    parsed.forEach(n => {
-      // Weekly
-      const wk = n.weekLbl;
-      if (!wkMap[wk]) wkMap[wk] = { label: wk, r: 0, d: 0 };
-      if (n.side === "R" || n.side === "both") { wkMap[wk].r++; rCount++; }
-      if (n.side === "D" || n.side === "both") { wkMap[wk].d++; dCount++; }
-
-      // Narratives
-      n.narratives.forEach(nar => {
-        if (n.side === "R" || n.side === "both") rNar[nar] = (rNar[nar] || 0) + 1;
-        if (n.side === "D" || n.side === "both") dNar[nar] = (dNar[nar] || 0) + 1;
-      });
-    });
-
-    const sortedWeeks = Object.values(wkMap)
-      .sort((a,b) => {
-        const parse = s => { const p = s.split("/"); return parseInt(p[0])*100+parseInt(p[1]); };
-        return parse(a.label) - parse(b.label);
-      })
-      .slice(-8);
-
-    setWeeklyData(sortedWeeks);
-    setTotalR(rCount);
-    setTotalD(dCount);
-    setRepNar(rNar);
-    setDemNar(dNar);
-  }, []);
-
-  // ── Fetch data ────────────────────────────────────────────────────────────
+  // ── Fetch data via Netlify function (server-side, no CORS issues) ─────────
   const fetchData = useCallback(async () => {
     setStatus("loading");
     setErrorMsg("");
     try {
-      // Use a CORS proxy since browser can't hit ton.twimg.com directly
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(CN_NOTES_URL)}`;
-      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(25000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      const parsed = parseTSV(text);
-      if (!parsed.length) throw new Error("No political notes found in dataset.");
-      setNotes(parsed);
-      buildStats(parsed);
-      setLastFetch(new Date().toLocaleTimeString("en-US", { hour:"2-digit", minute:"2-digit" }));
+      const res = await fetch("/.netlify/functions/fetch-community-notes", {
+        signal: AbortSignal.timeout(28000),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || `Server error ${res.status}`);
+      }
+      if (!data.notes?.length) {
+        throw new Error(data.warning || "No political notes found in dataset.");
+      }
+
+      setNotes(data.notes);
+      applyStats(data.stats);
+      const fetched = data.fetchedAt
+        ? new Date(data.fetchedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+        : "just now";
+      setLastFetch(`Live data · ${fetched}`);
       setStatus("done");
       setPage(0);
     } catch (err) {
       console.error(err);
       setErrorMsg(err.message || "Failed to load Community Notes data.");
-      // Load demo data so the page is still useful
       loadDemoData();
     }
-  }, [parseTSV, buildStats]);
+  }, [applyStats]);
 
-  // ── Demo / fallback data (always available) ───────────────────────────────
+  // ── Demo / fallback data shown on first load before live fetch ───────────
   const loadDemoData = useCallback(() => {
     const demo = [
       { summary: "This post falsely claims that mail-in ballots were destroyed in Maricopa County during the 2024 election. Official records show no evidence of this.", side:"R", date:"Jun 10", weekLbl:"6/8", narratives:["Election Integrity Claims"] },
@@ -357,14 +266,63 @@ export default function MisinfoMonitor() {
       { summary: "Claim that transgender athletes have dominated every Arizona high school sports category is false. No documented cases of the scale described.", side:"R", date:"May 29", weekLbl:"5/25", narratives:["Identity & Social Issues"] },
       { summary: "False: There were no Republican observers present during Maricopa County ballot counting. Observers from both parties were documented on-site.", side:"R", date:"May 28", weekLbl:"5/18", narratives:["Election Integrity Claims"] },
     ];
+    // Build stats inline (no dependency on removed buildStats)
+    const wkMap = {};
+    let rCount = 0, dCount = 0;
+    const rNar = {}, dNar = {};
+    demo.forEach(n => {
+      if (!wkMap[n.weekLbl]) wkMap[n.weekLbl] = { label: n.weekLbl, r: 0, d: 0 };
+      if (n.side === "R" || n.side === "both") { wkMap[n.weekLbl].r++; rCount++; }
+      if (n.side === "D" || n.side === "both") { wkMap[n.weekLbl].d++; dCount++; }
+      n.narratives.forEach(nar => {
+        if (n.side === "R" || n.side === "both") rNar[nar] = (rNar[nar] || 0) + 1;
+        if (n.side === "D" || n.side === "both") dNar[nar] = (dNar[nar] || 0) + 1;
+      });
+    });
+    const sortedWeeks = Object.values(wkMap).sort((a,b) => {
+      const p = s => { const x = s.split("/"); return parseInt(x[0])*100+parseInt(x[1]); };
+      return p(a.label) - p(b.label);
+    });
     setNotes(demo);
-    buildStats(demo);
-    setLastFetch("Demo data");
+    setWeeklyData(sortedWeeks);
+    setTotalR(rCount);
+    setTotalD(dCount);
+    setRepNar(rNar);
+    setDemNar(dNar);
+    setLastFetch("Demo data · click Load Live Data for real notes");
     setStatus("done");
     setPage(0);
-  }, [buildStats]);
+  }, []);
 
-  useEffect(() => { loadDemoData(); }, [loadDemoData]);
+  // ── On mount: try Firestore cache first, fall back to demo ───────────────
+  useEffect(() => {
+    const loadCached = async () => {
+      setStatus("loading");
+      try {
+        // fetch-community-notes now accepts ?source=cache to read Firestore
+        // instead of hitting X directly — instant load from yesterday's data
+        const res = await fetch("/.netlify/functions/fetch-community-notes?source=cache", {
+          signal: AbortSignal.timeout(10000),
+        });
+        const data = await res.json();
+        if (res.ok && data.notes?.length) {
+          setNotes(data.notes);
+          applyStats(data.stats);
+          const dateStr = data.fetchedAt
+            ? new Date(data.fetchedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+            : "today";
+          setLastFetch(`Updated ${dateStr}`);
+          setStatus("done");
+          return;
+        }
+      } catch (err) {
+        console.warn("Cache load failed, falling back to demo:", err.message);
+      }
+      // Only reach here if Firestore cache is empty (first-ever run)
+      loadDemoData();
+    };
+    loadCached();
+  }, [applyStats, loadDemoData]);
 
   // ── Filtered notes ────────────────────────────────────────────────────────
   const filtered = notes.filter(n => {
@@ -519,7 +477,7 @@ export default function MisinfoMonitor() {
             }}
           >
             <option value="">All Narratives</option>
-            {NARRATIVE_PATTERNS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
+            {NARRATIVE_LABELS.map(l => <option key={l} value={l}>{l}</option>)}
           </select>
           <span style={{ marginLeft: "auto", fontSize: 12, color: "#999" }}>{filtered.length} notes</span>
         </div>
@@ -569,7 +527,7 @@ export default function MisinfoMonitor() {
           <strong style={{ color: TEAL }}>Data source:</strong> X (Twitter) Community Notes publishes its full notes dataset as open TSV files daily at{" "}
           <a href="https://communitynotes.x.com/guide/en/under-the-hood/download-data" target="_blank" rel="noreferrer" style={{ color: TEAL }}>
             communitynotes.x.com ↗
-          </a>. Notes are classified by political alignment using keyword matching against their summary text. This tool samples up to 6,000 notes per fetch. Classification is heuristic — intended for trend analysis, not individual attribution. Click "Load Live Data" to pull the latest dataset directly.
+          </a>. Data is fetched server-side via a Netlify function, parsed, and classified by political alignment using keyword matching against note summary text. Up to 10,000 notes are sampled per fetch. Classification is heuristic — intended for trend analysis, not individual attribution. Click "Load Live Data" to pull the latest dataset.
         </div>
       </div>
     </div>
