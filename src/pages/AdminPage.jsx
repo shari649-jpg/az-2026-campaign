@@ -246,7 +246,7 @@ export default function AdminPage() {
       const weekStart = new Date(millis - dayOfWeek * 86400000);
       weekStart.setUTCHours(0, 0, 0, 0);
       const wkKey = weekStart.getTime();
-      const wkLabel = `${weekStart.getUTCMonth() + 1}/${weekStart.getUTCDate()}`;
+      const wkLabel = `${weekStart.getUTCMonth() + 1}/${weekStart.getUTCDate()}/${String(weekStart.getUTCFullYear()).slice(2)}`;
       if (!wkMap[wkKey]) wkMap[wkKey] = { label: wkLabel, r: 0, d: 0, millis: wkKey };
       if (n.side === "R" || n.side === "both") { wkMap[wkKey].r++; totalR++; }
       if (n.side === "D" || n.side === "both") { wkMap[wkKey].d++; totalD++; }
@@ -449,23 +449,22 @@ export default function AdminPage() {
     setCnUploading(true);
     try {
       // Stats calculated from ALL notes (full accuracy).
-      // Display cards: sample 1000 notes, trimmed to essential fields only,
-      // to stay well under Netlify's 6MB function body limit.
-      const MAX_DISPLAY = 1000;
+      // Display cards: 500 most recent notes for the card feed.
+      // Weekly chart data: built from the stats which cover all notes.
       const notes = cnParsed.notes;
-      // Sort by timestamp descending — show most recent notes on the dashboard
-      const sorted = [...notes].sort((a, b) => (b.millis || 0) - (a.millis || 0));
-      const displayNotes = sorted.slice(0, MAX_DISPLAY);
 
-      // Trim each note to essential fields and truncate long summaries
+      // Sort by recency for display cards
+      const sorted = [...notes].sort((a, b) => (b.millis || 0) - (a.millis || 0));
+      const displayNotes = sorted.slice(0, 500);
+
+      // Trim each note to essential fields
       const trimmedNotes = displayNotes.map(n => ({
         noteId:     n.noteId,
-        summary:    n.summary, // full text — truncation happens in display only
+        summary:    n.summary,
         side:       n.side,
         date:       n.date,
         weekLbl:    n.weekLbl,
         narratives: n.narratives,
-        // millis intentionally excluded from payload to save space
       }));
 
       const payload = JSON.stringify({
