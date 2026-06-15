@@ -33,3 +33,6 @@
 
 [functions."validate-token"]
   timeout = 10
+  
+  [functions."coaching-response"]
+  timeout = 26
