@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import JSZip from "jszip";
 import { collection, getDocs, doc, updateDoc, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
@@ -37,6 +38,12 @@ export default function AdminPage() {
   const [search, setSearch]         = useState("");
   const [saving, setSaving]         = useState(null);
   const [inviting, setInviting]     = useState(null); // waitlistId being invited
+  const [cnFiles, setCnFiles]        = useState([]);
+  const [cnParsing, setCnParsing]   = useState(false);
+  const [cnPreview, setCnPreview]   = useState(null); // { count, totalR, totalD }
+  const [cnParsed, setCnParsed]     = useState(null); // full parsed payload
+  const [cnUploading, setCnUploading] = useState(false);
+  const [cnDone, setCnDone]         = useState(false);
   const [notif, setNotif]           = useState(null);
 
   useEffect(() => { if (!isAdmin) navigate("/"); }, [isAdmin]);
@@ -157,6 +164,167 @@ export default function AdminPage() {
     } catch { return ""; }
   }
 
+  // ── Community Notes TSV parsing (mirrors server-side logic) ──────────────
+  const REP_KEYWORDS = ["republican","gop","trump","maga","desantis","rubio","lake","masters","hamadeh","finchem","conservative","right-wing","right wing","america first","2nd amendment","second amendment","border wall","illegal alien","critical race","deep state","election fraud","stolen election","patriot","woke","socialist","defund police","antifa","hunter biden","liberal","leftist"];
+  const DEM_KEYWORDS = ["democrat","democratic","biden","harris","obama","pelosi","schumer","gallego","stanton","progressive","left-wing","left wing","abortion ban","roe","medicaid","social security cut","obamacare","aca","minimum wage","lgbtq ban","book ban","voter suppression","gerrymandering","insurrection","january 6","disinformation","dark money"];
+  const NARRATIVE_PATTERNS = [
+    { label: "Election Integrity Claims",  keywords: ["election","ballot","vote","fraud","rigged","stolen","mail-in","dominion"] },
+    { label: "Immigration Misinformation", keywords: ["border","migrant","illegal","invasion","caravan","fentanyl","trafficking"] },
+    { label: "Economic Falsehoods",        keywords: ["inflation","economy","recession","gas price","unemploy","tax","deficit"] },
+    { label: "Health & Science Denial",    keywords: ["vaccine","covid","climate","fauci","mask","hydroxychloroquine","ivermectin"] },
+    { label: "Crime & Safety Distortions", keywords: ["crime","murder","violent","defund","police","criminal"] },
+    { label: "Identity & Social Issues",   keywords: ["transgender","gender","groomer","woke","crt","critical race","lgbtq","drag"] },
+  ];
+
+  function classifyText(text) {
+    const lower = text.toLowerCase();
+    const r = REP_KEYWORDS.filter(k => lower.includes(k)).length;
+    const d = DEM_KEYWORDS.filter(k => lower.includes(k)).length;
+    if (!r && !d) return null;
+    if (r > d) return "R";
+    if (d > r) return "D";
+    return "both";
+  }
+
+  function detectNarratives(text) {
+    const lower = text.toLowerCase();
+    return NARRATIVE_PATTERNS.filter(p => p.keywords.some(k => lower.includes(k))).map(p => p.label);
+  }
+
+  function weekLabel(millis) {
+    const d = new Date(millis);
+    const wk = new Date(d);
+    wk.setDate(d.getDate() - d.getDay());
+    return `${wk.getMonth() + 1}/${wk.getDate()}`;
+  }
+
+  function parseTSV(raw) {
+    const lines = raw.split("\n").filter(Boolean);
+    if (lines.length < 2) return [];
+    const headers = lines[0].split("\t");
+    const idx = {
+      noteId:    headers.indexOf("noteId"),
+      summary:   headers.indexOf("summary"),
+      createdAt: headers.indexOf("createdAtMillis"),
+    };
+    if (idx.summary === -1) return [];
+    const notes = [];
+    const limit = Math.min(lines.length, 10001);
+    for (let i = 1; i < limit; i++) {
+      const cols    = lines[i].split("\t");
+      const summary = (cols[idx.summary] || "").trim();
+      if (!summary) continue;
+      const side = classifyText(summary);
+      if (!side) continue;
+      const millis  = parseInt(cols[idx.createdAt]) || 0;
+      const date    = millis ? new Date(millis).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+      const weekLbl = millis ? weekLabel(millis) : "Unknown";
+      notes.push({
+        noteId: cols[idx.noteId] || String(i),
+        summary, side, date, weekLbl,
+        narratives: detectNarratives(summary),
+      });
+    }
+    return notes;
+  }
+
+  function buildStats(notes) {
+    const wkMap = {};
+    let totalR = 0, totalD = 0;
+    const repNar = {}, demNar = {};
+    notes.forEach(n => {
+      if (!wkMap[n.weekLbl]) wkMap[n.weekLbl] = { label: n.weekLbl, r: 0, d: 0 };
+      if (n.side === "R" || n.side === "both") { wkMap[n.weekLbl].r++; totalR++; }
+      if (n.side === "D" || n.side === "both") { wkMap[n.weekLbl].d++; totalD++; }
+      n.narratives.forEach(nar => {
+        if (n.side === "R" || n.side === "both") repNar[nar] = (repNar[nar] || 0) + 1;
+        if (n.side === "D" || n.side === "both") demNar[nar] = (demNar[nar] || 0) + 1;
+      });
+    });
+    const weeklyData = Object.values(wkMap)
+      .sort((a, b) => { const p = s => { const x = s.split("/"); return parseInt(x[0]) * 100 + parseInt(x[1]); }; return p(a.label) - p(b.label); })
+      .slice(-8);
+    return { weeklyData, totalR, totalD, repNar, demNar };
+  }
+
+  async function handleCnFile(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setCnFiles(files);
+    setCnPreview(null);
+    setCnParsed(null);
+    setCnDone(false);
+    setCnParsing(true);
+    try {
+      let mergedLines = null;
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        let text = "";
+
+        if (file.name.endsWith(".zip")) {
+          // Unzip and find the .tsv file inside
+          const zip = await JSZip.loadAsync(await file.arrayBuffer());
+          const tsvEntry = Object.values(zip.files).find(f => f.name.endsWith(".tsv") && !f.dir);
+          if (!tsvEntry) {
+            notify(`No TSV file found inside ${file.name}`, "err");
+            setCnParsing(false);
+            return;
+          }
+          text = await tsvEntry.async("string");
+        } else {
+          text = await file.text();
+        }
+
+        const lines = text.split("\n").filter(Boolean);
+        if (i === 0) {
+          mergedLines = lines; // keep header from first file
+        } else {
+          mergedLines = mergedLines.concat(lines.slice(1)); // skip header on subsequent files
+        }
+      }
+
+      const merged = mergedLines.join("\n");
+      const notes = parseTSV(merged);
+      if (notes.length === 0) {
+        notify("No political notes found. Make sure you selected Notes data files.", "err");
+        setCnParsing(false);
+        return;
+      }
+      const stats = buildStats(notes);
+      setCnPreview({ count: notes.length, totalR: stats.totalR, totalD: stats.totalD });
+      setCnParsed({ notes, stats, count: notes.length });
+    } catch (err) {
+      notify("Failed to parse files: " + err.message, "err");
+    }
+    setCnParsing(false);
+  }
+
+  async function handleCnUpload() {
+    if (!cnParsed) return;
+    setCnUploading(true);
+    try {
+      const res = await fetch("/.netlify/functions/upload-community-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...cnParsed,
+          uploadedAt: new Date().toISOString(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        notify("Upload failed. Try again.", "err");
+      } else {
+        setCnDone(true);
+        notify(`✓ ${data.count.toLocaleString()} notes uploaded to dashboard!`);
+      }
+    } catch (err) {
+      notify("Upload failed: " + err.message, "err");
+    }
+    setCnUploading(false);
+  }
+
   if (!isAdmin) return null;
 
   return (
@@ -204,6 +372,7 @@ export default function AdminPage() {
           {[
             { id: "users",    label: `Registered Users (${counts.total})` },
             { id: "waitlist", label: `Waitlist (${waitlist.length})${counts.pending > 0 ? ` · ${counts.pending} pending` : ""}` },
+          { id: "community-notes", label: "Community Notes Upload" },
           ].map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSearch(""); }}
               style={{
@@ -309,6 +478,111 @@ export default function AdminPage() {
               </div>
             </div>
           </>
+        )}
+
+        {/* ── COMMUNITY NOTES TAB ── */}
+        {activeTab === "community-notes" && (
+          <div style={{ maxWidth: 600 }}>
+            <div style={{ background: BG, border: `1.5px solid #ddd`, borderRadius: 12, padding: "28px 32px" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: TEAL, marginBottom: 6 }}>Daily Data Upload</div>
+              <h2 style={{ fontSize: 20, fontWeight: 800, color: CHARCOAL, margin: "0 0 12px" }}>Community Notes TSV Upload</h2>
+              <p style={{ fontSize: 14, color: "#666", lineHeight: 1.7, marginBottom: 24 }}>
+                Download <strong>notes-00000.tsv</strong> from{" "}
+                <a href="https://x.com/i/communitynotes/download-data" target="_blank" rel="noreferrer" style={{ color: TEAL, fontWeight: 700 }}>
+                  x.com/i/communitynotes/download-data
+                </a>{" "}
+                while logged in to X, then upload it here. The dashboard updates immediately for all users.
+              </p>
+
+              {/* Step 1: File picker */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: CHARCOAL, marginBottom: 8 }}>Step 1 — Select file</div>
+                <label style={{
+                  display: "flex", alignItems: "center", gap: 12, padding: "14px 18px",
+                  border: `2px dashed ${cnFiles.length ? TEAL : "#ccc"}`, borderRadius: 10,
+                  background: cnFiles.length ? "#f0faf5" : "#fafafa", cursor: "pointer",
+                  transition: "all 0.15s",
+                }}>
+                  <span style={{ fontSize: 24 }}>📂</span>
+                  <div style={{ flex: 1 }}>
+                    {cnFiles.length > 0 ? (
+                      <div>
+                        {cnFiles.map((f, i) => (
+                          <div key={i} style={{ fontSize: 14, color: TEAL, fontWeight: 700 }}>{f.name}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ fontSize: 14, color: "#888" }}>Click to select Notes data files</div>
+                        <div style={{ fontSize: 12, color: "#aaa", marginTop: 2 }}>Select all 3 zip files at once (File no. 1, 2, and 3 of 3)</div>
+                      </div>
+                    )}
+                  </div>
+                  <input type="file" accept=".tsv,.txt,.zip" multiple onChange={handleCnFile} style={{ display: "none" }} />
+                </label>
+              </div>
+
+              {/* Parsing indicator */}
+              {cnParsing && (
+                <div style={{ fontSize: 14, color: "#888", marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span>
+                  Parsing and classifying notes…
+                </div>
+              )}
+
+              {/* Step 2: Preview */}
+              {cnPreview && !cnDone && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: CHARCOAL, marginBottom: 8 }}>Step 2 — Review & upload</div>
+                  <div style={{ background: "#f0faf5", border: `1.5px solid #b2d9cc`, borderRadius: 10, padding: "16px 20px", marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: TEAL, marginBottom: 10 }}>✓ File parsed successfully</div>
+                    <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+                      <div><div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em" }}>Political Notes Found</div><div style={{ fontSize: 24, fontWeight: 800, color: CHARCOAL }}>{cnPreview.count.toLocaleString()}</div></div>
+                      <div><div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em" }}>GOP-Targeting</div><div style={{ fontSize: 24, fontWeight: 800, color: TERRACOTTA }}>{cnPreview.totalR.toLocaleString()}</div></div>
+                      <div><div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em" }}>Dem-Targeting</div><div style={{ fontSize: 24, fontWeight: 800, color: TEAL }}>{cnPreview.totalD.toLocaleString()}</div></div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleCnUpload}
+                    disabled={cnUploading}
+                    style={{
+                      background: cnUploading ? "#ccc" : TEAL, color: "#fff",
+                      border: "none", borderRadius: 8, padding: "13px 28px",
+                      fontSize: 15, fontWeight: 700, fontFamily: "inherit",
+                      cursor: cnUploading ? "not-allowed" : "pointer", width: "100%",
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    {cnUploading ? "Uploading…" : `Upload ${cnPreview.count.toLocaleString()} Notes to Dashboard →`}
+                  </button>
+                </div>
+              )}
+
+              {/* Success state */}
+              {cnDone && (
+                <div style={{ background: "#f0faf5", border: `1.5px solid #b2d9cc`, borderRadius: 10, padding: "20px 24px", textAlign: "center" }}>
+                  <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: TEAL, marginBottom: 6 }}>Dashboard updated!</div>
+                  <div style={{ fontSize: 13, color: "#666" }}>{cnPreview?.count.toLocaleString()} notes are now live on the Misinfo Monitor.</div>
+                  <button onClick={() => { setCnFiles([]); setCnPreview(null); setCnParsed(null); setCnDone(false); }}
+                    style={{ marginTop: 16, background: "none", border: `2px solid ${TEAL}`, color: TEAL, borderRadius: 8, padding: "8px 20px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                    Upload another file
+                  </button>
+                </div>
+              )}
+
+              {/* Instructions */}
+              <div style={{ marginTop: 24, padding: "14px 18px", background: "#f8f8f6", borderRadius: 8, fontSize: 13, color: "#666", lineHeight: 1.7 }}>
+                <strong style={{ color: CHARCOAL }}>Daily workflow:</strong>
+                <ol style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                  <li>Go to <a href="https://x.com/i/communitynotes/download-data" target="_blank" rel="noreferrer" style={{ color: TEAL }}>x.com/i/communitynotes/download-data</a> (must be logged in to X)</li>
+                  <li>Click the download icon for all 3 <strong>Notes data</strong> files</li>
+                  <li>Select all 3 files at once in the file picker above</li>
+                  <li>Done — the Misinfo Monitor dashboard updates instantly</li>
+                </ol>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* ── WAITLIST TAB ── */}
