@@ -386,10 +386,19 @@ export default function RebuttalGenerator() {
   const [showLib,     setShowLib]     = useState(false);
   const [showShare,   setShowShare]   = useState(false); // kept for safety, unused
 
-  // Load library on mount, also check for library-pushed campaign
+  // Load library on mount, also check for pushed campaigns
   useEffect(() => {
     loadLibrary();
     try {
+      // Check for Misinfo Monitor push first
+      const misinfoRaw = localStorage.getItem("rebuttal_push_results");
+      if (misinfoRaw) {
+        const entry = JSON.parse(misinfoRaw);
+        setNarrative(entry.narrative || "");
+        localStorage.removeItem("rebuttal_push_results");
+        return;
+      }
+      // Check for library-pushed campaign
       const saved = localStorage.getItem("rebuttal_load_campaign");
       if (saved) {
         const entry = JSON.parse(saved);
