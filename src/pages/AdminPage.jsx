@@ -108,6 +108,15 @@ export default function AdminPage() {
       if (!res.ok || !data.success) {
         notify("Failed to send invite. Try again.", "err");
       } else {
+        // Update Firestore waitlist entry client-side
+        try {
+          await updateDoc(doc(db, "waitlist", entry.id), {
+            status: "invited",
+            invitedAt: new Date(),
+          });
+        } catch (e) {
+          console.warn("Waitlist status update failed:", e.message);
+        }
         setWaitlist(prev => prev.map(w => w.id === entry.id ? { ...w, status: "invited", invitedAt: new Date() } : w));
         notify(`Invite sent to ${entry.email}!`);
       }
