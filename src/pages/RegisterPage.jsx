@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
-import { doc, setDoc, getDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { auth, db } from "../firebase";
 
@@ -31,18 +31,22 @@ export default function RegisterPage() {
   const [resending, setResending]         = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
 
-  // Validate invite token on mount
+  // Validate invite token on mount via Netlify function
   useEffect(() => {
     if (!token) { setTokenStatus("invalid"); return; }
 
     async function validateToken() {
       try {
-        const snap = await getDoc(doc(db, "invites", token));
-        if (!snap.exists()) { setTokenStatus("invalid"); return; }
-        const data = snap.data();
-        if (data.used) { setTokenStatus("used"); return; }
-        const expiry = data.expiresAt?.toDate ? data.expiresAt.toDate() : new Date(data.expiresAt);
-        if (expiry < new Date()) { setTokenStatus("expired"); return; }
+        const res = await fetch("/.netlify/functions/validate-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        const data = await res.json();
+        if (!data.valid) {
+          setTokenStatus(data.reason || "invalid");
+          return;
+        }
         setInviteData(data);
         setForm(f => ({ ...f, fullName: data.fullName || "", email: data.email || "" }));
         setTokenStatus("valid");
@@ -115,9 +119,13 @@ export default function RegisterPage() {
         createdAt:       serverTimestamp(),
       });
 
-      // Mark invite token as used
+      // Mark invite token as used via Netlify function
       try {
-        await deleteDoc(doc(db, "invites", token));
+        await fetch("/.netlify/functions/validate-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, action: "consume" }),
+        });
       } catch {}
 
       // Send welcome email (non-fatal if it fails)
