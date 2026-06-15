@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Unzip, AsyncUnzipInflate } from "fflate";
+import { unzipSync, strFromU8 } from "fflate";
 import { collection, getDocs, doc, updateDoc, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
@@ -247,6 +247,85 @@ export default function AdminPage() {
     return { weeklyData, totalR, totalD, repNar, demNar };
   }
 
+  async function streamClassifyZip(file, notes, isFirstFile) {
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8 = new Uint8Array(arrayBuffer);
+    const decompressed = unzipSync(uint8);
+    const tsvKey = Object.keys(decompressed).find(k => k.endsWith(".tsv"));
+    if (!tsvKey) throw new Error(`No TSV file found inside ${file.name}`);
+    const text = strFromU8(decompressed[tsvKey]);
+    const lines = text.split("\n");
+    const headers = {};
+    let headerSkipped = !isFirstFile;
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      if (!headerSkipped && Object.keys(headers).length === 0) {
+        const cols = line.split("\t");
+        headers.noteId    = cols.indexOf("noteId");
+        headers.summary   = cols.indexOf("summary");
+        headers.createdAt = cols.indexOf("createdAtMillis");
+        headerSkipped = true;
+        continue;
+      }
+      if (!headerSkipped) { headerSkipped = true; continue; }
+      if (headers.summary === undefined || headers.summary === -1) continue;
+      const cols    = line.split("\t");
+      const summary = (cols[headers.summary] || "").trim();
+      if (!summary) continue;
+      const side = classifyText(summary);
+      if (!side) continue;
+      const millis = parseInt(cols[headers.createdAt]) || 0;
+      notes.push({
+        noteId: cols[headers.noteId] || String(notes.length),
+        summary, side,
+        date: millis ? new Date(millis).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
+        weekLbl: millis ? weekLabel(millis) : "Unknown",
+        narratives: detectNarratives(summary),
+      });
+    }
+  }
+
+  async function streamClassifyTsv(file, notes, isFirstFile) {
+    const reader = file.stream().getReader();
+    const decoder = new TextDecoder("utf-8");
+    const headers = {};
+    let leftover = "";
+    let headerSkipped = !isFirstFile;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = (leftover + chunk).split("\n");
+      leftover = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        if (!headerSkipped && Object.keys(headers).length === 0) {
+          const cols = line.split("\t");
+          headers.noteId    = cols.indexOf("noteId");
+          headers.summary   = cols.indexOf("summary");
+          headers.createdAt = cols.indexOf("createdAtMillis");
+          headerSkipped = true;
+          continue;
+        }
+        if (!headerSkipped) { headerSkipped = true; continue; }
+        if (headers.summary === undefined || headers.summary === -1) continue;
+        const cols    = line.split("\t");
+        const summary = (cols[headers.summary] || "").trim();
+        if (!summary) continue;
+        const side = classifyText(summary);
+        if (!side) continue;
+        const millis = parseInt(cols[headers.createdAt]) || 0;
+        notes.push({
+          noteId: cols[headers.noteId] || String(notes.length),
+          summary, side,
+          date: millis ? new Date(millis).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
+          weekLbl: millis ? weekLabel(millis) : "Unknown",
+          narratives: detectNarratives(summary),
+        });
+      }
+    }
+  }
+
   async function handleCnFile(e) {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -256,52 +335,23 @@ export default function AdminPage() {
     setCnDone(false);
     setCnParsing(true);
     try {
-      let mergedLines = null;
-
+      const allNotes = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        let text = "";
-
-        const MAX_LINES = 4000; // cap per file — 12k total is plenty for trend analysis
-
         if (file.name.endsWith(".zip")) {
-          // Unzip and find the .tsv file inside
-          const zip = await JSZip.loadAsync(await file.arrayBuffer());
-          const tsvEntry = Object.values(zip.files).find(f => f.name.endsWith(".tsv") && !f.dir);
-          if (!tsvEntry) {
-            notify(`No TSV file found inside ${file.name}`, "err");
-            setCnParsing(false);
-            return;
-          }
-          // Read as Uint8Array and decode only first ~20MB to avoid memory crash
-          const raw = await tsvEntry.async("uint8array");
-          const sliced = raw.slice(0, 20 * 1024 * 1024); // first 20MB only
-          text = new TextDecoder("utf-8").decode(sliced);
+          await streamClassifyZip(file, allNotes, i === 0);
         } else {
-          // For plain TSV, read a slice via FileReader
-          const slicedBlob = file.slice(0, 20 * 1024 * 1024);
-          text = await slicedBlob.text();
-        }
-
-        // Split and cap lines
-        const allLines = text.split("\n").filter(Boolean);
-        if (i === 0) {
-          mergedLines = allLines.slice(0, MAX_LINES); // header + data rows
-        } else {
-          mergedLines = mergedLines.concat(allLines.slice(1, MAX_LINES)); // skip header
+          await streamClassifyTsv(file, allNotes, i === 0);
         }
       }
-
-      const merged = mergedLines.join("\n");
-      const notes = parseTSV(merged);
-      if (notes.length === 0) {
+      if (allNotes.length === 0) {
         notify("No political notes found. Make sure you selected Notes data files.", "err");
         setCnParsing(false);
         return;
       }
-      const stats = buildStats(notes);
-      setCnPreview({ count: notes.length, totalR: stats.totalR, totalD: stats.totalD });
-      setCnParsed({ notes, stats, count: notes.length });
+      const stats = buildStats(allNotes);
+      setCnPreview({ count: allNotes.length, totalR: stats.totalR, totalD: stats.totalD });
+      setCnParsed({ notes: allNotes, stats, count: allNotes.length });
     } catch (err) {
       notify("Failed to parse files: " + err.message, "err");
     }
