@@ -109,7 +109,8 @@ export default async function (req) {
 
   const URLS = [
     "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-00000.tsv",
-    "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-00001.tsv",
+    "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-00000.tsv.gz",
+    "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-0000.tsv",
   ];
 
   let raw = null;
