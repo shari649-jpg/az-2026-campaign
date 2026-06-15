@@ -141,24 +141,31 @@ export default async function (req) {
   // ── Live fetch: hit X directly ───────────────────────────────────────────
   const URLS = [
     "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-00000.tsv",
-    "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-00001.tsv",
+    "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-00000.tsv.gz",
+    "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-0000.tsv",
   ];
 
   let raw = null;
   let fetchError = null;
+  const fetchLog = [];
 
   for (const tsvUrl of URLS) {
     try {
       const res = await fetch(tsvUrl, {
         headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; AZCoalitionBot/1.0)",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           "Accept": "text/tab-separated-values, text/plain, */*",
+          "Accept-Language": "en-US,en;q=0.9",
         },
         signal: AbortSignal.timeout(20000),
       });
+      fetchLog.push(`${tsvUrl} → ${res.status}`);
+      console.log(`[fetch-community-notes] ${tsvUrl} → ${res.status}`);
       if (res.ok) { raw = await res.text(); break; }
       fetchError = `HTTP ${res.status} from ${tsvUrl}`;
     } catch (err) {
+      fetchLog.push(`${tsvUrl} → ERROR: ${err.message}`);
+      console.log(`[fetch-community-notes] ${tsvUrl} → ERROR: ${err.message}`);
       fetchError = err.message;
     }
   }
