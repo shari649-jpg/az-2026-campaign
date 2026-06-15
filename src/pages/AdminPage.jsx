@@ -222,7 +222,7 @@ export default function AdminPage() {
       if (!summary) continue;
       const side = classifyText(summary);
       if (!side) continue;
-      const millis  = parseInt(cols[idx.createdAt]) || 0;
+      const millis  = Math.round(parseFloat(cols[idx.createdAt])) || 0;
       const date    = millis ? new Date(millis).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
       const weekLbl = millis ? weekLabel(millis) : "Unknown";
       notes.push({
@@ -298,13 +298,14 @@ export default function AdminPage() {
           if (!summary) continue;
           const side = classifyText(summary);
           if (!side) continue;
-          const millis = parseInt(cols[headers.createdAt]) || 0;
+          const millis = Math.round(parseFloat(cols[headers.createdAt])) || 0;
           notes.push({
             noteId: cols[headers.noteId] || String(notes.length),
             summary, side,
-            date: millis ? new Date(millis).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
+            date: millis ? new Date(millis).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "",
             weekLbl: millis ? weekLabel(millis) : "Unknown",
             narratives: detectNarratives(summary),
+            millis,
           });
         }
       }
@@ -397,7 +398,7 @@ export default function AdminPage() {
         if (!summary) continue;
         const side = classifyText(summary);
         if (!side) continue;
-        const millis = parseInt(cols[headers.createdAt]) || 0;
+        const millis = Math.round(parseFloat(cols[headers.createdAt])) || 0;
         notes.push({
           noteId: cols[headers.noteId] || String(notes.length),
           summary, side,
