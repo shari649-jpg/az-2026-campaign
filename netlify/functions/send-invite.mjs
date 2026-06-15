@@ -1,19 +1,28 @@
 // netlify/functions/send-invite.mjs
-// Stores invite token in Netlify Blobs (no Firebase Admin needed).
-// AdminPage updates waitlist status client-side via the Firebase client SDK.
-// TODO: swap FROM_EMAIL once you have a verified domain in Resend.
+// Stores invite token in Netlify Blobs, sends invite email via Gmail SMTP (Nodemailer).
 
 import { randomBytes } from "crypto";
 import { getStore } from "@netlify/blobs";
+import nodemailer from "nodemailer";
 
-const SITE_URL   = "https://az-coalition-2026-election.netlify.app";
-const FROM_EMAIL = "onboarding@resend.dev";
+const SITE_URL  = "https://az-coalition-2026-election.netlify.app";
+const FROM_EMAIL = "az.coalition.socials@gmail.com";
 const FROM_NAME  = "Arizona Coalition Comms Hub";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": SITE_URL,
   "Content-Type": "application/json",
 };
+
+function getTransporter() {
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: FROM_EMAIL,
+      pass: process.env.GMAIL_APP_PASSWORD,
+    },
+  });
+}
 
 function inviteEmailHtml({ fullName, inviteUrl }) {
   return `<!DOCTYPE html>
@@ -82,28 +91,14 @@ export default async function (req) {
       createdAt:  new Date().toISOString(),
     }));
 
-    // Send invite email via Resend
-    const resendRes = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from:    `${FROM_NAME} <${FROM_EMAIL}>`,
-        to:      [email],
-        subject: "You're invited to the Arizona Coalition Comms Hub",
-        html:    inviteEmailHtml({ fullName, inviteUrl }),
-      }),
+    // Send invite email via Gmail SMTP
+    const transporter = getTransporter();
+    await transporter.sendMail({
+      from:    `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to:      email,
+      subject: "You're invited to the Arizona Coalition Comms Hub",
+      html:    inviteEmailHtml({ fullName, inviteUrl }),
     });
-
-    if (!resendRes.ok) {
-      const errData = await resendRes.json();
-      console.error("[send-invite] Resend error:", JSON.stringify(errData));
-      return new Response(JSON.stringify({ error: "Email failed.", detail: errData }), {
-        status: 502, headers: CORS_HEADERS,
-      });
-    }
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200, headers: CORS_HEADERS,
