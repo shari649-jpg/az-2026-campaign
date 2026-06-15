@@ -198,6 +198,12 @@ export default function AdminPage() {
     return `${wk.getMonth() + 1}/${wk.getDate()}`;
   }
 
+  function formatDate(millis) {
+    if (!millis) return "";
+    const d = new Date(millis);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+
   function parseTSV(raw) {
     const lines = raw.split("\n").filter(Boolean);
     if (lines.length < 2) return [];
@@ -395,7 +401,7 @@ export default function AdminPage() {
         notes.push({
           noteId: cols[headers.noteId] || String(notes.length),
           summary, side,
-          date: millis ? new Date(millis).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
+          date: millis ? new Date(millis).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "",
           weekLbl: millis ? weekLabel(millis) : "Unknown",
           narratives: detectNarratives(summary),
           millis,
@@ -454,7 +460,7 @@ export default function AdminPage() {
       // Trim each note to essential fields and truncate long summaries
       const trimmedNotes = displayNotes.map(n => ({
         noteId:     n.noteId,
-        summary:    n.summary.length > 300 ? n.summary.slice(0, 300) + "…" : n.summary,
+        summary:    n.summary, // full text — truncation happens in display only
         side:       n.side,
         date:       n.date,
         weekLbl:    n.weekLbl,
