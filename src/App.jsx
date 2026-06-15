@@ -5,6 +5,7 @@ import AppShell from "./components/AppShell";
 import HomePage from "./components/HomePage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import WaitlistPage from "./pages/WaitlistPage";
 import AdminPage from "./pages/AdminPage";
 import ResearchPage from "./tools/research/ResearchPage";
 import MessagingPage from "./tools/messaging/MessagingPage";
@@ -22,8 +23,9 @@ export default function App() {
       <AuthProvider>
         <Routes>
           {/* Public routes */}
-          <Route path="/login" element={<LoginPage />} />
+          <Route path="/login"    element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/waitlist" element={<WaitlistPage />} />
 
           {/* Protected routes */}
           <Route element={
@@ -31,16 +33,16 @@ export default function App() {
               <AppShell />
             </AuthGuard>
           }>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/research" element={<ResearchPage />} />
-            <Route path="/messaging" element={<MessagingPage />} />
-            <Route path="/rebuttal" element={<RebuttalPage />} />
-            <Route path="/rapid-response" element={<RapidResponsePage />} />
-            <Route path="/resources" element={<ResourcesPage />} />
-            <Route path="/library" element={<LibraryPage />} />
-            <Route path="/media" element={<MediaPage />} />
-            <Route path="/admin" element={<AdminPage />} />
-            <Route path="/quick-start" element={<QuickStartPage />} />
+            <Route path="/"                element={<HomePage />} />
+            <Route path="/research"        element={<ResearchPage />} />
+            <Route path="/messaging"       element={<MessagingPage />} />
+            <Route path="/rebuttal"        element={<RebuttalPage />} />
+            <Route path="/rapid-response"  element={<RapidResponsePage />} />
+            <Route path="/resources"       element={<ResourcesPage />} />
+            <Route path="/library"         element={<LibraryPage />} />
+            <Route path="/media"           element={<MediaPage />} />
+            <Route path="/admin"           element={<AdminPage />} />
+            <Route path="/quick-start"     element={<QuickStartPage />} />
             <Route path="/misinfo-monitor" element={<MisinfoMonitorPage />} />
           </Route>
         </Routes>
