@@ -1,8 +1,10 @@
 // netlify/functions/send-invite.mjs
-// Uses GOOGLE_SERVICE_ACCOUNT_JSON (already set) instead of separate key vars.
+// Stores invite token in Netlify Blobs (no Firebase Admin needed).
+// AdminPage updates waitlist status client-side via the Firebase client SDK.
 // TODO: swap FROM_EMAIL once you have a verified domain in Resend.
 
 import { randomBytes } from "crypto";
+import { getStore } from "@netlify/blobs";
 
 const SITE_URL   = "https://az-coalition-2026-election.netlify.app";
 const FROM_EMAIL = "onboarding@resend.dev";
@@ -12,93 +14,6 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Origin": SITE_URL,
   "Content-Type": "application/json",
 };
-
-// ── Firebase JWT + Firestore REST ─────────────────────────────────────────
-
-async function getAccessToken() {
-  const sa = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-  const clientEmail = sa.client_email;
-  const privateKeyPem = sa.private_key; // already has real newlines in JSON
-
-  const now    = Math.floor(Date.now() / 1000);
-  const expiry = now + 3600;
-
-  const encode = obj =>
-    btoa(JSON.stringify(obj))
-      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
-  const headerB64  = encode({ alg: "RS256", typ: "JWT" });
-  const payloadB64 = encode({
-    iss: clientEmail, sub: clientEmail,
-    aud: "https://oauth2.googleapis.com/token",
-    iat: now, exp: expiry,
-    scope: "https://www.googleapis.com/auth/datastore",
-  });
-
-  const sigInput = `${headerB64}.${payloadB64}`;
-
-  // Strip PEM headers and decode
-  const pemBody = privateKeyPem
-    .replace(/-----BEGIN [A-Z ]+-----/g, "")
-    .replace(/-----END [A-Z ]+-----/g, "")
-    .replace(/\s/g, "");
-
-  const binaryKey = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0));
-  const cryptoKey = await crypto.subtle.importKey(
-    "pkcs8", binaryKey.buffer,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false, ["sign"]
-  );
-
-  const signature = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5", cryptoKey,
-    new TextEncoder().encode(sigInput)
-  );
-
-  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(signature)))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
-  const jwt = `${sigInput}.${sigB64}`;
-
-  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
-    }),
-  });
-
-  const tokenData = await tokenRes.json();
-  if (!tokenData.access_token) {
-    throw new Error(`Token exchange failed: ${JSON.stringify(tokenData)}`);
-  }
-  return tokenData.access_token;
-}
-
-const projectId = () => JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON).project_id;
-const FIRESTORE = () => `https://firestore.googleapis.com/v1/projects/${projectId()}/databases/(default)/documents`;
-
-async function fsSet(token, col, id, fields) {
-  const res = await fetch(`${FIRESTORE()}/${col}/${id}`, {
-    method: "PATCH",
-    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields }),
-  });
-  if (!res.ok) throw new Error(`Firestore set failed: ${await res.text()}`);
-}
-
-async function fsUpdate(token, col, id, fields) {
-  const mask = Object.keys(fields).join("&updateMask.fieldPaths=");
-  const res = await fetch(`${FIRESTORE()}/${col}/${id}?updateMask.fieldPaths=${mask}`, {
-    method: "PATCH",
-    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields }),
-  });
-  if (!res.ok) throw new Error(`Firestore update failed: ${await res.text()}`);
-}
-
-// ── Email template ────────────────────────────────────────────────────────
 
 function inviteEmailHtml({ fullName, inviteUrl }) {
   return `<!DOCTYPE html>
@@ -140,8 +55,6 @@ function inviteEmailHtml({ fullName, inviteUrl }) {
 </html>`;
 }
 
-// ── Handler ───────────────────────────────────────────────────────────────
-
 export default async function (req) {
   if (req.method === "OPTIONS") return new Response("", { status: 200, headers: CORS_HEADERS });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
@@ -158,22 +71,18 @@ export default async function (req) {
     const inviteUrl = `${SITE_URL}/register?token=${token}`;
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
 
-    const accessToken = await getAccessToken();
+    // Store token in Netlify Blobs
+    const store = getStore("invites");
+    await store.set(token, JSON.stringify({
+      email:      email.toLowerCase().trim(),
+      fullName:   fullName.trim(),
+      waitlistId,
+      expiresAt,
+      used:       false,
+      createdAt:  new Date().toISOString(),
+    }));
 
-    await fsSet(accessToken, "invites", token, {
-      email:      { stringValue: email.toLowerCase().trim() },
-      fullName:   { stringValue: fullName.trim() },
-      waitlistId: { stringValue: waitlistId },
-      expiresAt:  { stringValue: expiresAt },
-      used:       { booleanValue: false },
-      createdAt:  { stringValue: new Date().toISOString() },
-    });
-
-    await fsUpdate(accessToken, "waitlist", waitlistId, {
-      status:    { stringValue: "invited" },
-      invitedAt: { stringValue: new Date().toISOString() },
-    });
-
+    // Send invite email via Resend
     const resendRes = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
