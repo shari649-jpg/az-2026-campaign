@@ -141,23 +141,10 @@ Original false claim:`,
       flexDirection: "column",
       gap: 10,
     }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ flex: 1 }}>
-          {/* Label: Community Note is the correction */}
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#aaa", marginBottom: 5 }}>
-            Community Note · Fact-Check Correction
-          </div>
-          <p style={{ margin: 0, fontSize: 14, color: INK, lineHeight: 1.6 }}>
-            {displayText}
-          </p>
-          {isLong && (
-            <button onClick={() => setExpanded(e => !e)} style={{
-              background: "none", border: "none", color: TEAL, fontWeight: 700,
-              fontSize: 12, cursor: "pointer", padding: "4px 0 0", fontFamily: "inherit",
-            }}>
-              {expanded ? "Show less ↑" : "Show full note ↓"}
-            </button>
-          )}
+      {/* Header row: label + side badge */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#aaa" }}>
+          Community Note · Fact-Check Correction
         </div>
         <span style={{
           flexShrink: 0,
@@ -167,8 +154,41 @@ Original false claim:`,
           color: note.side === "R" ? TERRA : TEAL,
           border: `1.5px solid ${note.side === "R" ? "#f3c4aa" : "#b2d9cc"}`,
         }}>
-          {note.side === "R" ? "GOP-target" : note.side === "D" ? "Dem-target" : "Mixed"}
+          {note.side === "R" ? "Correcting GOP Post" : note.side === "D" ? "Correcting Dem Post" : "Mixed"}
         </span>
+      </div>
+
+      {/* Note text — strip URLs out, show them separately */}
+      <div>
+        <p style={{ margin: 0, fontSize: 14, color: INK, lineHeight: 1.6 }}>
+          {displayText.replace(/https?:\/\/\S+/g, "").trim()}
+        </p>
+        {isLong && (
+          <button onClick={() => setExpanded(e => !e)} style={{
+            background: "none", border: "none", color: TEAL, fontWeight: 700,
+            fontSize: 12, cursor: "pointer", padding: "4px 0 0", fontFamily: "inherit",
+          }}>
+            {expanded ? "Show less ↑" : "Show full note ↓"}
+          </button>
+        )}
+        {/* Extract and show URLs as clickable links */}
+        {(() => {
+          const urls = (note.summary.match(/https?:\/\/\S+/g) || []).slice(0, 3);
+          if (!urls.length) return null;
+          return (
+            <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {urls.map((url, i) => (
+                <a key={i} href={url} target="_blank" rel="noreferrer" style={{
+                  fontSize: 11, color: TEAL, fontWeight: 600,
+                  textDecoration: "underline", wordBreak: "break-all",
+                  background: TEAL_LITE, padding: "2px 6px", borderRadius: 4,
+                }}>
+                  Source {urls.length > 1 ? i + 1 : ""}
+                </a>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {note.narratives.length > 0 && (
@@ -178,9 +198,9 @@ Original false claim:`,
       )}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <div style={{ fontSize: 12, color: "#999" }}>
+        <div style={{ fontSize: 12, color: "#999", display: "flex", alignItems: "center", gap: 10 }}>
           {note.date && <span>Flagged {note.date}</span>}
-          {inferring && <span style={{ marginLeft: 8, color: TEAL }}>Inferring claim…</span>}
+          {inferring && <span style={{ color: TEAL }}>Inferring claim…</span>}
         </div>
         <button
           onClick={handleSend}
