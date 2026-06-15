@@ -197,7 +197,7 @@ export default function LoginPage() {
 
         <div style={{ marginTop: 24, textAlign: "center", fontSize: 14, color: "var(--text-mute)" }}>
           New to Comms Hub?{" "}
-          <Link to="/register" style={{ color: "var(--teal)", fontWeight: 700, textDecoration: "none" }}>Create account</Link>
+          <Link to="/waitlist" style={{ color: "var(--teal)", fontWeight: 700, textDecoration: "none" }}>Create account</Link>
         </div>
       </div>
     </div>
