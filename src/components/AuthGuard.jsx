@@ -17,9 +17,16 @@ export default function AuthGuard({ children }) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Block access until email is verified
-  // Google Sign-In users are pre-verified (emailVerified = true from Google)
-  if (!user.emailVerified) {
+  // Block access until email is verified.
+  // Grace period: accounts created before June 14 2026 (existing members) are let through.
+  // Google Sign-In users are always pre-verified by Google.
+  const createdAt = user.metadata?.creationTime
+    ? new Date(user.metadata.creationTime)
+    : new Date();
+  const graceCutoff = new Date("2026-06-14T00:00:00Z");
+  const isExistingUser = createdAt < graceCutoff;
+
+  if (!user.emailVerified && !isExistingUser) {
     return (
       <div style={{
         minHeight: "100vh",
