@@ -75,10 +75,10 @@ function NoteCard({ note, onSendToRebuttal }) {
   const [expanded, setExpanded] = useState(false);
   const [inferring, setInferring] = useState(false);
 
-  const isLong = note.summary.length > 280;
-  const displayText = expanded || !isLong
-    ? note.summary
-    : note.summary.slice(0, 280) + "…";
+  const PREVIEW_LEN = 240;
+  const isLong = note.summary.replace(/https?:\/\/\S+/g, "").trim().length > PREVIEW_LEN;
+  const cleanSummary = note.summary.replace(/https?:\/\/\S+/g, "").trim();
+  const displayText = expanded || !isLong ? cleanSummary : cleanSummary.slice(0, PREVIEW_LEN) + "…";
 
   // Infer the original false claim from the Community Note (correction text),
   // then push that as the narrative to the Rebuttal Generator.
@@ -161,7 +161,7 @@ Original false claim:`,
       {/* Note text — strip URLs out, show them separately */}
       <div>
         <p style={{ margin: 0, fontSize: 14, color: INK, lineHeight: 1.6 }}>
-          {displayText.replace(/https?:\/\/\S+/g, "").trim()}
+          {displayText}
         </p>
         {isLong && (
           <button onClick={() => setExpanded(e => !e)} style={{
