@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import JSZip from "jszip";
+import { Unzip, AsyncUnzipInflate } from "fflate";
 import { collection, getDocs, doc, updateDoc, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
