@@ -1,56 +1,80 @@
-import { useState } from "react";
-import { createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
+import { doc, setDoc, getDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { auth, db } from "../firebase";
 
-const SOCIAL_PLATFORMS = ["Instagram", "Facebook", "TikTok", "X / Twitter", "Threads", "Bluesky", "Other"];
-const googleProvider = new GoogleAuthProvider();
+const SOCIAL_PLATFORMS = ["Instagram","Facebook","TikTok","X / Twitter","Threads","Bluesky","Other"];
+const MAX_SOCIALS = 6;
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("token");
 
+  // Token validation state
+  const [tokenStatus, setTokenStatus]   = useState("checking"); // checking | valid | invalid | expired | used
+  const [inviteData, setInviteData]     = useState(null);
+
+  // Form state
   const [form, setForm] = useState({
     fullName: "", email: "", password: "", confirmPassword: "",
-    primaryPlatform: "", primaryHandle: "",
-    secondaryPlatform: "", secondaryHandle: "",
   });
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
+  const [socials, setSocials] = useState([{ platform: "", handle: "" }]);
+  const [showPassword, setShowPassword]   = useState(false);
+  const [showConfirm, setShowConfirm]     = useState(false);
+  const [error, setError]                 = useState("");
+  const [loading, setLoading]             = useState(false);
 
-  function set(field) {
+  // Post-registration state
+  const [registered, setRegistered]       = useState(false);
+  const [resending, setResending]         = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Validate invite token on mount
+  useEffect(() => {
+    if (!token) { setTokenStatus("invalid"); return; }
+
+    async function validateToken() {
+      try {
+        const snap = await getDoc(doc(db, "invites", token));
+        if (!snap.exists()) { setTokenStatus("invalid"); return; }
+        const data = snap.data();
+        if (data.used) { setTokenStatus("used"); return; }
+        const expiry = data.expiresAt?.toDate ? data.expiresAt.toDate() : new Date(data.expiresAt);
+        if (expiry < new Date()) { setTokenStatus("expired"); return; }
+        setInviteData(data);
+        setForm(f => ({ ...f, fullName: data.fullName || "", email: data.email || "" }));
+        setTokenStatus("valid");
+      } catch (err) {
+        console.error("Token validation error:", err);
+        setTokenStatus("invalid");
+      }
+    }
+    validateToken();
+  }, [token]);
+
+  // Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
+  function setField(field) {
     return e => setForm(prev => ({ ...prev, [field]: e.target.value }));
   }
 
-  async function handleGoogle() {
-    setError("");
-    setGoogleLoading(true);
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const user = result.user;
-      const snap = await getDoc(doc(db, "users", user.uid));
-      if (!snap.exists()) {
-        await setDoc(doc(db, "users", user.uid), {
-          uid: user.uid,
-          fullName: user.displayName || "",
-          email: user.email,
-          role: "user",
-          primarySocial: { platform: "", handle: "" },
-          createdAt: serverTimestamp(),
-          googleSignIn: true,
-        });
-      }
-      navigate("/");
-    } catch (err) {
-      if (err.code !== "auth/popup-closed-by-user") {
-        setError(friendlyError(err.code));
-      }
-    } finally {
-      setGoogleLoading(false);
-    }
+  // Social media row handlers
+  function setSocialField(index, field, value) {
+    setSocials(prev => prev.map((s, i) => i === index ? { ...s, [field]: value } : s));
+  }
+  function addSocial() {
+    if (socials.length < MAX_SOCIALS) setSocials(prev => [...prev, { platform: "", handle: "" }]);
+  }
+  function removeSocial(index) {
+    if (socials.length <= 1) return;
+    setSocials(prev => prev.filter((_, i) => i !== index));
   }
 
   async function handleSubmit(e) {
@@ -59,29 +83,53 @@ export default function RegisterPage() {
 
     if (form.password !== form.confirmPassword) { setError("Passwords don't match."); return; }
     if (form.password.length < 8) { setError("Password must be at least 8 characters."); return; }
-    if (!form.primaryPlatform || !form.primaryHandle.trim()) {
+    if (!socials[0].platform || !socials[0].handle.trim()) {
       setError("Please enter your primary social media platform and handle."); return;
     }
 
     setLoading(true);
     try {
+      // Create Firebase Auth account
       const { user } = await createUserWithEmailAndPassword(auth, form.email, form.password);
       await updateProfile(user, { displayName: form.fullName.trim() });
 
-      const userDoc = {
-        uid: user.uid,
-        fullName: form.fullName.trim(),
-        email: form.email.toLowerCase().trim(),
-        role: "user",
-        primarySocial: { platform: form.primaryPlatform, handle: form.primaryHandle.trim() },
-        createdAt: serverTimestamp(),
-      };
-      if (form.secondaryPlatform && form.secondaryHandle.trim()) {
-        userDoc.secondarySocial = { platform: form.secondaryPlatform, handle: form.secondaryHandle.trim() };
-      }
+      // Send Firebase email verification
+      await sendEmailVerification(user);
 
-      await setDoc(doc(db, "users", user.uid), userDoc);
-      navigate("/");
+      // Build social media array (filter out incomplete rows)
+      const socialAccounts = socials
+        .filter(s => s.platform && s.handle.trim())
+        .map(s => ({ platform: s.platform, handle: s.handle.trim() }));
+
+      // Write Firestore user doc
+      await setDoc(doc(db, "users", user.uid), {
+        uid:             user.uid,
+        fullName:        form.fullName.trim(),
+        email:           form.email.toLowerCase().trim(),
+        role:            "user",
+        emailVerified:   false,
+        socialAccounts,
+        // Keep legacy fields for backward compat with AdminPage display
+        primarySocial:   socialAccounts[0] || { platform: "", handle: "" },
+        ...(socialAccounts[1] ? { secondarySocial: socialAccounts[1] } : {}),
+        createdAt:       serverTimestamp(),
+      });
+
+      // Mark invite token as used
+      try {
+        await deleteDoc(doc(db, "invites", token));
+      } catch {}
+
+      // Send welcome email (non-fatal if it fails)
+      try {
+        await fetch("/.netlify/functions/send-welcome", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: form.email, fullName: form.fullName.trim() }),
+        });
+      } catch {}
+
+      setRegistered(true);
     } catch (err) {
       setError(friendlyError(err.code));
     } finally {
@@ -89,68 +137,188 @@ export default function RegisterPage() {
     }
   }
 
-  return (
-    <div style={pageStyle}>
-      <div style={{ textAlign: "center", marginBottom: 32 }}>
-        <img src="/azc-logo-teal.png" alt="Arizona Coalition" style={{ height: 64, marginBottom: 12 }} />
-        <div style={{ fontFamily: "var(--font-display)", fontSize: 24, color: "#fff", letterSpacing: "-0.01em" }}>Arizona Coalition</div>
-        <div style={{ fontFamily: "var(--font-body)", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--gold)", marginTop: 4 }}>
-          Comms Hub · 2026
+  async function handleResend() {
+    if (resendCooldown > 0) return;
+    setResending(true);
+    try {
+      if (auth.currentUser) {
+        await sendEmailVerification(auth.currentUser);
+        setResendCooldown(60);
+      }
+    } catch {}
+    setResending(false);
+  }
+
+  // ── LOADING STATE ──
+  if (tokenStatus === "checking") {
+    return (
+      <div style={pageStyle}>
+        <LogoBlock />
+        <div style={{ ...cardStyle, textAlign: "center", padding: "48px 36px" }}>
+          <div style={{ fontSize: 14, color: "#888" }}>Validating your invite link…</div>
         </div>
       </div>
+    );
+  }
 
+  // ── INVALID / NO TOKEN — send to waitlist ──
+  if (tokenStatus === "invalid" || !token) {
+    return (
+      <div style={pageStyle}>
+        <LogoBlock />
+        <div style={{ ...cardStyle, textAlign: "center", padding: "48px 36px" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "#1D5C4A", marginBottom: 12, marginTop: 0 }}>
+            Registration is invite-only
+          </h2>
+          <p style={{ fontSize: 15, color: "#666", lineHeight: 1.7, marginBottom: 24 }}>
+            The Comms Hub is available to approved coalition members only. Request access and our team will review your application.
+          </p>
+          <Link to="/waitlist" style={{
+            display: "inline-block", background: "#1D5C4A", color: "#fff",
+            textDecoration: "none", fontWeight: 700, fontSize: 15,
+            padding: "13px 32px", borderRadius: 8, letterSpacing: "0.04em",
+          }}>
+            Request Access →
+          </Link>
+          <div style={{ marginTop: 20, fontSize: 13, color: "#aaa" }}>
+            Already have an account?{" "}
+            <Link to="/login" style={{ color: "#1D5C4A", fontWeight: 700, textDecoration: "none" }}>Sign in</Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── EXPIRED TOKEN ──
+  if (tokenStatus === "expired") {
+    return (
+      <div style={pageStyle}>
+        <LogoBlock />
+        <div style={{ ...cardStyle, textAlign: "center", padding: "48px 36px" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>⏱️</div>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "#1D5C4A", marginBottom: 12, marginTop: 0 }}>
+            This invite has expired
+          </h2>
+          <p style={{ fontSize: 15, color: "#666", lineHeight: 1.7, marginBottom: 24 }}>
+            Invite links are valid for 72 hours. Please contact your coalition administrator to request a new invite.
+          </p>
+          <Link to="/waitlist" style={{
+            display: "inline-block", background: "#1D5C4A", color: "#fff",
+            textDecoration: "none", fontWeight: 700, fontSize: 15,
+            padding: "13px 32px", borderRadius: 8, letterSpacing: "0.04em",
+          }}>
+            Back to Waitlist →
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ── ALREADY USED TOKEN ──
+  if (tokenStatus === "used") {
+    return (
+      <div style={pageStyle}>
+        <LogoBlock />
+        <div style={{ ...cardStyle, textAlign: "center", padding: "48px 36px" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "#1D5C4A", marginBottom: 12, marginTop: 0 }}>
+            This invite has already been used
+          </h2>
+          <p style={{ fontSize: 15, color: "#666", lineHeight: 1.7, marginBottom: 24 }}>
+            If you already registered, sign in below. If something went wrong, contact your administrator.
+          </p>
+          <Link to="/login" style={{
+            display: "inline-block", background: "#1D5C4A", color: "#fff",
+            textDecoration: "none", fontWeight: 700, fontSize: 15,
+            padding: "13px 32px", borderRadius: 8, letterSpacing: "0.04em",
+          }}>
+            Sign In →
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ── POST-REGISTRATION: EMAIL VERIFICATION SCREEN ──
+  if (registered) {
+    return (
+      <div style={pageStyle}>
+        <LogoBlock />
+        <div style={{ ...cardStyle, textAlign: "center", padding: "48px 36px" }}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>📬</div>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "#1D5C4A", marginBottom: 12, marginTop: 0 }}>
+            Check your email
+          </h2>
+          <p style={{ fontSize: 16, color: "#4A4558", lineHeight: 1.7, marginBottom: 8 }}>
+            We've sent a verification link to <strong>{form.email}</strong>.
+          </p>
+          <p style={{ fontSize: 14, color: "#888", lineHeight: 1.6, marginBottom: 28 }}>
+            Click the link in the email to verify your address, then come back here to sign in. Check your spam folder if you don't see it.
+          </p>
+          <button
+            onClick={handleResend}
+            disabled={resending || resendCooldown > 0}
+            style={{
+              background: "none", border: "2px solid #1D5C4A", color: "#1D5C4A",
+              borderRadius: 8, padding: "11px 24px", fontSize: 14, fontWeight: 700,
+              fontFamily: "var(--font-body)", cursor: (resending || resendCooldown > 0) ? "not-allowed" : "pointer",
+              opacity: (resending || resendCooldown > 0) ? 0.6 : 1,
+              marginBottom: 20,
+            }}
+          >
+            {resending ? "Sending…" : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend verification email"}
+          </button>
+          <div style={{ fontSize: 13, color: "#aaa" }}>
+            <Link to="/login" style={{ color: "#1D5C4A", fontWeight: 700, textDecoration: "none" }}>
+              Go to Sign In →
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── MAIN REGISTRATION FORM (valid token) ──
+  return (
+    <div style={pageStyle}>
+      <LogoBlock />
       <div style={cardStyle}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--teal)", marginBottom: 6, marginTop: 0 }}>
-          Create Account
+        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "#1D5C4A", marginBottom: 6, marginTop: 0 }}>
+          Create Your Account
         </h1>
-        <p style={{ fontSize: 14, color: "var(--text-mute)", marginBottom: 24, marginTop: 0 }}>
+        <p style={{ fontSize: 14, color: "#888", marginBottom: 24, marginTop: 0, lineHeight: 1.6 }}>
           Coalition members only · Internal use
         </p>
-
-        {/* Google button */}
-        <button
-          onClick={handleGoogle} disabled={googleLoading}
-          style={{
-            width: "100%", padding: "11px 16px", marginBottom: 16,
-            background: "#fff", border: "2px solid var(--border)", borderRadius: 8,
-            fontSize: 15, fontFamily: "var(--font-body)", fontWeight: 600, color: "var(--charcoal)",
-            cursor: googleLoading ? "not-allowed" : "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-            transition: "border-color 0.15s, box-shadow 0.15s",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--teal)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.12)"; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.08)"; }}
-        >
-          <GoogleIcon />
-          {googleLoading ? "Signing up…" : "Continue with Google"}
-        </button>
-
-        {/* Divider */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-          <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-          <span style={{ fontSize: 12, color: "var(--text-mute)", fontWeight: 600, letterSpacing: "0.06em" }}>OR</span>
-          <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-        </div>
 
         <form onSubmit={handleSubmit} autoComplete="on" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
           <div>
             <label style={labelStyle}>Full Name <Required /></label>
-            <input type="text" value={form.fullName} onChange={set("fullName")} required autoComplete="name" placeholder="Jane Doe" style={inputStyle} />
+            <input type="text" value={form.fullName} onChange={setField("fullName")}
+              required autoComplete="name" placeholder="Jane Doe" style={inputStyle} />
           </div>
 
           <div>
             <label style={labelStyle}>Email <Required /></label>
-            <input type="email" value={form.email} onChange={set("email")} required autoComplete="email" placeholder="you@example.com" style={inputStyle} />
+            <input type="email" value={form.email} onChange={setField("email")}
+              required autoComplete="email" placeholder="you@example.com"
+              style={{ ...inputStyle, background: inviteData?.email ? "#f8f8f6" : "#fff" }}
+              readOnly={!!inviteData?.email}
+            />
+            {inviteData?.email && (
+              <p style={{ fontSize: 12, color: "#888", marginTop: 4 }}>Email locked to your invite address.</p>
+            )}
           </div>
 
           <div>
             <label style={labelStyle}>Password <Required /></label>
             <div style={{ position: "relative" }}>
-              <input type={showPassword ? "text" : "password"} value={form.password} onChange={set("password")}
-                required autoComplete="new-password" placeholder="Min. 8 characters" style={{ ...inputStyle, paddingRight: 44 }} />
-              <button type="button" onClick={() => setShowPassword(v => !v)} tabIndex={-1} style={eyeButtonStyle}>
+              <input type={showPassword ? "text" : "password"} value={form.password}
+                onChange={setField("password")} required autoComplete="new-password"
+                placeholder="Min. 8 characters" style={{ ...inputStyle, paddingRight: 44 }} />
+              <button type="button" onClick={() => setShowPassword(v => !v)} tabIndex={-1} style={eyeButtonStyle}
+                aria-label={showPassword ? "Hide password" : "Show password"}>
                 {showPassword ? <EyeOff /> : <EyeOn />}
               </button>
             </div>
@@ -159,57 +327,80 @@ export default function RegisterPage() {
           <div>
             <label style={labelStyle}>Confirm Password <Required /></label>
             <div style={{ position: "relative" }}>
-              <input type={showConfirm ? "text" : "password"} value={form.confirmPassword} onChange={set("confirmPassword")}
-                required autoComplete="new-password" placeholder="Re-enter password" style={{ ...inputStyle, paddingRight: 44 }} />
-              <button type="button" onClick={() => setShowConfirm(v => !v)} tabIndex={-1} style={eyeButtonStyle}>
+              <input type={showConfirm ? "text" : "password"} value={form.confirmPassword}
+                onChange={setField("confirmPassword")} required autoComplete="new-password"
+                placeholder="Re-enter password" style={{ ...inputStyle, paddingRight: 44 }} />
+              <button type="button" onClick={() => setShowConfirm(v => !v)} tabIndex={-1} style={eyeButtonStyle}
+                aria-label={showConfirm ? "Hide password" : "Show password"}>
                 {showConfirm ? <EyeOff /> : <EyeOn />}
               </button>
             </div>
           </div>
 
-          <div style={{ borderTop: "1px solid var(--surface-alt)", paddingTop: 8, marginTop: 4 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--teal)", marginBottom: 14 }}>
+          {/* Social Media — up to 6 */}
+          <div style={{ borderTop: "1px solid #e8e8e4", paddingTop: 16, marginTop: 4 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#1D5C4A", marginBottom: 14 }}>
               Social Media Accounts
             </div>
-            <label style={labelStyle}>Primary Account <Required /></label>
-            <div style={{ display: "flex", gap: 10 }}>
-              <select value={form.primaryPlatform} onChange={set("primaryPlatform")} required autoComplete="off"
-                style={{ ...inputStyle, width: 160, flexShrink: 0 }}>
-                <option value="">Platform…</option>
-                {SOCIAL_PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <input type="text" value={form.primaryHandle} onChange={set("primaryHandle")}
-                autoComplete="off" placeholder="@handle or username" style={{ ...inputStyle, flex: 1 }} />
-            </div>
-          </div>
 
-          <div>
-            <label style={labelStyle}>
-              Secondary Account{" "}
-              <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--text-mute)", fontSize: 11 }}>(optional)</span>
-            </label>
-            <div style={{ display: "flex", gap: 10 }}>
-              <select value={form.secondaryPlatform} onChange={set("secondaryPlatform")} autoComplete="off"
-                style={{ ...inputStyle, width: 160, flexShrink: 0 }}>
-                <option value="">Platform…</option>
-                {SOCIAL_PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <input type="text" value={form.secondaryHandle} onChange={set("secondaryHandle")}
-                autoComplete="off" placeholder="@handle or username" style={{ ...inputStyle, flex: 1 }} />
-            </div>
+            {socials.map((social, index) => (
+              <div key={index} style={{ marginBottom: 12 }}>
+                <label style={{ ...labelStyle, marginBottom: 6 }}>
+                  {index === 0 ? <>Primary Account <Required /></> : `Account ${index + 1}`}
+                </label>
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <select
+                    value={social.platform}
+                    onChange={e => setSocialField(index, "platform", e.target.value)}
+                    required={index === 0}
+                    style={{ ...inputStyle, width: 155, flexShrink: 0 }}
+                  >
+                    <option value="">Platform…</option>
+                    {SOCIAL_PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  <input
+                    type="text"
+                    value={social.handle}
+                    onChange={e => setSocialField(index, "handle", e.target.value)}
+                    placeholder="@handle or username"
+                    required={index === 0}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
+                  {index > 0 && (
+                    <button type="button" onClick={() => removeSocial(index)}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "#c41e1e", fontSize: 20, padding: "0 4px", lineHeight: 1, flexShrink: 0 }}
+                      aria-label="Remove this account">
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {socials.length < MAX_SOCIALS && (
+              <button type="button" onClick={addSocial}
+                style={{
+                  background: "none", border: "2px dashed #C8C4BC", borderRadius: 8,
+                  color: "#888", fontSize: 13, fontWeight: 700, fontFamily: "var(--font-body)",
+                  padding: "8px 16px", cursor: "pointer", width: "100%", marginTop: 4,
+                  letterSpacing: "0.04em",
+                }}>
+                + Add another account ({socials.length}/{MAX_SOCIALS})
+              </button>
+            )}
           </div>
 
           {error && <div style={errorStyle}>{error}</div>}
 
           <button type="submit" disabled={loading}
             style={{ ...primaryBtnStyle, opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }}>
-            {loading ? "Creating account…" : "Create Account"}
+            {loading ? "Creating account…" : "Create Account →"}
           </button>
         </form>
 
-        <div style={{ marginTop: 24, textAlign: "center", fontSize: 14, color: "var(--text-mute)" }}>
+        <div style={{ marginTop: 20, textAlign: "center", fontSize: 14, color: "#aaa" }}>
           Already have an account?{" "}
-          <Link to="/login" style={{ color: "var(--teal)", fontWeight: 700, textDecoration: "none" }}>Sign in</Link>
+          <Link to="/login" style={{ color: "#1D5C4A", fontWeight: 700, textDecoration: "none" }}>Sign in</Link>
         </div>
       </div>
     </div>
@@ -217,29 +408,30 @@ export default function RegisterPage() {
 }
 
 function Required() {
-  return <span style={{ color: "var(--terracotta)", marginLeft: 2 }}>*</span>;
+  return <span style={{ color: "#C1673A", marginLeft: 2 }}>*</span>;
 }
 
-function GoogleIcon() {
+function LogoBlock() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-    </svg>
+    <div style={{ textAlign: "center", marginBottom: 32 }}>
+      <img src="/azc-logo-teal.png" alt="Arizona Coalition" style={{ height: 64, marginBottom: 12 }} />
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 24, color: "#fff", letterSpacing: "-0.01em" }}>Arizona Coalition</div>
+      <div style={{ fontFamily: "var(--font-body)", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#F5C842", marginTop: 4 }}>
+        Comms Hub · 2026
+      </div>
+    </div>
   );
 }
 
 const pageStyle = {
   minHeight: "100vh", background: "var(--teal)",
   display: "flex", flexDirection: "column",
-  alignItems: "center", justifyContent: "center", padding: "24px",
+  alignItems: "center", justifyContent: "center", padding: "32px 20px",
 };
 
 const cardStyle = {
   background: "var(--bg)", borderRadius: 16, padding: "40px 36px",
-  width: "100%", maxWidth: 460, boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
+  width: "100%", maxWidth: 480, boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
 };
 
 const labelStyle = {
@@ -303,8 +495,6 @@ function friendlyError(code) {
       return "Password is too weak. Use at least 8 characters.";
     case "auth/network-request-failed":
       return "Network error. Check your connection and try again.";
-    case "auth/popup-blocked":
-      return "Popup was blocked. Please allow popups for this site and try again.";
     default:
       return "Something went wrong. Please try again.";
   }
