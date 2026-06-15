@@ -431,11 +431,27 @@ export default function AdminPage() {
     if (!cnParsed) return;
     setCnUploading(true);
     try {
+      // Stats are calculated from ALL notes (full accuracy).
+      // For the browseable card list we sample 2500 notes evenly across the dataset
+      // to stay under Netlify's 6MB function body limit.
+      const MAX_DISPLAY = 2500;
+      const notes = cnParsed.notes;
+      let displayNotes;
+      if (notes.length <= MAX_DISPLAY) {
+        displayNotes = notes;
+      } else {
+        // Sample evenly — take every Nth note
+        const step = Math.floor(notes.length / MAX_DISPLAY);
+        displayNotes = notes.filter((_, i) => i % step === 0).slice(0, MAX_DISPLAY);
+      }
+
       const res = await fetch("/.netlify/functions/upload-community-notes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...cnParsed,
+          notes: displayNotes,
+          stats: cnParsed.stats,
+          count: cnParsed.count, // real total count, not just display sample
           uploadedAt: new Date().toISOString(),
         }),
       });
