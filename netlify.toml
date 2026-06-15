@@ -3,8 +3,7 @@
   publish = "dist"
 
 [functions]
-  node_bundler = "esbuild"
-  external_node_modules = ["googleapis", "@netlify/blobs", "@netlify/functions"]
+  external_node_modules = ["googleapis", "@netlify/blobs", "@netlify/functions", "firebase-admin"]
 
 [functions."query-candidates"]
   timeout = 26
@@ -19,8 +18,13 @@
   timeout = 26
 
 [functions."scheduled-community-notes"]
-  schedule = "0 6 * * *"
   timeout = 26
+
+[functions."send-invite"]
+  timeout = 26
+
+[functions."send-welcome"]
+  timeout = 10
 
 [[redirects]]
   from = "/*"
