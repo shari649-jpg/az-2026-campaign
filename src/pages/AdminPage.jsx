@@ -388,6 +388,7 @@ export default function AdminPage() {
           date: millis ? new Date(millis).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
           weekLbl: millis ? weekLabel(millis) : "Unknown",
           narratives: detectNarratives(summary),
+          millis,
         });
       }
     }
@@ -436,13 +437,9 @@ export default function AdminPage() {
       // to stay well under Netlify's 6MB function body limit.
       const MAX_DISPLAY = 1000;
       const notes = cnParsed.notes;
-      let displayNotes;
-      if (notes.length <= MAX_DISPLAY) {
-        displayNotes = notes;
-      } else {
-        const step = Math.floor(notes.length / MAX_DISPLAY);
-        displayNotes = notes.filter((_, i) => i % step === 0).slice(0, MAX_DISPLAY);
-      }
+      // Sort by timestamp descending — show most recent notes on the dashboard
+      const sorted = [...notes].sort((a, b) => (b.millis || 0) - (a.millis || 0));
+      const displayNotes = sorted.slice(0, MAX_DISPLAY);
 
       // Trim each note to essential fields and truncate long summaries
       const trimmedNotes = displayNotes.map(n => ({
@@ -452,6 +449,7 @@ export default function AdminPage() {
         date:       n.date,
         weekLbl:    n.weekLbl,
         narratives: n.narratives,
+        // millis intentionally excluded from payload to save space
       }));
 
       const payload = JSON.stringify({
