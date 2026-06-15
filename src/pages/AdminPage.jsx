@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { unzipSync, strFromU8 } from "fflate";
+import { Inflate } from "fflate";
 import { collection, getDocs, doc, updateDoc, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
@@ -248,41 +248,108 @@ export default function AdminPage() {
   }
 
   async function streamClassifyZip(file, notes, isFirstFile) {
-    const arrayBuffer = await file.arrayBuffer();
-    const uint8 = new Uint8Array(arrayBuffer);
-    const decompressed = unzipSync(uint8);
-    const tsvKey = Object.keys(decompressed).find(k => k.endsWith(".tsv"));
-    if (!tsvKey) throw new Error(`No TSV file found inside ${file.name}`);
-    const text = strFromU8(decompressed[tsvKey]);
-    const lines = text.split("\n");
-    const headers = {};
-    let headerSkipped = !isFirstFile;
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      if (!headerSkipped && Object.keys(headers).length === 0) {
-        const cols = line.split("\t");
-        headers.noteId    = cols.indexOf("noteId");
-        headers.summary   = cols.indexOf("summary");
-        headers.createdAt = cols.indexOf("createdAtMillis");
-        headerSkipped = true;
-        continue;
+    // True streaming decompression — never holds full content in memory
+    // ZIP format: we need to find the local file header and skip it,
+    // then stream-decompress the deflate stream using fflate Inflate.
+    return new Promise((resolve, reject) => {
+      const CHUNK = 1024 * 1024; // 1MB read chunks
+      const decoder = new TextDecoder("utf-8");
+      const headers = {};
+      let headerSkipped = !isFirstFile;
+      let leftover = "";
+      let inflate = null;
+      let dataStartOffset = -1;
+      let bytesRead = 0;
+      const fileSize = file.size;
+
+      function processTextChunk(chunk) {
+        const lines = (leftover + chunk).split("\n");
+        leftover = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          if (!headerSkipped && Object.keys(headers).length === 0) {
+            const cols = line.split("\t");
+            headers.noteId    = cols.indexOf("noteId");
+            headers.summary   = cols.indexOf("summary");
+            headers.createdAt = cols.indexOf("createdAtMillis");
+            headerSkipped = true;
+            continue;
+          }
+          if (!headerSkipped) { headerSkipped = true; continue; }
+          if (headers.summary === undefined || headers.summary === -1) continue;
+          const cols    = line.split("\t");
+          const summary = (cols[headers.summary] || "").trim();
+          if (!summary) continue;
+          const side = classifyText(summary);
+          if (!side) continue;
+          const millis = parseInt(cols[headers.createdAt]) || 0;
+          notes.push({
+            noteId: cols[headers.noteId] || String(notes.length),
+            summary, side,
+            date: millis ? new Date(millis).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
+            weekLbl: millis ? weekLabel(millis) : "Unknown",
+            narratives: detectNarratives(summary),
+          });
+        }
       }
-      if (!headerSkipped) { headerSkipped = true; continue; }
-      if (headers.summary === undefined || headers.summary === -1) continue;
-      const cols    = line.split("\t");
-      const summary = (cols[headers.summary] || "").trim();
-      if (!summary) continue;
-      const side = classifyText(summary);
-      if (!side) continue;
-      const millis = parseInt(cols[headers.createdAt]) || 0;
-      notes.push({
-        noteId: cols[headers.noteId] || String(notes.length),
-        summary, side,
-        date: millis ? new Date(millis).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
-        weekLbl: millis ? weekLabel(millis) : "Unknown",
-        narratives: detectNarratives(summary),
+
+      function findLocalFileData(buf) {
+        // ZIP local file header: PK\x03\x04, skip to find compressed data
+        // Local file header structure:
+        // 4 signature + 2 version + 2 flags + 2 compression + 2 modtime + 2 moddate
+        // + 4 crc + 4 compressed + 4 uncompressed + 2 filename_len + 2 extra_len
+        // = 30 bytes + filename_len + extra_len
+        const sig = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+        for (let i = 0; i < buf.length - 30; i++) {
+          if (buf[i] === sig[0] && buf[i+1] === sig[1] && buf[i+2] === sig[2] && buf[i+3] === sig[3]) {
+            const fnLen    = buf[i+26] | (buf[i+27] << 8);
+            const extraLen = buf[i+28] | (buf[i+29] << 8);
+            return i + 30 + fnLen + extraLen;
+          }
+        }
+        return -1;
+      }
+
+      const reader = file.stream().getReader();
+      let headerBuf = new Uint8Array(0);
+      let headerFound = false;
+
+      inflate = new Inflate((data, final) => {
+        const text = decoder.decode(data, { stream: !final });
+        processTextChunk(text);
+        if (final) resolve();
       });
-    }
+
+      function pump() {
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            // Flush remaining leftover
+            if (leftover.trim()) processTextChunk("\n");
+            resolve();
+            return;
+          }
+
+          if (!headerFound) {
+            // Accumulate enough bytes to find the local file header
+            const combined = new Uint8Array(headerBuf.length + value.length);
+            combined.set(headerBuf);
+            combined.set(value, headerBuf.length);
+            headerBuf = combined;
+
+            const offset = findLocalFileData(headerBuf);
+            if (offset !== -1) {
+              headerFound = true;
+              const rest = headerBuf.slice(offset);
+              if (rest.length > 0) inflate.push(rest, false);
+            }
+          } else {
+            inflate.push(value, false);
+          }
+          pump();
+        }).catch(reject);
+      }
+      pump();
+    });
   }
 
   async function streamClassifyTsv(file, notes, isFirstFile) {
@@ -329,15 +396,17 @@ export default function AdminPage() {
   async function handleCnFile(e) {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    setCnFiles(files);
+    // Sort: largest file first (that's file 1, which has almost all the data)
+    const sorted = [...files].sort((a, b) => b.size - a.size);
+    setCnFiles(sorted);
     setCnPreview(null);
     setCnParsed(null);
     setCnDone(false);
     setCnParsing(true);
     try {
       const allNotes = [];
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+      for (let i = 0; i < sorted.length; i++) {
+        const file = sorted[i];
         if (file.name.endsWith(".zip")) {
           await streamClassifyZip(file, allNotes, i === 0);
         } else {
@@ -572,7 +641,7 @@ export default function AdminPage() {
                     ) : (
                       <div>
                         <div style={{ fontSize: 14, color: "#888" }}>Click to select Notes data files</div>
-                        <div style={{ fontSize: 12, color: "#aaa", marginTop: 2 }}>Select all 3 zip files at once (File no. 1, 2, and 3 of 3)</div>
+                        <div style={{ fontSize: 12, color: "#aaa", marginTop: 2 }}>File no. 1 of 3 contains almost all the data — you can upload just that one, or all 3</div>
                       </div>
                     )}
                   </div>
@@ -634,8 +703,8 @@ export default function AdminPage() {
                 <strong style={{ color: CHARCOAL }}>Daily workflow:</strong>
                 <ol style={{ margin: "8px 0 0", paddingLeft: 18 }}>
                   <li>Go to <a href="https://x.com/i/communitynotes/download-data" target="_blank" rel="noreferrer" style={{ color: TEAL }}>x.com/i/communitynotes/download-data</a> (must be logged in to X)</li>
-                  <li>Click the download icon for all 3 <strong>Notes data</strong> files</li>
-                  <li>Select all 3 files at once in the file picker above</li>
+                  <li>Click the download icon for <strong>File no. 1 of 3</strong> under Notes data (contains ~99% of all notes)</li>
+                  <li>Select it in the file picker above (or select all 3 for complete coverage)</li>
                   <li>Done — the Misinfo Monitor dashboard updates instantly</li>
                 </ol>
               </div>
