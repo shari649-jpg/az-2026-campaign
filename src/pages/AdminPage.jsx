@@ -262,6 +262,8 @@ export default function AdminPage() {
         const file = files[i];
         let text = "";
 
+        const MAX_LINES = 4000; // cap per file — 12k total is plenty for trend analysis
+
         if (file.name.endsWith(".zip")) {
           // Unzip and find the .tsv file inside
           const zip = await JSZip.loadAsync(await file.arrayBuffer());
@@ -271,16 +273,22 @@ export default function AdminPage() {
             setCnParsing(false);
             return;
           }
-          text = await tsvEntry.async("string");
+          // Read as Uint8Array and decode only first ~20MB to avoid memory crash
+          const raw = await tsvEntry.async("uint8array");
+          const sliced = raw.slice(0, 20 * 1024 * 1024); // first 20MB only
+          text = new TextDecoder("utf-8").decode(sliced);
         } else {
-          text = await file.text();
+          // For plain TSV, read a slice via FileReader
+          const slicedBlob = file.slice(0, 20 * 1024 * 1024);
+          text = await slicedBlob.text();
         }
 
-        const lines = text.split("\n").filter(Boolean);
+        // Split and cap lines
+        const allLines = text.split("\n").filter(Boolean);
         if (i === 0) {
-          mergedLines = lines; // keep header from first file
+          mergedLines = allLines.slice(0, MAX_LINES); // header + data rows
         } else {
-          mergedLines = mergedLines.concat(lines.slice(1)); // skip header on subsequent files
+          mergedLines = mergedLines.concat(allLines.slice(1, MAX_LINES)); // skip header
         }
       }
 
