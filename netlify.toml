@@ -30,3 +30,6 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+[functions."validate-token"]
+  timeout = 10
