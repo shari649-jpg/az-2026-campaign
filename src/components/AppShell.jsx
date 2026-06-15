@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import ConversationCoach from "../components/ConversationCoach";
 
 const NAV_ITEMS = [
   { path: "/",               short: "Home" },
@@ -571,6 +572,7 @@ export default function AppShell() {
           </span>
         </div>
       </footer>
+  <ConversationCoach />
     </div>
   );
 }
