@@ -229,21 +229,31 @@ export default function AdminPage() {
   }
 
   function buildStats(notes) {
-    const wkMap = {};
+    const wkMap = {};   // key: weekStartMillis (Sunday), value: { label, r, d, millis }
     let totalR = 0, totalD = 0;
     const repNar = {}, demNar = {};
     notes.forEach(n => {
-      if (!wkMap[n.weekLbl]) wkMap[n.weekLbl] = { label: n.weekLbl, r: 0, d: 0 };
-      if (n.side === "R" || n.side === "both") { wkMap[n.weekLbl].r++; totalR++; }
-      if (n.side === "D" || n.side === "both") { wkMap[n.weekLbl].d++; totalD++; }
+      const millis = n.millis || 0;
+      // Get Sunday of the week as the key (milliseconds)
+      const d = new Date(millis);
+      const dayOfWeek = d.getUTCDay(); // 0 = Sunday
+      const weekStart = new Date(millis - dayOfWeek * 86400000);
+      weekStart.setUTCHours(0, 0, 0, 0);
+      const wkKey = weekStart.getTime();
+      const wkLabel = `${weekStart.getUTCMonth() + 1}/${weekStart.getUTCDate()}`;
+      if (!wkMap[wkKey]) wkMap[wkKey] = { label: wkLabel, r: 0, d: 0, millis: wkKey };
+      if (n.side === "R" || n.side === "both") { wkMap[wkKey].r++; totalR++; }
+      if (n.side === "D" || n.side === "both") { wkMap[wkKey].d++; totalD++; }
       n.narratives.forEach(nar => {
         if (n.side === "R" || n.side === "both") repNar[nar] = (repNar[nar] || 0) + 1;
         if (n.side === "D" || n.side === "both") demNar[nar] = (demNar[nar] || 0) + 1;
       });
     });
+    // Sort by actual timestamp, take the 8 most recent weeks
     const weeklyData = Object.values(wkMap)
-      .sort((a, b) => { const p = s => { const x = s.split("/"); return parseInt(x[0]) * 100 + parseInt(x[1]); }; return p(a.label) - p(b.label); })
-      .slice(-8);
+      .sort((a, b) => a.millis - b.millis)
+      .slice(-8)
+      .map(({ label, r, d }) => ({ label, r, d })); // strip millis from output
     return { weeklyData, totalR, totalD, repNar, demNar };
   }
 
