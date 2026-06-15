@@ -71,19 +71,62 @@ function NarrativePill({ label }) {
 
 // ── Note card ───────────────────────────────────────────────────────────────
 function NoteCard({ note, onSendToRebuttal }) {
-  const [sent, setSent] = useState(false);
+  const [sent, setSent]         = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [inferring, setInferring] = useState(false);
 
-  function handleSend() {
+  const isLong = note.summary.length > 280;
+  const displayText = expanded || !isLong
+    ? note.summary
+    : note.summary.slice(0, 280) + "…";
+
+  // Infer the original false claim from the Community Note (correction text),
+  // then push that as the narrative to the Rebuttal Generator.
+  async function handleSend() {
+    setInferring(true);
     try {
-      localStorage.setItem("rebuttal_push_results", JSON.stringify({
-        narrative: note.summary,
-        source: "Community Notes Monitor",
-        sentAt: new Date().toISOString(),
-      }));
-      setSent(true);
-      setTimeout(() => window.location.assign("/rebuttal"), 700);
-    } catch {
-      onSendToRebuttal(note.summary);
+      let narrative = note.summary;
+
+      // Ask Claude to infer the original false claim from the correction note
+      try {
+        const res = await fetch("/.netlify/functions/generate-message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            max_tokens: 150,
+            messages: [{
+              role: "user",
+              content: `A Community Note is a fact-check correction posted on X/Twitter. Based on the correction below, infer the original false claim or misleading narrative that was being corrected. State the false claim in one concise sentence as if it were being spread — no commentary, no preamble, just the claim itself.
+
+Community Note (the correction): "${note.summary}"
+
+Original false claim:`,
+            }],
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const inferred = data.content?.[0]?.text?.trim();
+          if (inferred && inferred.length > 10) narrative = inferred;
+        }
+      } catch {
+        // Fall back to using the note summary directly
+      }
+
+      try {
+        localStorage.setItem("rebuttal_push_results", JSON.stringify({
+          narrative,
+          source: "Community Notes Monitor",
+          communityNote: note.summary,
+          sentAt: new Date().toISOString(),
+        }));
+        setSent(true);
+        setTimeout(() => window.location.assign("/rebuttal"), 700);
+      } catch {
+        onSendToRebuttal(narrative);
+      }
+    } finally {
+      setInferring(false);
     }
   }
 
@@ -91,6 +134,7 @@ function NoteCard({ note, onSendToRebuttal }) {
     <div style={{
       background: "#fff",
       border: `1.5px solid ${BORDER}`,
+      borderLeft: `4px solid ${note.side === "R" ? TERRA : TEAL}`,
       borderRadius: 10,
       padding: "14px 16px",
       display: "flex",
@@ -99,9 +143,21 @@ function NoteCard({ note, onSendToRebuttal }) {
     }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
         <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, fontSize: 14, color: INK, lineHeight: 1.5 }}>
-            {note.summary.length > 280 ? note.summary.slice(0, 280) + "…" : note.summary}
+          {/* Label: Community Note is the correction */}
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#aaa", marginBottom: 5 }}>
+            Community Note · Fact-Check Correction
+          </div>
+          <p style={{ margin: 0, fontSize: 14, color: INK, lineHeight: 1.6 }}>
+            {displayText}
           </p>
+          {isLong && (
+            <button onClick={() => setExpanded(e => !e)} style={{
+              background: "none", border: "none", color: TEAL, fontWeight: 700,
+              fontSize: 12, cursor: "pointer", padding: "4px 0 0", fontFamily: "inherit",
+            }}>
+              {expanded ? "Show less ↑" : "Show full note ↓"}
+            </button>
+          )}
         </div>
         <span style={{
           flexShrink: 0,
@@ -124,22 +180,23 @@ function NoteCard({ note, onSendToRebuttal }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div style={{ fontSize: 12, color: "#999" }}>
           {note.date && <span>Flagged {note.date}</span>}
-          {note.helpfulness && <span style={{ marginLeft: 10 }}>· {note.helpfulness}% helpful ratings</span>}
+          {inferring && <span style={{ marginLeft: 8, color: TEAL }}>Inferring claim…</span>}
         </div>
         <button
           onClick={handleSend}
-          disabled={sent}
+          disabled={sent || inferring}
           style={{
             fontSize: 12, fontWeight: 700, fontFamily: "inherit",
-            padding: "5px 12px", borderRadius: 6, cursor: sent ? "default" : "pointer",
-            background: sent ? TEAL_LITE : GOLD,
+            padding: "5px 12px", borderRadius: 6,
+            cursor: (sent || inferring) ? "default" : "pointer",
+            background: sent ? TEAL_LITE : inferring ? "#f5f5f5" : GOLD,
             color: sent ? TEAL : CHARCOAL,
             border: `1.5px solid ${sent ? "#b2d9cc" : "#d4a800"}`,
             transition: "all 0.2s",
             whiteSpace: "nowrap",
           }}
         >
-          {sent ? "✓ Sent to Rebuttal" : "Send to Rebuttal Generator →"}
+          {sent ? "✓ Sent to Rebuttal" : inferring ? "Analyzing…" : "Send to Rebuttal Generator →"}
         </button>
       </div>
     </div>
