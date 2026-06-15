@@ -66,9 +66,19 @@ export default function AdminPage() {
   const fetchWaitlist = async () => {
     setLoadingWaitlist(true);
     try {
-      const snap = await getDocs(query(collection(db, "waitlist"), orderBy("submittedAt", "desc")));
-      setWaitlist(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    } catch { notify("Failed to load waitlist.", "err"); }
+      let snap;
+      try {
+        snap = await getDocs(query(collection(db, "waitlist"), orderBy("submittedAt", "desc")));
+      } catch {
+        snap = await getDocs(collection(db, "waitlist"));
+      }
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+      setWaitlist(list);
+    } catch (err) {
+      console.error("Waitlist fetch error:", err);
+      setWaitlist([]);
+    }
     setLoadingWaitlist(false);
   };
 
@@ -234,7 +244,7 @@ export default function AdminPage() {
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <span style={{ fontSize: 17, fontWeight: 700, color: CHARCOAL }}>{u.fullName || "—"}</span>
                           {isMe && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: GOLD, color: TEAL, padding: "2px 8px", borderRadius: 4 }}>You</span>}
-                          {!u.emailVerified && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", background: "#fff8e6", color: "#8a6800", border: `1px solid ${GOLD}`, padding: "2px 8px", borderRadius: 4 }}>Unverified</span>}
+
                         </div>
                         <div style={{ fontSize: 13, color: "#888", marginTop: 2 }}>{u.email}</div>
                         {/* Show all social accounts */}
