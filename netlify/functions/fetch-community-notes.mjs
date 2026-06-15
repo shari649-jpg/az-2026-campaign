@@ -139,11 +139,22 @@ export default async function (req) {
   }
 
   // ── Live fetch: hit X directly ───────────────────────────────────────────
-  const URLS = [
-    "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-00000.tsv",
-    "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-00000.tsv.gz",
-    "https://ton.twimg.com/birdwatch-public-data/latest/notes/notes-0000.tsv",
-  ];
+  // Build date-stamped URL — X moved away from /latest/ path
+  const buildUrls = () => {
+    const now = new Date();
+    const dates = [];
+    // Try today and yesterday in case today's data isn't posted yet
+    for (let i = 0; i <= 2; i++) {
+      const d = new Date(now);
+      d.setUTCDate(d.getUTCDate() - i);
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      dates.push(`https://ton.twimg.com/birdwatch-public-data/${y}/${m}/${day}/notes/notes-00000.tsv`);
+    }
+    return dates;
+  };
+  const URLS = buildUrls();
 
   let raw = null;
   let fetchError = null;
