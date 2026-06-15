@@ -24,7 +24,16 @@ const CORS_HEADERS = {
 async function getAccessToken() {
   // Build a JWT for the service account and exchange it for an access token
   const clientEmail  = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKeyRaw = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  // FIREBASE_PRIVATE_KEY is stored as base64 to avoid newline encoding issues
+  const privateKeyRaw = (() => {
+    const raw = process.env.FIREBASE_PRIVATE_KEY || "";
+    // Try base64 decode first, fall back to raw with newline replacement
+    try {
+      const decoded = atob(raw.trim());
+      if (decoded.includes("BEGIN")) return decoded;
+    } catch {}
+    return raw.replace(/\\n/g, "\n");
+  })();
 
   const now    = Math.floor(Date.now() / 1000);
   const expiry = now + 3600;
