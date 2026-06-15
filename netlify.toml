@@ -3,7 +3,7 @@
   publish = "dist"
 
 [functions]
-  external_node_modules = ["googleapis", "@netlify/blobs", "@netlify/functions"]
+  external_node_modules = ["googleapis", "@netlify/blobs", "@netlify/functions", "nodemailer"]
 
 [functions."query-candidates"]
   timeout = 26
