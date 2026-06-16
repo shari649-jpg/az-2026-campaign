@@ -50,8 +50,8 @@ const S = {
     position: "fixed",
     bottom: 28,
     right: 28,
-    width: 54,
-    height: 54,
+    width: 58,
+    height: 58,
     borderRadius: "50%",
     background: TEAL,
     border: `3px solid ${GOLD}`,
@@ -62,117 +62,117 @@ const S = {
     zIndex: 999,
     boxShadow: "0 4px 16px rgba(29,92,74,0.35)",
     transition: "transform 0.15s, background 0.15s",
-    fontSize: 22,
+    fontSize: 26,
   },
   panel: {
     position: "fixed",
-    bottom: 92,
+    bottom: 98,
     right: 28,
-    width: 340,
-    maxHeight: "80vh",
-    background: "var(--bg, #fff)",
-    border: `1.5px solid ${TEAL}`,
+    width: 360,
+    maxHeight: "82vh",
+    background: "#ffffff",
+    border: `2px solid ${TEAL}`,
     borderRadius: 16,
     display: "flex",
     flexDirection: "column",
     zIndex: 999,
-    boxShadow: "0 8px 32px rgba(29,92,74,0.18)",
+    boxShadow: "0 8px 32px rgba(29,92,74,0.22)",
     overflow: "hidden",
   },
   header: {
     background: TEAL,
-    padding: "12px 14px",
+    padding: "14px 16px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     flexShrink: 0,
   },
   body: {
-    padding: "14px",
+    padding: "16px",
     overflowY: "auto",
     flex: 1,
     display: "flex",
     flexDirection: "column",
-    gap: 14,
+    gap: 16,
+    background: "#ffffff",
   },
   stepLabel: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: 700,
-    letterSpacing: "0.07em",
+    letterSpacing: "0.05em",
     textTransform: "uppercase",
-    color: CHARCOAL,
-    marginBottom: 6,
-    opacity: 0.7,
+    color: TEAL,
+    marginBottom: 8,
   },
   choiceBtn: (selected) => ({
     width: "100%",
-    padding: "9px 12px",
-    borderRadius: 8,
-    border: selected ? `1.5px solid ${TEAL}` : "1px solid #ddd",
-    background: selected ? TEAL_LIGHT : "transparent",
+    padding: "12px 14px",
+    borderRadius: 10,
+    border: selected ? `2px solid ${TEAL}` : `1.5px solid #b0b0b0`,
+    background: selected ? TEAL_LIGHT : "#fafafa",
     cursor: "pointer",
     textAlign: "left",
     transition: "all 0.15s",
-    marginBottom: 6,
+    marginBottom: 8,
   }),
   chip: (selected, color) => ({
     flex: 1,
-    padding: "8px 6px",
-    borderRadius: 8,
-    border: selected ? `1.5px solid ${color || TEAL}` : "1px solid #ddd",
-    background: selected ? (color ? color + "22" : TEAL_LIGHT) : "transparent",
+    padding: "10px 8px",
+    borderRadius: 10,
+    border: selected ? `2px solid ${color || TEAL}` : `1.5px solid #b0b0b0`,
+    background: selected ? (color ? color + "18" : TEAL_LIGHT) : "#fafafa",
     cursor: "pointer",
-    fontSize: 12,
+    fontSize: 13,
     textAlign: "center",
     transition: "all 0.15s",
     lineHeight: 1.4,
   }),
   primaryBtn: (disabled) => ({
     width: "100%",
-    padding: "10px",
-    background: disabled ? "#ccc" : TEAL,
+    padding: "12px",
+    background: disabled ? "#b0b0b0" : TEAL,
     color: "white",
     border: "none",
-    borderRadius: 8,
+    borderRadius: 10,
     cursor: disabled ? "not-allowed" : "pointer",
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: 700,
-    letterSpacing: "0.04em",
+    letterSpacing: "0.03em",
     transition: "background 0.15s",
   }),
   bubble: (isUser) => ({
     maxWidth: "88%",
-    padding: "8px 11px",
-    borderRadius: isUser ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
-    background: isUser ? TEAL : "var(--surface-alt, #f4f3f0)",
-    color: isUser ? "white" : CHARCOAL,
-    fontSize: 13,
-    lineHeight: 1.55,
+    padding: "10px 13px",
+    borderRadius: isUser ? "14px 14px 2px 14px" : "14px 14px 14px 2px",
+    background: isUser ? TEAL : "#f0f0ee",
+    color: isUser ? "white" : "#2a2a2a",
+    fontSize: 14,
+    lineHeight: 1.6,
     alignSelf: isUser ? "flex-end" : "flex-start",
     whiteSpace: "pre-wrap",
   }),
   coachNote: {
-    fontSize: 11,
-    color: TEAL,
+    fontSize: 13,
+    color: "#0a4535",
     background: TEAL_LIGHT,
-    border: `1px solid ${TEAL_MID}`,
-    borderRadius: 8,
-    padding: "6px 9px",
-    lineHeight: 1.5,
+    border: `1.5px solid ${TEAL_MID}`,
+    borderRadius: 10,
+    padding: "9px 12px",
+    lineHeight: 1.6,
     alignSelf: "flex-start",
-    maxWidth: "92%",
+    maxWidth: "94%",
   },
   textarea: {
     width: "100%",
-    padding: "8px 10px",
-    borderRadius: 8,
-    border: "1px solid #ddd",
-    fontSize: 13,
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: `1.5px solid #b0b0b0`,
+    fontSize: 14,
     fontFamily: "inherit",
-    color: CHARCOAL,
-    background: "var(--surface-alt, #f9f9f7)",
+    color: "#2a2a2a",
+    background: "#fafafa",
     resize: "none",
-    lineHeight: 1.5,
+    lineHeight: 1.6,
     outline: "none",
   },
 };
@@ -333,7 +333,7 @@ export default function ConversationCoach() {
               {step === 4 && (
                 <button
                   onClick={reset}
-                  style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 11, letterSpacing: "0.04em" }}
+                  style={{ background: "none", border: "none", color: "rgba(255,255,255,0.85)", cursor: "pointer", fontSize: 13, letterSpacing: "0.04em" }}
                 >start over</button>
               )}
               <button
@@ -355,10 +355,10 @@ export default function ConversationCoach() {
                   style={S.choiceBtn(situation === "engage")}
                   onClick={() => { setSituation("engage"); setStep(2); }}
                 >
-                  <div style={{ fontWeight: 700, fontSize: 13, color: situation === "engage" ? TEAL : CHARCOAL, marginBottom: 3 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: situation === "engage" ? TEAL : "#1a1a1a", marginBottom: 4 }}>
                     🤝 Community conversation
                   </div>
-                  <div style={{ fontSize: 12, color: "#777", lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 13, color: "#444", lineHeight: 1.5 }}>
                     Practice talking across differences — neighbor, co-worker, stranger at an event
                   </div>
                 </button>
@@ -366,10 +366,10 @@ export default function ConversationCoach() {
                   style={S.choiceBtn(situation === "troll")}
                   onClick={() => { setSituation("troll"); setStep(2); }}
                 >
-                  <div style={{ fontWeight: 700, fontSize: 13, color: situation === "troll" ? TEAL : CHARCOAL, marginBottom: 3 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: situation === "troll" ? TEAL : "#1a1a1a", marginBottom: 4 }}>
                     🛡️ Responding to a comment
                   </div>
-                  <div style={{ fontSize: 12, color: "#777", lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 13, color: "#444", lineHeight: 1.5 }}>
                     Paste in an attack or hostile reply and get a draft response
                   </div>
                 </button>
@@ -401,10 +401,10 @@ export default function ConversationCoach() {
                       style={S.choiceBtn(persona === p.id)}
                       onClick={() => { setPersona(p.id); setStep(3); }}
                     >
-                      <div style={{ fontWeight: 700, fontSize: 13, color: persona === p.id ? TEAL : CHARCOAL, marginBottom: 2 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: persona === p.id ? TEAL : "#1a1a1a", marginBottom: 3 }}>
                         {p.emoji} {p.label}
                       </div>
-                      <div style={{ fontSize: 12, color: "#777", lineHeight: 1.4 }}>{p.desc}</div>
+                      <div style={{ fontSize: 13, color: "#444", lineHeight: 1.5 }}>{p.desc}</div>
                     </button>
                   ))}
                 </div>
@@ -426,10 +426,10 @@ export default function ConversationCoach() {
                           style={S.chip(tone === t.id, c)}
                           onClick={() => setTone(t.id)}
                         >
-                          <div style={{ fontWeight: 700, fontSize: 12, color: tone === t.id ? c : CHARCOAL, marginBottom: 2 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: tone === t.id ? (c === GOLD ? "#4a3800" : c) : "#1a1a1a", marginBottom: 3 }}>
                             {t.label}
                           </div>
-                          <div style={{ fontSize: 11, color: "#888", lineHeight: 1.3 }}>{t.desc}</div>
+                          <div style={{ fontSize: 12, color: "#555", lineHeight: 1.4 }}>{t.desc}</div>
                         </button>
                       );
                     })}
@@ -475,7 +475,7 @@ export default function ConversationCoach() {
                     </div>
                   )}
                   {error && (
-                    <div style={{ fontSize: 12, color: TERRA, padding: "6px 10px", background: "#fff0ec", borderRadius: 8 }}>
+                    <div style={{ fontSize: 14, color: "#7a2a10", padding: "8px 12px", background: "#fff0ec", borderRadius: 10, border: "1.5px solid #C1673A" }}>
                       {error}
                     </div>
                   )}
@@ -492,13 +492,13 @@ export default function ConversationCoach() {
                       placeholder="Your reply…"
                       style={{
                         flex: 1,
-                        padding: "8px 10px",
-                        borderRadius: 8,
-                        border: "1px solid #ddd",
-                        fontSize: 13,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border: "1.5px solid #b0b0b0",
+                        fontSize: 14,
                         fontFamily: "inherit",
-                        color: CHARCOAL,
-                        background: "var(--surface-alt, #f9f9f7)",
+                        color: "#2a2a2a",
+                        background: "#fafafa",
                         outline: "none",
                       }}
                       disabled={loading}
@@ -507,13 +507,14 @@ export default function ConversationCoach() {
                       onClick={sendMessage}
                       disabled={loading || !inputText.trim()}
                       style={{
-                        padding: "8px 12px",
+                        padding: "10px 14px",
                         background: TEAL,
                         color: "white",
                         border: "none",
-                        borderRadius: 8,
+                        borderRadius: 10,
                         cursor: loading || !inputText.trim() ? "not-allowed" : "pointer",
-                        fontSize: 13,
+                        fontSize: 14,
+                        fontWeight: 700,
                         opacity: loading || !inputText.trim() ? 0.5 : 1,
                       }}
                     >Send</button>
@@ -527,13 +528,13 @@ export default function ConversationCoach() {
                           const draft = messages.find(m => !m.isCoachNote && m.role === "assistant");
                           if (draft) navigator.clipboard.writeText(draft.content);
                         }}
-                        style={{ flex: 1, padding: "8px", background: GOLD, border: "none", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, color: CHARCOAL }}
+                        style={{ flex: 1, padding: "10px", background: GOLD, border: "none", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#2a2000" }}
                       >
                         📋 Copy response
                       </button>
                       <button
                         onClick={() => { setMessages([]); callCoach({ history: [], isFirst: true }); }}
-                        style={{ padding: "8px 10px", background: "transparent", border: "1px solid #ddd", borderRadius: 8, cursor: "pointer", fontSize: 12, color: CHARCOAL }}
+                        style={{ padding: "10px 14px", background: "transparent", border: "1.5px solid #b0b0b0", borderRadius: 10, cursor: "pointer", fontSize: 14, color: "#2a2a2a", fontWeight: 600 }}
                       >
                         ↺ Try again
                       </button>
