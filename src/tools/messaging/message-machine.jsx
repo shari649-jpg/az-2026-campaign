@@ -18,13 +18,39 @@ const STYLES = [
   { id: "strong_contrast", label: "Strong Contrast" },
 ];
 const MODIFIERS = ["Casual","Friendly","Witty","Sarcastic","Empathetic","Professional","Excited","Funny","Dramatic","Disgusted","Angry"];
-const REGEN_OPTIONS = [
-  { id: "shorten", label: "Shorten: more concise" },
-  { id: "expand",  label: "Expand: more detailed" },
+// National frames defined above; SPEAKER_PERSPECTIVES defined above
+
+// Layer 2 national frames — available in both AZ and National mode
+const NATIONAL_FRAMES = [
+  {
+    id: "anti_corruption",
+    label: "Anti-Corruption",
+    desc: "Donor influence, rate hikes, stock trades, slush funds",
+    prompt: "Emphasize the money trail: who gave, who got, what it cost regular people. Connect every corrupt act to a specific cost someone is paying today. Name the mechanism — the donor class, the politicians who take corporate money then do their bidding — not the party.",
+  },
+  {
+    id: "economic_populism",
+    label: "Economic Populism",
+    desc: "Costs, wages, prices, housing, healthcare",
+    prompt: "Emphasize record profits vs. real costs; the rigged economy vs. hard work. Lead with a specific dollar amount, price increase, or wage gap. Connect the economic pain to specific policy choices that protected it.",
+  },
+  {
+    id: "democracy_results",
+    label: "Democracy & Results",
+    desc: "Voting rights, oversight, agencies, courts",
+    prompt: "Emphasize: democracy gives you leverage over the people rigging the system — that's why they want to destroy it. Corruption and democracy are the same story. Don't defend institutions for their own sake; argue that a functioning democracy is what gives people power over those dismantling it.",
+  },
+  {
+    id: "competence_contrast",
+    label: "Competence Contrast",
+    desc: "Gridlock, chaos, failed promises",
+    prompt: "Use the Shapiro model: builders vs. chaos-makers, results vs. performance. Never name the opponent — talk about the chaos, the corruption, the cost. Let the audience make the connection. Forward-looking, not nostalgic.",
+  },
 ];
-const PERSON_OPTIONS = [
-  { id: "first",  label: 'First person ("I" / "We")',    desc: "Speaking as the coalition or candidate" },
-  { id: "second", label: 'Second person ("You")',         desc: "Speaking directly to the reader" },
+
+const SPEAKER_PERSPECTIVES = [
+  { id: "first",  label: 'First person ("I" / "We")',       desc: "Speaking as the coalition or candidate" },
+  { id: "second", label: 'Second person ("You")',            desc: "Speaking directly to the reader" },
   { id: "third",  label: 'Third person ("They" / "Arizonans")', desc: "Talking about people or events" },
 ];
 
@@ -342,7 +368,9 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
 /* ── Main App ── */
 export default function App() {
   const [view, setView]             = useState("form");
-  const [formData, setFormData]     = useState({ issue:"", focalPoint:"", audience:"", voice:"", person:"", style:"", modifier:"", platforms:[] });
+  const [msgMode, setMsgMode]       = useState("az");   // "az" | "national"
+  const [msgFrame, setMsgFrame]     = useState("");      // NATIONAL_FRAMES id or ""
+  const [formData, setFormData]     = useState({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", perspective:"", platforms:[] });
   const [fromResearch, setFromResearch] = useState(false);
   const [messages, setMessages]     = useState({});
   const [generating, setGenerating] = useState(false);
@@ -437,11 +465,25 @@ export default function App() {
     const styleObj = STYLES.find(s=>s.id===(formData.style||DEFAULT_STYLE));
     const styleLabel = styleObj ? styleObj.label : "Neutral";
     const modifierLine = formData.modifier ? `Tone: ${formData.modifier}` : "";
-    const personObj = PERSON_OPTIONS.find(p => p.id === formData.person);
-    const personLine = personObj ? `Grammatical person: ${personObj.label} — ${personObj.desc}` : "";
-    return `You are an expert political messaging strategist working for a legitimate, registered Arizona Democratic campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
+
+    // Speaker perspective injection
+    const perspObj = SPEAKER_PERSPECTIVES.find(p => p.id === formData.perspective);
+    const perspLine = perspObj ? `Grammatical person: ${perspObj.label} — ${perspObj.desc}` : "";
+
+    // Layer 2 frame injection (available in both modes)
+    const frameObj = NATIONAL_FRAMES.find(f => f.id === msgFrame);
+    const frameBlock = frameObj
+      ? `\nMESSAGING FRAME — ${frameObj.label.toUpperCase()}:\n${frameObj.prompt}\n`
+      : "";
+
+    // ── AZ MODE ──────────────────────────────────────────────────────────────
+    if (msgMode === "az") {
+      return `You are an expert political messaging strategist working for a legitimate, registered Arizona Democratic campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
 
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
+
+ARIZONA CONTEXT — GROUND ALL MESSAGING HERE:
+Ground all messaging in the Arizona context. Reference communities, landscapes, and values familiar to Arizona voters — urban centers like Phoenix and Tucson, rural and tribal communities, the border, the desert. Reflect issues as they affect Arizonans specifically. When referencing costs, use Arizona examples where possible (utility bills, housing, healthcare, water, education). Write for an Arizona audience, not a generic national one.
 
 FACTUAL ACCURACY — NON-NEGOTIABLE:
 - NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date. If you do not have a verified figure from the content provided, do not include one.
@@ -451,14 +493,14 @@ FACTUAL ACCURACY — NON-NEGOTIABLE:
 - If the input does not contain a specific fact, write around it using general, non-falsifiable framing: "experts have documented," "public records show," "studies have found" — never invent what those experts, records, or studies say.
 - Posts must persuade through framing, values, and momentum — not through invented facts.
 - Violating this rule damages the credibility of a real political campaign. Treat factual accuracy as an absolute constraint, not a preference.
-
+${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
 Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
-${personLine}
 Style: ${styleLabel}
 ${modifierLine}
+${perspLine}
 
 Generate compelling social media posts for: ${plats}
 
@@ -469,6 +511,63 @@ Platform guidance:
 - BlueSky: Thoughtful, community-focused, strict 300-char limit
 - Twitter/X: Punchy headline style, max 280 chars
 - TikTok: Trendy hook in first line, energetic language
+
+IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
+
+YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
+Only include these platform ids: ${platforms.join(", ")}
+Format: {"platform_id": "message text"}`;
+    }
+
+    // ── NATIONAL MODE ─────────────────────────────────────────────────────────
+    return `You are an expert political messaging strategist working for a legitimate progressive campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
+
+This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
+
+NATIONAL MESSAGING STYLE — APPLY TO ALL OUTPUT:
+
+VOICE — Write like a trusted neighbor explaining something important over a kitchen table, not a campaign press release. Short sentences. Plain words. Active voice. Present tense. "Families" not "constituents." "Your water bill" not "utility rates." First person only when it's real. Never sound like a committee wrote it.
+
+STRUCTURE — Use the five-beat framework:
+0. FREEDOM FIRST: Before the cost, lead with what democracy and good governance give people — freedom to live the life they choose, freedom to have a say, freedom from a system rigged against them. Freedom is the entry point that crosses all partisan lines. Then connect that to the specific cost someone is paying when that freedom is taken away.
+1. THE COST: Lead with a specific cost someone is paying right now — in dollars, services lost, or dignity. Make it concrete and human.
+2. THE RIGGING: Name the mechanism that caused it. Not the party — the system, the money, the deal. Who gave, who got, what it cost regular people.
+3. THE FIX: A specific reform, bill, ban, or change — not "we need change." Give the audience a door to walk through.
+4. THE ASK — CLOSE THE DEMOCRATIC LOOP: End with one specific, low-barrier action — and frame it as the mechanism that delivers freedom back to the people. Voting, showing up, calling, signing — these aren't just tasks, they are the verdict. "Here's what you can do" should always connect to "and here's what changes when you do."
+
+VILLAIN FRAMING — Name billionaires, corporate donors, and rigged systems. NOT political parties or named opponents by name. Say "politicians who take corporate money, then do their bidding" — not "Republicans." Let the audience make the connection. This keeps persuadable voters in the room.
+
+HOPE DISCIPLINE — Anger opens the door. Hope closes the deal. Every message must end somewhere: a reform, an action, a change that's possible. Rage without resolution loses people.
+
+SPECIFICITY RULE — Every abstract claim needs a concrete anchor: a price, a place, a person, a number, a named reform. "Corporate greed" alone is not enough. "Record profits while your grocery bill went up 23%" is. Every message should answer: What exactly happened? To whom? What did it cost? Who made it happen? What would change it?
+
+FORBIDDEN PHRASES — Never use: "We must," "Now is the time," "History will judge," "a lot of us feel," "most people I know," "out here," "systemic inequities," "corporate accountability mechanisms," "electoral integrity." Replace with specific, grounded alternatives.
+
+FACTUAL ACCURACY — NON-NEGOTIABLE:
+- NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date. If you do not have a verified figure from the content provided, do not include one.
+- NEVER fabricate or paraphrase quotes from real people. Only use quotes explicitly provided in the input.
+- NEVER name a specific person, organization, study, bill, court case, or law unless it was explicitly provided in the input content.
+- NEVER assert a specific factual claim you cannot verify from the input provided.
+- If the input does not contain a specific fact, write around it using general, non-falsifiable framing: "experts have documented," "public records show," "studies have found" — never invent what those experts, records, or studies say.
+- Posts must persuade through framing, values, and momentum — not through invented facts.
+- Violating this rule damages the credibility of a real political campaign. Treat factual accuracy as an absolute constraint, not a preference.
+${frameBlock}
+Issue/Content: ${formData.issue}
+Focal Point: ${formData.focalPoint || "Not specified"}
+Target Audience: ${audienceLabel}
+Voice/Persona: ${formData.voice || "Not specified"}
+Style: ${styleLabel}
+${modifierLine}
+${perspLine}
+
+Generate compelling social media posts for: ${plats}
+
+Platform guidance (from the National Messaging Style Guide):
+- Facebook: Richardson letter format — full story with history and context, 3–4 paragraphs, start with the cost a real person is paying, end with one specific action.
+- Instagram/Threads: Lead with the most visceral, concrete version of the cost. Make the first sentence hit. Keep it human and visual.
+- BlueSky: Thoughtful, community-oriented. Rewards depth and nuance. Strict 300-char limit.
+- Twitter/X: One devastating specific fact. Or one contrast. Or one direct question. Never vague. Max 280 chars.
+- TikTok: Open with the hook nobody expects a politician to say out loud. Authenticity and mild irreverence. Explain something in plain terms like a smart friend. The "wait, really?" moment.
 
 IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
@@ -502,6 +601,11 @@ function detectArrivalSource() {
     const styleObj = STYLES.find(s=>s.id===(formData.style||DEFAULT_STYLE));
     const styleLabel = styleObj ? styleObj.label : "Neutral";
     const modifierLine = formData.modifier ? `Tone modifier: ${formData.modifier}` : "";
+    const frameObj = NATIONAL_FRAMES.find(f => f.id === msgFrame);
+    const frameBlock = frameObj ? `\nMESSAGING FRAME — ${frameObj.label.toUpperCase()}:\n${frameObj.prompt}\n` : "";
+    const modeLabel = msgMode === "national" ? "progressive coalition (National Messaging Style)" : "Arizona Democratic campaign coalition";
+    const perspObj = SPEAKER_PERSPECTIVES.find(p => p.id === formData.perspective);
+    const perspLine = perspObj ? `Grammatical person: ${perspObj.label} — ${perspObj.desc}` : "";
 
     const instruction = regenOpt === "shorten"
       ? `SHORTEN this message. It is currently ${currentLen} characters. You MUST produce a version that is meaningfully shorter — at least 20% fewer characters. Keep the core message and call to action but cut filler, reduce examples, and tighten every sentence. Do not add new content.`
@@ -509,14 +613,14 @@ function detectArrivalSource() {
       ? `EXPAND this message with more detail, context, and persuasive depth. Keep the same tone and platform style. Do not change the core message.`
       : `REPHRASE this message. Keep the same length, meaning, and platform style but use different wording, sentence structure, and framing.`;
 
-    return `You are an expert political messaging strategist for a legitimate Arizona Democratic campaign coalition.
+    return `You are an expert political messaging strategist for a legitimate ${modeLabel}.
 
 FACTUAL ACCURACY — NON-NEGOTIABLE:
 - NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date.
 - NEVER fabricate quotes from real people or name specific studies, bills, or organizations not present in the original message.
 - NEVER add factual claims that were not in the original message. Only rewrite — do not embellish with invented facts.
 - Treat factual accuracy as an absolute constraint, not a preference.
-
+${frameBlock}
 Your task is to rewrite the following existing ${platform?.name} post.
 
 CURRENT MESSAGE (${currentLen} characters):
@@ -529,6 +633,7 @@ Context:
 - Target Audience: ${audienceLabel}
 - Style: ${styleLabel}
 ${modifierLine}
+${perspLine}
 - Original issue: ${formData.issue}
 
 IMPORTANT: Do NOT include hashtags. Write clean prose only.
@@ -589,7 +694,7 @@ Format: {"${platformId}": "rewritten message text"}`;
       // work from what's actually on screen, not a fresh generation
       const prompt = currentText
         ? buildRegenPrompt(platformId, currentText, regenOpt)
-        : buildPrompt([platformId]);
+        : buildPrompt([platformId], regenOpt);
       const r = await callAPI(prompt, maxTok);
       setMessages(p=>({...p,...r}));
     } catch(e) {
@@ -659,7 +764,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
   const startNewCampaign = () => {
     try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
-    setFormData({ issue:"", focalPoint:"", audience:"", voice:"", person:"", style:"", modifier:"", platforms:[] });
+    setFormData({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", perspective:"", platforms:[] });
     setFromResearch(false);
     setMessages({});
     setHashtags(null);
@@ -904,6 +1009,70 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
             <div style={{ display:"flex", flexDirection:"column", gap:22 }}>
 
+              {/* ── Messaging Mode + Frame ── */}
+              <section style={{ ...S.card, background: msgMode === "national" ? "#f0f7f5" : T.surface, border: `2px solid ${msgMode === "national" ? T.teal : T.border}` }}>
+                <fieldset style={{ border:"none", padding:0 }}>
+                  <legend style={S.label}>Messaging Mode</legend>
+                  <div style={{ display:"flex", gap:12, marginBottom: 16 }}>
+                    {[
+                      { id:"az", label:"🌵 AZ Coalition", desc:"Arizona-grounded messaging, local communities and context" },
+                      { id:"national", label:"🇺🇸 National Style", desc:"National Messaging Style Guide — four-beat structure, neighbor voice" },
+                    ].map(m => {
+                      const on = msgMode === m.id;
+                      return (
+                        <label key={m.id} style={{
+                          flex:1, display:"flex", flexDirection:"column", gap:4,
+                          padding:"14px 16px", borderRadius:10, cursor:"pointer",
+                          border: on ? `3px solid ${T.teal}` : `2px solid ${T.border}`,
+                          background: on ? "#e8f4f1" : T.surface,
+                          transition:"all 0.15s",
+                        }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                            <input type="radio" name="msgMode" value={m.id} checked={on}
+                              onChange={() => setMsgMode(m.id)}
+                              style={{ width:20, height:20, accentColor:T.teal, cursor:"pointer", flexShrink:0 }} />
+                            <span style={{ fontSize:17, fontWeight:900, color: on ? T.teal : T.text }}>{m.label}</span>
+                          </div>
+                          <span style={{ fontSize:13, color:T.textMute, paddingLeft:30, lineHeight:1.4 }}>{m.desc}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  {/* Layer 2 Frame Selector — available in both modes */}
+                  <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:16, marginTop:4 }}>
+                    <p style={{ ...S.label, marginBottom:8 }}>
+                      Messaging Frame{" "}
+                      <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional — Layer 2)</span>
+                    </p>
+                    <p style={{ ...S.hint, marginBottom:12 }}>Focus the entire message on one strategic theme. Leave blank for general messaging.</p>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                      {NATIONAL_FRAMES.map(f => {
+                        const on = msgFrame === f.id;
+                        return (
+                          <label key={f.id} style={{
+                            display:"flex", flexDirection:"column", gap:3,
+                            padding:"11px 14px", borderRadius:9, cursor:"pointer",
+                            border: on ? `3px solid ${T.charcoal}` : `2px solid ${T.border}`,
+                            background: on ? "#f5f3ff" : T.surface,
+                            transition:"all 0.15s",
+                          }}>
+                            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                              <input type="radio" name="msgFrame" value={f.id} checked={on}
+                                onChange={() => setMsgFrame(on ? "" : f.id)}
+                                onClick={() => { if(on) setMsgFrame(""); }}
+                                style={{ width:18, height:18, accentColor:T.charcoal, cursor:"pointer", flexShrink:0 }} />
+                              <span style={{ fontSize:15, fontWeight:900, color: on ? T.charcoal : T.text }}>{f.label}</span>
+                            </div>
+                            <span style={{ fontSize:12, color:T.textMute, paddingLeft:26, lineHeight:1.4 }}>{f.desc}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </fieldset>
+              </section>
+
               {/* Issue */}
               <section style={S.card}>
                 <label htmlFor="issue" style={S.label}>Issue / Content <span style={{color:T.red}} aria-label="required">*</span></label>
@@ -1001,28 +1170,28 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </section>
               </div>
 
-              {/* Person / Perspective */}
+              {/* Speaker Perspective */}
               <section style={S.card}>
                 <fieldset style={{ border:"none", padding:0 }}>
                   <legend style={S.label}>Speaker Perspective <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
-                  <p style={{ ...S.hint, marginBottom:10 }}>This changes whether posts sound like a statement, a direct conversation, or a news update</p>
-                  <div style={{ display:"flex", flexDirection:"column", gap:12, marginTop:4 }}>
-                    {PERSON_OPTIONS.map(o => {
-                      const on = formData.person===o.id;
+                  <div style={{ display:"flex", flexDirection:"column", gap:12, marginTop:8 }}>
+                    {SPEAKER_PERSPECTIVES.map(sp => {
+                      const on = formData.perspective === sp.id;
                       return (
-                        <label key={o.id} style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
-                          <input type="radio" name="person" value={o.id} checked={on}
-                            onChange={()=>upd("person", on ? "" : o.id)}
-                            onClick={()=>{ if(on) upd("person",""); }}
-                            style={{ width:24, height:24, accentColor:T.teal, cursor:"pointer", flexShrink:0 }} />
-                          <span style={{ fontSize:18, fontWeight: on ? 700 : 400, color:T.text }}>
-                            {o.label}
-                            <span style={{ fontWeight:400, fontSize:15, color:T.textMute, marginLeft:8 }}>{o.desc}</span>
+                        <label key={sp.id} style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
+                          <input type="radio" name="perspective" value={sp.id} checked={on}
+                            onChange={() => upd("perspective", on ? "" : sp.id)}
+                            onClick={() => { if(on) upd("perspective",""); }}
+                            style={{ width:22, height:22, accentColor:T.teal, cursor:"pointer", flexShrink:0 }} />
+                          <span style={{ fontSize:18, color:T.text }}>
+                            <span style={{ fontWeight: on ? 900 : 700 }}>{sp.label}</span>
+                            <span style={{ fontWeight:400, color:T.textMute, fontSize:15 }}> — {sp.desc}</span>
                           </span>
                         </label>
                       );
                     })}
                   </div>
+                  <p style={S.hint}>This changes whether posts sound like a statement, a direct conversation, or a news update</p>
                 </fieldset>
               </section>
 
