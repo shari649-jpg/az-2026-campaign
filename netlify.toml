@@ -36,3 +36,6 @@
 
 [functions."manage-user"]
   timeout = 15
+
+[functions."coaching-response"]
+  timeout = 26
