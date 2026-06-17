@@ -291,38 +291,6 @@ export default function MisinfoMonitor() {
     setDemNar(stats.demNar || {});
   }, []);
 
-  // ── Fetch data via Netlify function (server-side, no CORS issues) ─────────
-  const fetchData = useCallback(async () => {
-    setStatus("loading");
-    setErrorMsg("");
-    try {
-      const res = await fetch("/.netlify/functions/fetch-community-notes", {
-        signal: AbortSignal.timeout(28000),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || `Server error ${res.status}`);
-      }
-      if (!data.notes?.length) {
-        throw new Error(data.warning || "No political notes found in dataset.");
-      }
-
-      setNotes(data.notes);
-      applyStats(data.stats);
-      const fetched = data.fetchedAt
-        ? new Date(data.fetchedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
-        : "just now";
-      setLastFetch(`Live data · ${fetched}`);
-      setStatus("done");
-      setPage(0);
-    } catch (err) {
-      console.error(err);
-      setErrorMsg(err.message || "Failed to load Community Notes data.");
-      loadDemoData();
-    }
-  }, [applyStats]);
-
   // ── Demo / fallback data shown on first load before live fetch ───────────
   const loadDemoData = useCallback(() => {
     const demo = [
@@ -366,7 +334,7 @@ export default function MisinfoMonitor() {
     setTotalD(dCount);
     setRepNar(rNar);
     setDemNar(dNar);
-    setLastFetch("Demo data · click Load Live Data for real notes");
+    setLastFetch("Demo data · showing representative examples");
     setStatus("done");
     setPage(0);
   }, []);
@@ -428,7 +396,7 @@ export default function MisinfoMonitor() {
                 <span style={{
                   fontSize: 10, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase",
                   background: GOLD, color: CHARCOAL, borderRadius: 4, padding: "2px 8px",
-                }}>Misinformation Monitor</span>
+                }}>BS Monitor</span>
               </div>
               <h1 style={{ margin: 0, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", fontSize: 26, color: "#fff", fontWeight: 800, letterSpacing: "-0.01em" }}>
                 Community Notes Dashboard
@@ -443,20 +411,6 @@ export default function MisinfoMonitor() {
                   {status === "done" ? `Updated ${lastFetch}` : ""}
                 </span>
               )}
-              <button
-                onClick={fetchData}
-                disabled={status === "loading"}
-                style={{
-                  fontFamily: "inherit", fontWeight: 700, fontSize: 13,
-                  padding: "8px 18px", borderRadius: 7, cursor: status === "loading" ? "default" : "pointer",
-                  background: status === "loading" ? "rgba(255,255,255,0.1)" : GOLD,
-                  color: status === "loading" ? "rgba(255,255,255,0.5)" : CHARCOAL,
-                  border: "none", letterSpacing: "0.03em",
-                  transition: "all 0.2s",
-                }}
-              >
-                {status === "loading" ? "⏳ Loading live data…" : "↻ Load Live Data"}
-              </button>
             </div>
           </div>
         </div>
@@ -474,7 +428,7 @@ export default function MisinfoMonitor() {
             <span style={{ fontSize: 16 }}>⚠️</span>
             <div>
               <strong>Live data unavailable:</strong> {errorMsg}<br />
-              <span style={{ color: "#888" }}>Showing representative demo data. Click "Load Live Data" to retry.</span>
+              <span style={{ color: "#888" }}>Showing representative demo data.</span>
             </div>
           </div>
         )}
@@ -604,7 +558,7 @@ export default function MisinfoMonitor() {
           <strong style={{ color: TEAL }}>Data source:</strong> X (Twitter) Community Notes publishes its full notes dataset as open TSV files daily at{" "}
           <a href="https://communitynotes.x.com/guide/en/under-the-hood/download-data" target="_blank" rel="noreferrer" style={{ color: TEAL }}>
             communitynotes.x.com ↗
-          </a>. Data is fetched server-side via a Netlify function, parsed, and classified by political alignment using keyword matching against note summary text. Up to 10,000 notes are sampled per fetch. Classification is heuristic — intended for trend analysis, not individual attribution. Click "Load Live Data" to pull the latest dataset.
+          </a>. Data is fetched server-side via a Netlify function, parsed, and classified by political alignment using keyword matching against note summary text. Up to 10,000 notes are sampled per fetch. Classification is heuristic — intended for trend analysis, not individual attribution. The dashboard updates automatically with the latest cached dataset.
         </div>
       </div>
     </div>
