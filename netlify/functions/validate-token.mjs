@@ -63,8 +63,9 @@ export default async function (req) {
     // Just validating — return invite data so RegisterPage can pre-fill fields
     return new Response(JSON.stringify({
       valid: true,
-      email:    invite.email,
-      fullName: invite.fullName,
+      email:      invite.email,
+      fullName:   invite.fullName,
+      waitlistId: invite.waitlistId || null,
     }), { status: 200, headers: CORS_HEADERS });
 
   } catch (err) {
