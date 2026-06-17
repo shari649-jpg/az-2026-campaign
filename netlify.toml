@@ -3,7 +3,7 @@
   publish = "dist"
 
 [functions]
-  external_node_modules = ["googleapis", "@netlify/blobs", "@netlify/functions", "nodemailer"]
+  external_node_modules = ["googleapis", "@netlify/blobs", "@netlify/functions", "nodemailer", "firebase-admin"]
 
 [functions."query-candidates"]
   timeout = 26
@@ -33,6 +33,6 @@
 
 [functions."validate-token"]
   timeout = 10
-  
-  [functions."coaching-response"]
-  timeout = 26
+
+[functions."manage-user"]
+  timeout = 15
