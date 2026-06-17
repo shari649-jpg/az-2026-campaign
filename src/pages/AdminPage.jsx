@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Inflate } from "fflate";
 import { collection, getDocs, doc, updateDoc, query, orderBy } from "firebase/firestore";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 
@@ -21,9 +21,10 @@ const ROLE_COLORS  = {
 };
 
 const WAITLIST_STATUS_COLORS = {
-  pending:  { bg: "#FFF8DC", color: "#8a6800", border: GOLD },
-  invited:  { bg: "#E6FAF7", color: TEAL,      border: TURQUOISE },
-  rejected: { bg: "#fdf2f2", color: RED,        border: "#f5c6c6" },
+  pending:    { bg: "#FFF8DC", color: "#8a6800", border: GOLD },
+  invited:    { bg: "#E6FAF7", color: TEAL,      border: TURQUOISE },
+  registered: { bg: "#f0f0f0", color: "#888",    border: "#ccc" },
+  rejected:   { bg: "#fdf2f2", color: RED,        border: "#f5c6c6" },
 };
 
 export default function AdminPage() {
@@ -38,6 +39,12 @@ export default function AdminPage() {
   const [search, setSearch]         = useState("");
   const [saving, setSaving]         = useState(null);
   const [inviting, setInviting]     = useState(null); // waitlistId being invited
+  const [showRegistered, setShowRegistered] = useState(false); // hide completed registrations by default
+  const [editingUid, setEditingUid] = useState(null); // uid currently in edit mode
+  const [editForm, setEditForm]     = useState({ fullName: "", platform: "", handle: "" });
+  const [actionUid, setActionUid]   = useState(null); // uid currently mid disable/enable/delete call
+  const [actionError, setActionError] = useState(null); // { uid, message }
+  const [confirmDeleteUid, setConfirmDeleteUid] = useState(null); // uid pending delete confirmation
   const [cnFiles, setCnFiles]        = useState([]);
   const [cnParsing, setCnParsing]   = useState(false);
   const [cnPreview, setCnPreview]   = useState(null); // { count, totalR, totalD }
@@ -99,6 +106,65 @@ export default function AdminPage() {
     setSaving(null);
   };
 
+  // ── Edit (name + primary social) — pure Firestore, no server function needed ──
+  const startEdit = (u) => {
+    setEditingUid(u.id);
+    setEditForm({
+      fullName: u.fullName || "",
+      platform: u.socialAccounts?.[0]?.platform || u.primarySocial?.platform || "",
+      handle:   u.socialAccounts?.[0]?.handle   || u.primarySocial?.handle   || "",
+    });
+  };
+
+  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", platform: "", handle: "" }); };
+
+  const saveEdit = async (uid) => {
+    setSaving(uid);
+    try {
+      const primary = { platform: editForm.platform.trim(), handle: editForm.handle.trim() };
+      await updateDoc(doc(db, "users", uid), {
+        fullName: editForm.fullName.trim(),
+        primarySocial: primary,
+        socialAccounts: [primary],
+      });
+      setUsers(prev => prev.map(u => u.id === uid ? { ...u, fullName: editForm.fullName.trim(), primarySocial: primary, socialAccounts: [primary] } : u));
+      notify("Profile updated.");
+      cancelEdit();
+    } catch { notify("Failed to save changes.", "err"); }
+    setSaving(null);
+  };
+
+  // ── Disable / Enable / Delete — server-side, requires Firebase Admin SDK ──
+  const callManageUser = async (targetUid, action) => {
+    setActionUid(targetUid);
+    setActionError(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch("/.netlify/functions/manage-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, action, targetUid }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Action failed.");
+      }
+      if (action === "delete") {
+        setUsers(prev => prev.filter(u => u.id !== targetUid));
+        notify("User deleted.");
+      } else {
+        setUsers(prev => prev.map(u => u.id === targetUid ? { ...u, disabled: action === "disable" } : u));
+        notify(action === "disable" ? "User disabled — they can no longer sign in." : "User re-enabled.");
+      }
+    } catch (err) {
+      setActionError({ uid: targetUid, message: err.message || "Action failed. Please try again." });
+      notify(err.message || "Action failed.", "err");
+    } finally {
+      setActionUid(null);
+      setConfirmDeleteUid(null);
+    }
+  };
+
   const handleSendInvite = async (entry) => {
     setInviting(entry.id);
     try {
@@ -140,6 +206,7 @@ export default function AdminPage() {
   });
 
   const filteredWaitlist = waitlist.filter(w => {
+    if (!showRegistered && w.status === "registered") return false;
     const q = search.toLowerCase();
     return !q ||
       (w.fullName     || "").toLowerCase().includes(q) ||
@@ -155,6 +222,7 @@ export default function AdminPage() {
     members:        users.filter(u => u.role === "user" || !u.role).length,
     pending:        waitlist.filter(w => w.status === "pending").length,
     invited:        waitlist.filter(w => w.status === "invited").length,
+    registered:     waitlist.filter(w => w.status === "registered").length,
   };
 
   function formatDate(ts) {
@@ -541,7 +609,7 @@ export default function AdminPage() {
         <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: `2px solid #ddd`, paddingBottom: 0 }}>
           {[
             { id: "users",    label: `Registered Users (${counts.total})` },
-            { id: "waitlist", label: `Waitlist (${waitlist.length})${counts.pending > 0 ? ` · ${counts.pending} pending` : ""}` },
+            { id: "waitlist", label: `Waitlist (${waitlist.length - counts.registered})${counts.pending > 0 ? ` · ${counts.pending} pending` : ""}` },
           { id: "community-notes", label: "Community Notes Upload" },
           ].map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSearch(""); }}
@@ -577,54 +645,160 @@ export default function AdminPage() {
                 {filteredUsers.map(u => {
                   const rc   = ROLE_COLORS[u.role] || ROLE_COLORS.user;
                   const isMe = u.id === currentUser?.uid;
+                  const isEditing = editingUid === u.id;
+                  const isBusy = actionUid === u.id || saving === u.id;
+                  const isDisabled = !!u.disabled;
+                  const cardErr = actionError?.uid === u.id ? actionError.message : null;
                   return (
                     <div key={u.id} style={{
-                      background: BG, border: `1.5px solid ${isMe ? GOLD : "#ddd"}`,
-                      borderLeft: `5px solid ${isMe ? GOLD : rc.border}`,
+                      background: isDisabled ? "#fafafa" : BG,
+                      border: `1.5px solid ${isMe ? GOLD : "#ddd"}`,
+                      borderLeft: `5px solid ${isMe ? GOLD : isDisabled ? "#bbb" : rc.border}`,
                       borderRadius: 10, padding: "18px 22px",
-                      display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+                      display: "flex", alignItems: isEditing ? "flex-start" : "center", gap: 16, flexWrap: "wrap",
                       boxShadow: isMe ? `0 0 0 2px ${GOLD}33` : "none",
+                      opacity: isDisabled ? 0.7 : 1,
                     }}>
-                      <div style={{ width: 44, height: 44, borderRadius: "50%", background: TEAL, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, flexShrink: 0, border: `2px solid ${GOLD}` }}>
+                      <div style={{ width: 44, height: 44, borderRadius: "50%", background: isDisabled ? "#999" : TEAL, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, flexShrink: 0, border: `2px solid ${GOLD}` }}>
                         {(u.fullName || u.email || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase()}
                       </div>
                       <div style={{ flex: 1, minWidth: 200 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 17, fontWeight: 700, color: CHARCOAL }}>{u.fullName || "—"}</span>
-                          {isMe && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: GOLD, color: TEAL, padding: "2px 8px", borderRadius: 4 }}>You</span>}
+                        {isEditing ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 380 }}>
+                            <input
+                              type="text" value={editForm.fullName}
+                              onChange={e => setEditForm(f => ({ ...f, fullName: e.target.value }))}
+                              placeholder="Full name"
+                              style={{ padding: "8px 12px", fontSize: 15, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL }}
+                            />
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <input
+                                type="text" value={editForm.platform}
+                                onChange={e => setEditForm(f => ({ ...f, platform: e.target.value }))}
+                                placeholder="Platform"
+                                style={{ flex: "0 0 130px", padding: "8px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL }}
+                              />
+                              <input
+                                type="text" value={editForm.handle}
+                                onChange={e => setEditForm(f => ({ ...f, handle: e.target.value }))}
+                                placeholder="@handle"
+                                style={{ flex: 1, padding: "8px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL }}
+                              />
+                            </div>
+                            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                              <button onClick={() => saveEdit(u.id)} disabled={isBusy} style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: isBusy ? "not-allowed" : "pointer" }}>
+                                {isBusy ? "Saving…" : "Save"}
+                              </button>
+                              <button onClick={cancelEdit} disabled={isBusy} style={{ background: "none", color: "#888", border: "2px solid #ccc", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: isBusy ? "not-allowed" : "pointer" }}>
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 17, fontWeight: 700, color: CHARCOAL }}>{u.fullName || "—"}</span>
+                              {isMe && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: GOLD, color: TEAL, padding: "2px 8px", borderRadius: 4 }}>You</span>}
+                              {isDisabled && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "#eee", color: "#777", border: "1px solid #ccc", padding: "2px 8px", borderRadius: 4 }}>Disabled</span>}
+                              {!isMe && (
+                                <button onClick={() => startEdit(u)} title="Edit name / social"
+                                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#aaa", padding: 2 }}>
+                                  ✏️
+                                </button>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 13, color: "#888", marginTop: 2 }}>{u.email}</div>
+                            {/* Show all social accounts */}
+                            {(u.socialAccounts?.length > 0 || u.primarySocial?.handle) && (
+                              <div style={{ fontSize: 12, color: TEAL, marginTop: 4, fontWeight: 600 }}>
+                                {(u.socialAccounts || [u.primarySocial, u.secondarySocial].filter(Boolean))
+                                  .filter(s => s?.handle)
+                                  .map((s, i) => <span key={i}>{i > 0 ? " · " : ""}{s.platform}: {s.handle}</span>)
+                                }
+                              </div>
+                            )}
+                            {u.createdAt && (
+                              <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
+                                Joined {formatDate(u.createdAt)}
+                                {u.googleSignIn && " · Google sign-in"}
+                              </div>
+                            )}
+                            {cardErr && (
+                              <div style={{ fontSize: 12, color: RED, marginTop: 6 }}>{cardErr}</div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      {!isEditing && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, flexWrap: "wrap" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#888" }}>Role</div>
+                            <select
+                              value={u.role || "user"}
+                              onChange={e => handleRoleChange(u.id, e.target.value)}
+                              disabled={saving === u.id || isMe}
+                              style={{ padding: "8px 12px", fontSize: 14, fontWeight: 700, fontFamily: "inherit", border: `2px solid ${rc.border}`, borderRadius: 8, background: rc.bg, color: rc.color, cursor: (saving === u.id || isMe) ? "not-allowed" : "pointer", minWidth: 150, appearance: "auto" }}
+                            >
+                              {ROLE_OPTIONS.map(r => (
+                                <option key={r} value={r}>{r === "administrator" ? "Administrator" : r === "manager" ? "Manager" : "Member"}</option>
+                              ))}
+                            </select>
+                            {saving === u.id && <span style={{ fontSize: 12, color: "#888" }}>Saving…</span>}
+                          </div>
 
+                          {!isMe && (
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <button
+                                onClick={() => callManageUser(u.id, isDisabled ? "enable" : "disable")}
+                                disabled={isBusy}
+                                title={isDisabled ? "Re-enable this account" : "Block this account from signing in"}
+                                style={{
+                                  background: "none", border: `2px solid ${isDisabled ? TEAL : TERRACOTTA}`,
+                                  color: isDisabled ? TEAL : TERRACOTTA, borderRadius: 8, padding: "8px 14px",
+                                  fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+                                  cursor: isBusy ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                                  opacity: isBusy ? 0.6 : 1,
+                                }}
+                              >
+                                {actionUid === u.id ? "…" : isDisabled ? "Enable" : "Disable"}
+                              </button>
+
+                              {confirmDeleteUid === u.id ? (
+                                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                  <span style={{ fontSize: 12, color: RED, fontWeight: 700 }}>Delete permanently?</span>
+                                  <button
+                                    onClick={() => callManageUser(u.id, "delete")}
+                                    disabled={isBusy}
+                                    style={{ background: RED, color: "#fff", border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: isBusy ? "not-allowed" : "pointer" }}
+                                  >
+                                    {isBusy ? "Deleting…" : "Yes, delete"}
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmDeleteUid(null)}
+                                    disabled={isBusy}
+                                    style={{ background: "none", border: "2px solid #ccc", color: "#888", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: isBusy ? "not-allowed" : "pointer" }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setConfirmDeleteUid(u.id)}
+                                  disabled={isBusy}
+                                  title="Permanently delete this account"
+                                  style={{
+                                    background: "none", border: `2px solid #ddd`, color: "#aaa",
+                                    borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700,
+                                    fontFamily: "inherit", cursor: isBusy ? "not-allowed" : "pointer",
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <div style={{ fontSize: 13, color: "#888", marginTop: 2 }}>{u.email}</div>
-                        {/* Show all social accounts */}
-                        {(u.socialAccounts?.length > 0 || u.primarySocial?.handle) && (
-                          <div style={{ fontSize: 12, color: TEAL, marginTop: 4, fontWeight: 600 }}>
-                            {(u.socialAccounts || [u.primarySocial, u.secondarySocial].filter(Boolean))
-                              .filter(s => s?.handle)
-                              .map((s, i) => <span key={i}>{i > 0 ? " · " : ""}{s.platform}: {s.handle}</span>)
-                            }
-                          </div>
-                        )}
-                        {u.createdAt && (
-                          <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
-                            Joined {formatDate(u.createdAt)}
-                            {u.googleSignIn && " · Google sign-in"}
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#888" }}>Role</div>
-                        <select
-                          value={u.role || "user"}
-                          onChange={e => handleRoleChange(u.id, e.target.value)}
-                          disabled={saving === u.id || isMe}
-                          style={{ padding: "8px 12px", fontSize: 14, fontWeight: 700, fontFamily: "inherit", border: `2px solid ${rc.border}`, borderRadius: 8, background: rc.bg, color: rc.color, cursor: (saving === u.id || isMe) ? "not-allowed" : "pointer", minWidth: 150, appearance: "auto" }}
-                        >
-                          {ROLE_OPTIONS.map(r => (
-                            <option key={r} value={r}>{r === "administrator" ? "Administrator" : r === "manager" ? "Manager" : "Member"}</option>
-                          ))}
-                        </select>
-                        {saving === u.id && <span style={{ fontSize: 12, color: "#888" }}>Saving…</span>}
-                      </div>
+                      )}
                     </div>
                   );
                 })}
@@ -733,7 +907,7 @@ export default function AdminPage() {
                 <div style={{ background: "#f0faf5", border: `1.5px solid #b2d9cc`, borderRadius: 10, padding: "20px 24px", textAlign: "center" }}>
                   <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: TEAL, marginBottom: 6 }}>Dashboard updated!</div>
-                  <div style={{ fontSize: 13, color: "#666" }}>{cnPreview?.count.toLocaleString()} notes are now live on the Misinfo Monitor.</div>
+                  <div style={{ fontSize: 13, color: "#666" }}>{cnPreview?.count.toLocaleString()} notes are now live on the BS Monitor.</div>
                   <button onClick={() => { setCnFiles([]); setCnPreview(null); setCnParsed(null); setCnDone(false); }}
                     style={{ marginTop: 16, background: "none", border: `2px solid ${TEAL}`, color: TEAL, borderRadius: 8, padding: "8px 20px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
                     Upload another file
@@ -748,7 +922,7 @@ export default function AdminPage() {
                   <li>Go to <a href="https://x.com/i/communitynotes/download-data" target="_blank" rel="noreferrer" style={{ color: TEAL }}>x.com/i/communitynotes/download-data</a> (must be logged in to X)</li>
                   <li>Click the download icon for <strong>File no. 1 of 3</strong> under Notes data (contains ~99% of all notes)</li>
                   <li>Select it in the file picker above (or select all 3 for complete coverage)</li>
-                  <li>Done — the Misinfo Monitor dashboard updates instantly</li>
+                  <li>Done — the BS Monitor dashboard updates instantly</li>
                 </ol>
               </div>
             </div>
@@ -758,12 +932,30 @@ export default function AdminPage() {
         {/* ── WAITLIST TAB ── */}
         {activeTab === "waitlist" && (
           <>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: CHARCOAL, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={showRegistered}
+                  onChange={e => setShowRegistered(e.target.checked)}
+                  style={{ width: 16, height: 16, cursor: "pointer" }}
+                />
+                Show completed registrations ({counts.registered})
+              </label>
+            </div>
+
             {loadingWaitlist && <p style={{ textAlign: "center", padding: "60px 0", color: CHARCOAL }}>Loading waitlist…</p>}
             {!loadingWaitlist && filteredWaitlist.length === 0 && (
               <div style={{ textAlign: "center", padding: "60px 0" }}>
                 <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
-                <p style={{ color: "#888", fontSize: 17 }}>No waitlist entries yet.</p>
-                <p style={{ color: "#aaa", fontSize: 14, marginTop: 8 }}>Entries appear when someone submits the public waitlist form at <strong>/waitlist</strong>.</p>
+                <p style={{ color: "#888", fontSize: 17 }}>
+                  {!showRegistered && counts.registered > 0 ? "No outstanding waitlist entries." : "No waitlist entries yet."}
+                </p>
+                <p style={{ color: "#aaa", fontSize: 14, marginTop: 8 }}>
+                  {!showRegistered && counts.registered > 0
+                    ? "Everyone who applied has either registered or is still pending review."
+                    : <>Entries appear when someone submits the public waitlist form at <strong>/waitlist</strong>.</>}
+                </p>
               </div>
             )}
             {!loadingWaitlist && filteredWaitlist.length > 0 && (
@@ -790,7 +982,7 @@ export default function AdminPage() {
                         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
                           <span style={{ fontSize: 17, fontWeight: 700, color: CHARCOAL }}>{entry.fullName || "—"}</span>
                           <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", background: sc.bg, color: sc.color, border: `1px solid ${sc.border}`, padding: "2px 8px", borderRadius: 4 }}>
-                            {entry.status === "pending" ? "Pending" : entry.status === "invited" ? "Invited" : "Rejected"}
+                            {entry.status === "pending" ? "Pending" : entry.status === "invited" ? "Invited" : entry.status === "registered" ? "Registered" : "Rejected"}
                           </span>
                         </div>
                         <div style={{ fontSize: 13, color: "#888", marginBottom: 4 }}>{entry.email}</div>
@@ -810,6 +1002,7 @@ export default function AdminPage() {
                         <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
                           Submitted {formatDate(entry.submittedAt)}
                           {entry.invitedAt && ` · Invited ${formatDate(entry.invitedAt)}`}
+                          {entry.registeredAt && ` · Registered ${formatDate(entry.registeredAt)}`}
                         </div>
                       </div>
 
@@ -831,7 +1024,7 @@ export default function AdminPage() {
                           </button>
                         ) : (
                           <span style={{ fontSize: 13, color: "#aaa", fontStyle: "italic" }}>
-                            {entry.status === "invited" ? "Invite sent" : "—"}
+                            {entry.status === "invited" ? "Invite sent" : entry.status === "registered" ? "✓ Account created" : "—"}
                           </span>
                         )}
                       </div>
