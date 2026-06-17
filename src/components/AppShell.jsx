@@ -1,7 +1,6 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import ConversationCoach from "../components/ConversationCoach";
 
 const NAV_ITEMS = [
   { path: "/",               short: "Home" },
@@ -16,8 +15,52 @@ const MORE_ITEMS = [
   { path: "/library",           short: "Library" },
   { path: "/resources",         short: "Resources" },
   { path: "/quick-start",       short: "Quick Start" },
-  { path: "/misinfo-monitor",   short: "Misinfo Monitor" },
+  { path: "/misinfo-monitor",   short: "BS Monitor" },
 ];
+
+// Floating scroll-to-top / scroll-to-bottom arrows.
+// Appears once the user has scrolled down; hidden at the very top of the page.
+function ScrollButtons() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setVisible(window.scrollY > 240);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  if (!visible) return null;
+
+  const btnStyle = {
+    width: 44, height: 44, borderRadius: "50%",
+    background: "var(--teal)", color: "#fff",
+    border: "2px solid var(--gold)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: 18, fontWeight: 900, cursor: "pointer",
+    boxShadow: "0 4px 14px rgba(0,0,0,0.28)",
+    fontFamily: "inherit",
+  };
+
+  return (
+    <div style={{
+      position: "fixed", right: 20, bottom: 28, zIndex: 200,
+      display: "flex", flexDirection: "column", gap: 10,
+    }}>
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        aria-label="Scroll to top"
+        title="Scroll to top"
+        style={btnStyle}
+      >↑</button>
+      <button
+        onClick={() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" })}
+        aria-label="Scroll to bottom"
+        title="Scroll to bottom"
+        style={btnStyle}
+      >↓</button>
+    </div>
+  );
+}
 
 export default function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -448,6 +491,8 @@ export default function AppShell() {
         <Outlet />
       </main>
 
+      <ScrollButtons />
+
       {/* ── Footer ── */}
       <footer style={{
         borderTop: "3px solid var(--gold)",
@@ -541,7 +586,7 @@ export default function AppShell() {
   { label: "Rapid Response",      path: "/rapid-response" },
   { label: "Media Library",       path: "/media" },
   { label: "Shared Library",      path: "/library" },
-  { label: "Misinfo Monitor",     path: "/misinfo-monitor" },
+  { label: "BS Monitor",     path: "/misinfo-monitor" },
 ]} />
             <FooterLinkGroup title="Resources" links={[
               { label: "All Resources",       path: "/resources" },
@@ -572,7 +617,6 @@ export default function AppShell() {
           </span>
         </div>
       </footer>
-  <ConversationCoach />
     </div>
   );
 }
