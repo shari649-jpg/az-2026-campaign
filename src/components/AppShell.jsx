@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import ConversationCoach from "./ConversationCoach";
 
 const NAV_ITEMS = [
   { path: "/",               short: "Home" },
@@ -43,7 +44,7 @@ function ScrollButtons() {
 
   return (
     <div style={{
-      position: "fixed", right: 20, bottom: 28, zIndex: 200,
+      position: "fixed", left: 20, bottom: 28, zIndex: 90,
       display: "flex", flexDirection: "column", gap: 10,
     }}>
       <button
@@ -492,6 +493,7 @@ export default function AppShell() {
       </main>
 
       <ScrollButtons />
+      <ConversationCoach />
 
       {/* ── Footer ── */}
       <footer style={{
