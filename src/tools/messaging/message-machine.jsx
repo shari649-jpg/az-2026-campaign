@@ -368,7 +368,7 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
 /* ── Main App ── */
 export default function App() {
   const [view, setView]             = useState("form");
-  const [msgMode, setMsgMode]       = useState("az");   // "az" | "national"
+  const [msgMode, setMsgMode]       = useState("");   // "" (neutral, default) | "az" | "national"
   const [msgFrame, setMsgFrame]     = useState("");      // NATIONAL_FRAMES id or ""
   const [formData, setFormData]     = useState({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", perspective:"", platforms:[] });
   const [fromResearch, setFromResearch] = useState(false);
@@ -476,6 +476,46 @@ export default function App() {
       ? `\nMESSAGING FRAME — ${frameObj.label.toUpperCase()}:\n${frameObj.prompt}\n`
       : "";
 
+    // ── NEUTRAL MODE (default — no mode selected) ──────────────────────────────
+    if (msgMode !== "az" && msgMode !== "national") {
+      return `You are an expert political messaging strategist working for a legitimate political campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
+
+This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
+
+FACTUAL ACCURACY — NON-NEGOTIABLE:
+- NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date. If you do not have a verified figure from the content provided, do not include one.
+- NEVER fabricate or paraphrase quotes from real people. Only use quotes explicitly provided in the input.
+- NEVER name a specific person, organization, study, bill, court case, or law unless it was explicitly provided in the input content.
+- NEVER assert a specific factual claim you cannot verify from the input provided.
+- If the input does not contain a specific fact, write around it using general, non-falsifiable framing: "experts have documented," "public records show," "studies have found" — never invent what those experts, records, or studies say.
+- Posts must persuade through framing, values, and momentum — not through invented facts.
+- Violating this rule damages the credibility of a real political campaign. Treat factual accuracy as an absolute constraint, not a preference.
+${frameBlock}
+Issue/Content: ${formData.issue}
+Focal Point: ${formData.focalPoint || "Not specified"}
+Target Audience: ${audienceLabel}
+Voice/Persona: ${formData.voice || "Not specified"}
+Style: ${styleLabel}
+${modifierLine}
+${perspLine}
+
+Generate compelling social media posts for: ${plats}
+
+Platform guidance:
+- Facebook: Detailed storytelling, clear call to action, 2–5 paragraphs
+- Instagram: Visual-focused language, emotional hook at start
+- Threads: Conversational, 2–4 sentences, engaging or thought-provoking
+- BlueSky: Thoughtful, community-focused, strict 300-char limit
+- Twitter/X: Punchy headline style, max 280 chars
+- TikTok: Trendy hook in first line, energetic language
+
+IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
+
+YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
+Only include these platform ids: ${platforms.join(", ")}
+Format: {"platform_id": "message text"}`;
+    }
+
     // ── AZ MODE ──────────────────────────────────────────────────────────────
     if (msgMode === "az") {
       return `You are an expert political messaging strategist working for a legitimate, registered Arizona Democratic campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
@@ -520,6 +560,7 @@ Format: {"platform_id": "message text"}`;
     }
 
     // ── NATIONAL MODE ─────────────────────────────────────────────────────────
+    // (only remaining possibility at this point is msgMode === "national")
     return `You are an expert political messaging strategist working for a legitimate progressive campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
 
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
@@ -603,7 +644,9 @@ function detectArrivalSource() {
     const modifierLine = formData.modifier ? `Tone modifier: ${formData.modifier}` : "";
     const frameObj = NATIONAL_FRAMES.find(f => f.id === msgFrame);
     const frameBlock = frameObj ? `\nMESSAGING FRAME — ${frameObj.label.toUpperCase()}:\n${frameObj.prompt}\n` : "";
-    const modeLabel = msgMode === "national" ? "progressive coalition (National Messaging Style)" : "Arizona Democratic campaign coalition";
+    const modeLabel = msgMode === "national" ? "progressive coalition (National Messaging Style)"
+                     : msgMode === "az"       ? "Arizona Democratic campaign coalition"
+                     : "political campaign coalition";
     const perspObj = SPEAKER_PERSPECTIVES.find(p => p.id === formData.perspective);
     const perspLine = perspObj ? `Grammatical person: ${perspObj.label} — ${perspObj.desc}` : "";
 
@@ -765,6 +808,8 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
   const startNewCampaign = () => {
     try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
     setFormData({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", perspective:"", platforms:[] });
+    setMsgMode("");
+    setMsgFrame("");
     setFromResearch(false);
     setMessages({});
     setHashtags(null);
@@ -1012,8 +1057,9 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               {/* ── Messaging Mode + Frame ── */}
               <section style={{ ...S.card, background: msgMode === "national" ? "#f0f7f5" : T.surface, border: `2px solid ${msgMode === "national" ? T.teal : T.border}` }}>
                 <fieldset style={{ border:"none", padding:0 }}>
-                  <legend style={S.label}>Messaging Mode</legend>
-                  <div style={{ display:"flex", gap:12, marginBottom: 16 }}>
+                  <legend style={S.label}>Messaging Mode <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
+                  <p style={{ ...S.hint, marginBottom:12 }}>Default: Neutral — no regional or national style guide applied</p>
+                  <div style={{ display:"flex", gap:12, marginBottom: 16, flexWrap:"wrap" }}>
                     {[
                       { id:"az", label:"🌵 AZ Coalition", desc:"Arizona-grounded messaging, local communities and context" },
                       { id:"national", label:"🇺🇸 National Style", desc:"National Messaging Style Guide — four-beat structure, neighbor voice" },
@@ -1021,7 +1067,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                       const on = msgMode === m.id;
                       return (
                         <label key={m.id} style={{
-                          flex:1, display:"flex", flexDirection:"column", gap:4,
+                          flex:"1 1 200px", display:"flex", flexDirection:"column", gap:4,
                           padding:"14px 16px", borderRadius:10, cursor:"pointer",
                           border: on ? `3px solid ${T.teal}` : `2px solid ${T.border}`,
                           background: on ? "#e8f4f1" : T.surface,
@@ -1029,7 +1075,8 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                         }}>
                           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                             <input type="radio" name="msgMode" value={m.id} checked={on}
-                              onChange={() => setMsgMode(m.id)}
+                              onChange={() => setMsgMode(on ? "" : m.id)}
+                              onClick={() => { if(on) setMsgMode(""); }}
                               style={{ width:20, height:20, accentColor:T.teal, cursor:"pointer", flexShrink:0 }} />
                             <span style={{ fontSize:17, fontWeight:900, color: on ? T.teal : T.text }}>{m.label}</span>
                           </div>
