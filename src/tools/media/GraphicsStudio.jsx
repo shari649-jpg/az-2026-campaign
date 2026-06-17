@@ -62,7 +62,7 @@ function parseHighlights(text) {
 }
 
 // Draw a single card on a canvas context
-function drawCard(ctx, { text, label, template, size = CANVAS_SIZE }) {
+function drawCard(ctx, { text, label, template, size = CANVAS_SIZE, slideIndex = null, slideTotal = null }) {
   const T = template.canvas;
   const pad = Math.round(size * 0.074);
   const fontSize = Math.round(size * 0.068);
@@ -156,10 +156,19 @@ function drawCard(ctx, { text, label, template, size = CANVAS_SIZE }) {
   ctx.textAlign = "right";
   ctx.fillText("@ArizonaCoalition", size - pad, size - pad);
   ctx.textAlign = "left";
+
+  // Slide number — bottom left (carousel mode only)
+  if (slideIndex != null && slideTotal != null) {
+    ctx.font = `900 ${handleFontSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.textBaseline = "bottom";
+    ctx.textAlign = "left";
+    ctx.fillText(`${slideIndex}/${slideTotal}`, pad, size - pad);
+  }
 }
 
 // Single canvas preview card
-function CanvasPreview({ text, label, template, size = 280 }) {
+function CanvasPreview({ text, label, template, size = 280, slideIndex = null, slideTotal = null }) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -168,9 +177,9 @@ function CanvasPreview({ text, label, template, size = 280 }) {
     const ctx = canvas.getContext("2d");
     // Load font then draw
     document.fonts.ready.then(() => {
-      drawCard(ctx, { text, label, template, size: canvas.width });
+      drawCard(ctx, { text, label, template, size: canvas.width, slideIndex, slideTotal });
     });
-  }, [text, label, template]);
+  }, [text, label, template, slideIndex, slideTotal]);
 
   return (
     <canvas
@@ -200,14 +209,14 @@ export default function GraphicsStudio() {
   };
 
   // Download a single canvas as PNG
-  const downloadCanvas = useCallback((text, label, tmpl, filename) => {
+  const downloadCanvas = useCallback((text, label, tmpl, filename, slideIndex = null, slideTotal = null) => {
     return new Promise(resolve => {
       const canvas = document.createElement("canvas");
       canvas.width = CANVAS_SIZE;
       canvas.height = CANVAS_SIZE;
       const ctx = canvas.getContext("2d");
       document.fonts.ready.then(() => {
-        drawCard(ctx, { text, label, template: tmpl, size: CANVAS_SIZE });
+        drawCard(ctx, { text, label, template: tmpl, size: CANVAS_SIZE, slideIndex, slideTotal });
         canvas.toBlob(blob => {
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
@@ -231,14 +240,14 @@ export default function GraphicsStudio() {
   };
 
   const downloadCarousel = async () => {
-    const filled = slides.filter(s => s.trim());
-    if (filled.length === 0) return;
+    const filledIndices = slides.map((s, i) => s.trim() ? i : null).filter(i => i !== null);
+    if (filledIndices.length === 0) return;
     setDownloading(true);
-    for (let i = 0; i < slides.length; i++) {
-      if (slides[i].trim()) {
-        await downloadCanvas(slides[i], activeLabel, template, `az-coalition-slide-${i + 1}.png`);
-        await new Promise(r => setTimeout(r, 200)); // small delay between downloads
-      }
+    const total = filledIndices.length;
+    for (let n = 0; n < filledIndices.length; n++) {
+      const i = filledIndices[n];
+      await downloadCanvas(slides[i], activeLabel, template, `az-coalition-slide-${n + 1}.png`, n + 1, total);
+      await new Promise(r => setTimeout(r, 200)); // small delay between downloads
     }
     setDownloading(false);
     setDownloaded("carousel");
@@ -449,19 +458,28 @@ export default function GraphicsStudio() {
             />
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {slides.map((s, i) => (
-                <div key={i}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: B.textMute, marginBottom: 6, letterSpacing: "0.05em" }}>
-                    SLIDE {i + 1}
-                  </p>
-                  <CanvasPreview
-                    text={s || `Slide ${i + 1}`}
-                    label={activeLabel}
-                    template={template}
-                    size={170}
-                  />
-                </div>
-              ))}
+              {(() => {
+                const filledIndices = slides.map((s, i) => s.trim() ? i : null).filter(i => i !== null);
+                const total = filledIndices.length;
+                return slides.map((s, i) => {
+                  const numberInSet = filledIndices.indexOf(i) + 1; // 0 if not filled
+                  return (
+                    <div key={i}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: B.textMute, marginBottom: 6, letterSpacing: "0.05em" }}>
+                        SLIDE {i + 1}
+                      </p>
+                      <CanvasPreview
+                        text={s || `Slide ${i + 1}`}
+                        label={activeLabel}
+                        template={template}
+                        size={170}
+                        slideIndex={numberInSet > 0 ? numberInSet : i + 1}
+                        slideTotal={total > 0 ? total : slides.length}
+                      />
+                    </div>
+                  );
+                });
+              })()}
             </div>
           )}
           <p style={{ fontSize: 12, color: B.textMute, marginTop: 12 }}>
