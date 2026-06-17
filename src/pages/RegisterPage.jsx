@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { auth, db } from "../firebase";
 
@@ -127,6 +127,17 @@ export default function RegisterPage() {
           body: JSON.stringify({ token, action: "consume" }),
         });
       } catch {}
+
+      // Mark the originating waitlist entry as registered so it no longer
+      // shows as outstanding/unresolved in the Admin panel's Waitlist tab.
+      if (inviteData?.waitlistId) {
+        try {
+          await updateDoc(doc(db, "waitlist", inviteData.waitlistId), {
+            status: "registered",
+            registeredAt: serverTimestamp(),
+          });
+        } catch {}
+      }
 
       // Send welcome email (non-fatal if it fails)
       try {
