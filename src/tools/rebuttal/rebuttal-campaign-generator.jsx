@@ -390,7 +390,7 @@ export default function RebuttalGenerator() {
   useEffect(() => {
     loadLibrary();
     try {
-      // Check for Misinfo Monitor push first
+      // Check for BS Monitor push first
       const misinfoRaw = localStorage.getItem("rebuttal_push_results");
       if (misinfoRaw) {
         const entry = JSON.parse(misinfoRaw);
