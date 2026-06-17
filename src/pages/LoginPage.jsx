@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { signInWithEmailAndPassword, sendPasswordResetEmail, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { signInWithEmailAndPassword, sendPasswordResetEmail, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, limit, getDocs, updateDoc } from "firebase/firestore";
 import { useNavigate, Link } from "react-router-dom";
 import { auth, db } from "../firebase";
 
@@ -38,19 +38,52 @@ export default function LoginPage() {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
-      // Create Firestore doc if first time
-      const snap = await getDoc(doc(db, "users", user.uid));
-      if (!snap.exists()) {
-        await setDoc(doc(db, "users", user.uid), {
-          uid: user.uid,
-          fullName: user.displayName || "",
-          email: user.email,
-          role: "user",
-          primarySocial: { platform: "", handle: "" },
-          createdAt: serverTimestamp(),
-          googleSignIn: true,
-        });
+
+      // Already has an approved account — let them through.
+      const existingSnap = await getDoc(doc(db, "users", user.uid));
+      if (existingSnap.exists()) {
+        navigate("/");
+        return;
       }
+
+      // First-time Google sign-in: only allow if their email matches an
+      // approved (invited) waitlist entry. This prevents anyone with a
+      // Google account from skipping the waitlist entirely.
+      const emailLower = (user.email || "").toLowerCase().trim();
+      const waitlistQ = query(
+        collection(db, "waitlist"),
+        where("email", "==", emailLower),
+        where("status", "==", "invited"),
+        limit(1)
+      );
+      const waitlistSnap = await getDocs(waitlistQ);
+
+      if (waitlistSnap.empty) {
+        // Not an approved member — sign them back out and send to waitlist.
+        await signOut(auth);
+        setError("This Google account hasn't been approved yet. Please request access below — our team will review your application.");
+        setGoogleLoading(false);
+        return;
+      }
+
+      const waitlistDoc = waitlistSnap.docs[0];
+
+      // Create the Firestore user doc now that approval is confirmed.
+      await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
+        fullName: user.displayName || waitlistDoc.data().fullName || "",
+        email: user.email,
+        role: "user",
+        primarySocial: { platform: "", handle: "" },
+        createdAt: serverTimestamp(),
+        googleSignIn: true,
+      });
+
+      // Mark the waitlist entry as registered so it isn't reused.
+      try {
+        await updateDoc(doc(db, "waitlist", waitlistDoc.id), { status: "registered", registeredAt: new Date() });
+      } catch {}
+
       navigate("/");
     } catch (err) {
       if (err.code !== "auth/popup-closed-by-user") {
