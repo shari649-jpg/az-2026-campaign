@@ -154,11 +154,11 @@ export default function LibraryPage() {
 
   // Helper: display who saved an item
   const savedByLabel = (item) => {
-    const name = item.savedBy?.displayName || item.savedBy?.name || item.savedByName;
+    const name = item.savedBy?.displayName || item.savedBy?.name || item.savedByName || item.savedBy?.email;
     const uid  = item.savedBy?.uid || item.savedByUid;
     const isMe = uid === user?.uid;
     if (name) return isMe ? "Saved by you" : `Saved by ${name}`;
-    return null;
+    return "Saved by unknown user";
   };
 
   return (
@@ -249,7 +249,11 @@ export default function LibraryPage() {
                         ) : null;
                       })()}
                       {c.date && <p style={{ fontSize: 13, color: "#888" }}>Saved {c.date}</p>}
-                      {byLabel && <p style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{byLabel}</p>}
+                      {byLabel && (
+                        <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, color: TEAL, background: "#eaf6f2", border: `1px solid ${TEAL}`, borderRadius: 12, padding: "3px 10px", marginTop: 6 }}>
+                          👤 {byLabel}
+                        </span>
+                      )}
                       {c.formData?.audience && (
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
                           {c.formData.audience && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{c.formData.audience}</span>}
@@ -278,8 +282,12 @@ export default function LibraryPage() {
         {showArticles && filteredArticles.length > 0 && (
           <div style={{ marginBottom: 40 }}>
             {filter === "all" && (
-              <h2 style={{ fontSize: 18, fontWeight: 700, color: TEAL, marginBottom: 16, paddingBottom: 8, borderBottom: `2px solid ${GOLD}`, display: "inline-block" }}>
-                📡 Rapid Response Articles
+              <h2
+                onClick={() => navigate("/rapid-response")}
+                title="Go to Rapid Response"
+                style={{ fontSize: 18, fontWeight: 700, color: TEAL, marginBottom: 16, paddingBottom: 8, borderBottom: `2px solid ${GOLD}`, display: "inline-block", cursor: "pointer" }}
+              >
+                📡 Rapid Response Articles →
               </h2>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -309,7 +317,11 @@ export default function LibraryPage() {
                       {a.linkedCampaigns?.length > 0 && (
                         <p style={{ fontSize: 12, color: TEAL, fontWeight: 700, marginTop: 8 }}>🔗 {a.linkedCampaigns.length} campaign{a.linkedCampaigns.length !== 1 ? "s" : ""} created from this article</p>
                       )}
-                      {byLabel && <p style={{ fontSize: 12, color: "#888", marginTop: 6 }}>{byLabel}</p>}
+                      {byLabel && (
+                        <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, color: TEAL, background: "#eaf6f2", border: `1px solid ${TEAL}`, borderRadius: 12, padding: "3px 10px", marginTop: 8 }}>
+                          👤 {byLabel}
+                        </span>
+                      )}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
                       <button onClick={() => loadArticleInRR(a)} style={btnStyle(TEAL, "#fff")}>Push to Message Machine →</button>
@@ -342,12 +354,6 @@ export default function LibraryPage() {
           </div>
         )}
 
-        {totalShown > 5 && (
-          <button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-            style={{ display: "block", margin: "32px auto 0", padding: "12px 28px", fontSize: 16, fontWeight: 700, background: TEAL, color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
-            ↑ Return to Top
-          </button>
-        )}
       </div>
     </div>
   );
