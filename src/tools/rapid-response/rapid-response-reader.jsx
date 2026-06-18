@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { saveArticle, loadArticles, deleteArticle } from "../../lib/articleLibrary";
+import { auth } from "../../firebase";
 
 // ── Brand Colors ─────────────────────────────────────────────────────────────
 const B = {
@@ -587,11 +588,21 @@ export default function RapidResponseReader() {
     setLoadingMsg("Fetching article...");
 
     try {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch("/.netlify/functions/rapid-response", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({ action: "fetch_and_analyze", url: targetUrl }),
       });
+
+      if (res.status === 401 || res.status === 403) {
+        setLoading(false);
+        setError("auth");
+        return;
+      }
 
       if (res.status === 422) {
         setLoading(false);
@@ -616,15 +627,26 @@ export default function RapidResponseReader() {
     setLoadingMsg("Analyzing article...");
 
     try {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch("/.netlify/functions/rapid-response", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({
           action: "analyze_text",
           text,
           manualMeta: { title, pub, date, reporter },
         }),
       });
+
+      if (res.status === 401 || res.status === 403) {
+        setLoading(false);
+        setError("auth");
+        notify("Please sign in to use this tool.", "err");
+        return;
+      }
 
       const data = await res.json();
       const raw = data.result?.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
@@ -842,6 +864,17 @@ export default function RapidResponseReader() {
                   onManualEntry={() => { setError(null); setShowManual(true); }}
                   onTryAgain={() => { setError(null); fetchAndAnalyze(url); }}
                 />
+              </div>
+            )}
+
+            {error === "auth" && (
+              <div style={{ ...S.card, padding: "24px", textAlign: "center" }}>
+                <p style={{ fontSize: 15, fontWeight: 700, color: B.text, marginBottom: 6 }}>
+                  Please sign in to use this tool.
+                </p>
+                <p style={{ fontSize: 14, color: B.textMute }}>
+                  Your session may have expired. Try signing out and back in.
+                </p>
               </div>
             )}
 
