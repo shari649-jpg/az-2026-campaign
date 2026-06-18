@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { saveCampaign, loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
+import { auth } from "../../firebase";
 
 // ── 9 activist profile choices ────────────────────────────────────────────
 const PROFILES = [
@@ -147,6 +148,7 @@ const checkBox = (checked) => ({ width: "13px", height: "13px", border: `1.5px s
 
 // ── Error messages ────────────────────────────────────────────────────────
 const ERROR_MSGS = {
+  NOT_SIGNED_IN:   { heading: "Please sign in to use this tool.",                     body: "Your session may have expired. Sign out and back in, then try again." },
   CONTENT_FLAGGED: { heading: "This topic was flagged before it reached the AI.", body: "Anthropic's API filters certain sensitive phrases — particularly around elections — before they can be processed, even when the intent is to rebut them. Try rephrasing your input as a description of the false claim rather than quoting it directly. For example: \"False narratives are circulating that claim [describe the claim].\" This signals you're building a rebuttal, not spreading misinformation." },
   RATE_LIMITED:    { heading: "Too many requests — please wait a moment.",          body: "The API has received too many requests in a short window. Wait 30–60 seconds and try again." },
   OVERLOADED:      { heading: "The AI is temporarily overloaded.",                  body: "Anthropic's servers are under heavy load. Wait a minute and try generating again." },
@@ -432,9 +434,13 @@ export default function RebuttalGenerator() {
     setCopied(false); setSaved(false);
 
     const callAPI = async (systemPrompt, userContent, maxTokens) => {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch("/.netlify/functions/generate-rebuttal", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({
           max_tokens: maxTokens,
           system: systemPrompt,
@@ -443,7 +449,8 @@ export default function RebuttalGenerator() {
       });
       if (!res.ok) {
         const err = await res.json();
-        const raw = (err?.error?.message || "").toLowerCase();
+        const raw = (err?.error?.message || err?.error || "").toLowerCase();
+        if (res.status === 401 || res.status === 403) throw new Error("NOT_SIGNED_IN");
         if (raw.includes("string did not match") || raw.includes("pattern") || res.status === 400) throw new Error("CONTENT_FLAGGED");
         if (res.status === 429) throw new Error("RATE_LIMITED");
         if (res.status === 529 || res.status === 503) throw new Error("OVERLOADED");
