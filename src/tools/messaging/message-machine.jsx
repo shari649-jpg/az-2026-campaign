@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { saveCampaign as fbSave, loadAllCampaigns, deleteCampaign as fbDelete } from "../../lib/campaignLibrary";
+import { auth } from "../../firebase";
 
 const PLATFORMS = [
   { id: "facebook", name: "Facebook", abbr: "FB", maxChars: 63206, bg: "#0a4fa8", text: "#fff" },
@@ -685,11 +686,21 @@ Format: {"${platformId}": "rewritten message text"}`;
   };
 
   const callAPI = async (prompt, maxTokens=1000) => {
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
     const res = await fetch("/.netlify/functions/generate-message", {
-      method:"POST", headers:{"Content-Type":"application/json"},
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+      },
       body: JSON.stringify({ max_tokens:maxTokens, messages:[{role:"user",content:prompt}] }),
     });
     const data = await res.json();
+    if (data.error) {
+      const err = new Error(data.error);
+      err.type = "auth_or_server_error";
+      throw err;
+    }
     const text = data.content.map(i=>i.text||"").join("");
     const cleaned = text.replace(/```json|```/g,"").trim();
     // Detect a refusal: Claude returned prose instead of JSON
