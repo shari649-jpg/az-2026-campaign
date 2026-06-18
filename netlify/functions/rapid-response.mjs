@@ -5,7 +5,13 @@
 //   fetch_and_analyze — fetches a URL, scrapes the text, passes to Claude for structured analysis
 //   analyze_text      — takes pasted text + manual metadata, passes to Claude for structured analysis
 //
+// Auth: requires a valid Firebase ID token from a signed-in coalition member.
+// Also blocks fetch_and_analyze from being pointed at internal/private network
+// addresses (basic SSRF guard) since this endpoint fetches arbitrary user-supplied URLs.
+//
 // Modern Netlify Functions runtime (ESM)
+
+import admin from "firebase-admin";
 
 const CORS_ORIGIN = "https://az-coalition-2026-election.netlify.app";
 
@@ -16,9 +22,63 @@ const CORS_HEADERS = {
 
 const OPTIONS_HEADERS = {
   "Access-Control-Allow-Origin": CORS_ORIGIN,
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+function getAdminApp() {
+  if (admin.apps.length) return admin.app();
+  const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!json) throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON env var not set");
+  const credential = admin.credential.cert(JSON.parse(json));
+  return admin.initializeApp({ credential });
+}
+
+async function requireSignedIn(app, idToken) {
+  if (!idToken) throw new Error("unauthenticated");
+  const decoded = await admin.auth(app).verifyIdToken(idToken);
+  return decoded.uid;
+}
+
+// Basic SSRF guard: only allow http(s) URLs pointed at public hostnames.
+// Blocks localhost, link-local/metadata addresses, and the private IPv4 ranges.
+// Not exhaustive (doesn't resolve DNS to check the IP a hostname resolves to),
+// but stops the obvious cases of someone pasting an internal/metadata URL.
+function isUrlAllowed(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+
+  const host = parsed.hostname.toLowerCase();
+
+  if (host === "localhost" || host === "0.0.0.0") return false;
+  if (host === "169.254.169.254") return false; // cloud metadata endpoints (AWS/GCP/Azure-style)
+  if (host.endsWith(".internal") || host.endsWith(".local")) return false;
+
+  // Private / loopback / link-local IPv4 ranges
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const a = parseInt(ipv4[1], 10);
+    const b = parseInt(ipv4[2], 10);
+    if (a === 127) return false;               // loopback
+    if (a === 10) return false;                 // 10.0.0.0/8
+    if (a === 172 && b >= 16 && b <= 31) return false; // 172.16.0.0/12
+    if (a === 192 && b === 168) return false;   // 192.168.0.0/16
+    if (a === 169 && b === 254) return false;   // link-local
+  }
+
+  // IPv6 loopback / link-local
+  if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) {
+    return false;
+  }
+
+  return true;
+}
 
 export default async function (req) {
   if (req.method === "OPTIONS") {
@@ -29,11 +89,45 @@ export default async function (req) {
     return new Response("Method Not Allowed", { status: 405 });
   }
 
+  let app;
   try {
-    const { action, url, text, manualMeta } = await req.json();
+    app = getAdminApp();
+  } catch (err) {
+    console.error("[rapid-response] admin init error:", err.message);
+    return new Response(JSON.stringify({ error: "Server is not configured for auth yet." }), {
+      status: 500,
+      headers: CORS_HEADERS,
+    });
+  }
+
+  const authHeader = req.headers.get("authorization") || "";
+  const headerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+
+  try {
+    const body = await req.json();
+    const idToken = headerToken || body.idToken;
+
+    try {
+      await requireSignedIn(app, idToken);
+    } catch (err) {
+      const status = err.message === "unauthenticated" ? 401 : 403;
+      return new Response(JSON.stringify({ error: "You must be signed in to use this tool." }), {
+        status,
+        headers: CORS_HEADERS,
+      });
+    }
+
+    const { action, url, text, manualMeta } = body;
 
     // ── Action: fetch_and_analyze ─────────────────────────────────────────
     if (action === "fetch_and_analyze") {
+      if (!isUrlAllowed(url)) {
+        return new Response(JSON.stringify({ error: "invalid_url" }), {
+          status: 400,
+          headers: CORS_HEADERS,
+        });
+      }
+
       let pageText = "";
       let fetchOk = false;
 
@@ -171,7 +265,7 @@ Format:
 
     return new Response(JSON.stringify({ error: "Unknown action" }), {
       status: 400,
-      headers: { "Access-Control-Allow-Origin": CORS_ORIGIN },
+      headers: CORS_HEADERS,
     });
 
   } catch (err) {
