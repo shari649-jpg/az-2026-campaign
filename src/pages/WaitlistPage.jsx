@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, limit, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 import { Link } from "react-router-dom";
 
@@ -42,7 +42,7 @@ export default function WaitlistPage() {
     try {
       // Check for duplicate email
       const existing = await getDocs(
-        query(collection(db, "waitlist"), where("email", "==", form.email.toLowerCase().trim()))
+        query(collection(db, "waitlist"), where("email", "==", form.email.toLowerCase().trim()), limit(1))
       );
       if (!existing.empty) {
         setError("This email is already on the waitlist. We'll be in touch soon!");
