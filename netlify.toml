@@ -8,7 +8,13 @@
 [functions."query-candidates"]
   timeout = 26
 
+[functions."generate-message"]
+  timeout = 26
+
 [functions."generate-rebuttal"]
+  timeout = 26
+
+[functions."rapid-response"]
   timeout = 26
 
 [functions."browse-drive"]
