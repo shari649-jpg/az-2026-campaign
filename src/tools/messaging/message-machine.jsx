@@ -695,11 +695,22 @@ Format: {"${platformId}": "rewritten message text"}`;
       },
       body: JSON.stringify({ max_tokens:maxTokens, messages:[{role:"user",content:prompt}] }),
     });
+    if (res.status === 429) {
+      const limitData = await res.json();
+      const err = new Error("rate_limit_exceeded");
+      err.type = "rate_limit_exceeded";
+      err.limitData = limitData;
+      throw err;
+    }
     const data = await res.json();
     if (data.error) {
       const err = new Error(data.error);
       err.type = "auth_or_server_error";
       throw err;
+    }
+    if (data.usageWarning) {
+      const { used, limit, remaining } = data.usageWarning;
+      notify(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.`, "warn");
     }
     const text = data.content.map(i=>i.text||"").join("");
     const cleaned = text.replace(/```json|```/g,"").trim();
@@ -732,6 +743,8 @@ Format: {"${platformId}": "rewritten message text"}`;
       setShowLoader(false);
       if (e.type === "content_flagged") {
         setGenError("flagged");
+      } else if (e.type === "rate_limit_exceeded") {
+        setGenError("ratelimit");
       } else {
         setGenError("connection");
       }
@@ -754,6 +767,8 @@ Format: {"${platformId}": "rewritten message text"}`;
     } catch(e) {
       if (e.type === "content_flagged") {
         setGenError("flagged");
+      } else if (e.type === "rate_limit_exceeded") {
+        setGenError("ratelimit");
       } else {
         setGenError("connection");
       }
@@ -959,9 +974,9 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
         <div className="slide-down" role="alert" aria-live="assertive" style={{
           position:"fixed", bottom: 24, left:"50%", transform:"translateX(-50%)", zIndex:150,
           maxWidth: 520, width:"calc(100% - 48px)",
-          background: genError === "flagged" ? "#7f1d1d" : "#7a3820",
+          background: genError === "flagged" ? "#7f1d1d" : genError === "ratelimit" ? "#4c1d95" : "#7a3820",
           color:"#fff",
-          border:`2px solid ${genError === "flagged" ? "#b91c1c" : "#c1673a"}`,
+          border:`2px solid ${genError === "flagged" ? "#b91c1c" : genError === "ratelimit" ? "#7c3aed" : "#c1673a"}`,
           borderRadius:12, padding:"14px 48px 14px 20px",
           boxShadow:"0 8px 32px rgba(0,0,0,0.45)",
         }}>
@@ -971,11 +986,13 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
             fontSize:20, color:"rgba(255,255,255,0.8)", fontWeight:900, fontFamily:"inherit", lineHeight:1,
           }}>✕</button>
           <p style={{ fontSize:16, fontWeight:900, marginBottom:4 }}>
-            {genError === "flagged" ? "⚠️ Generation blocked" : "⚠️ Generation failed"}
+            {genError === "flagged" ? "⚠️ Generation blocked" : genError === "ratelimit" ? "🚦 Daily limit reached" : "⚠️ Generation failed"}
           </p>
           <p style={{ fontSize:14, color:"rgba(255,255,255,0.85)", lineHeight:1.5 }}>
             {genError === "flagged"
               ? "The AI declined this request. Edit the Issue / Content field and try again."
+              : genError === "ratelimit"
+              ? "You've used all your AI calls for today. Resets at midnight UTC. Contact an admin for more access."
               : "Request timed out. Try again — or generate without Expand first, then expand per platform."}
           </p>
         </div>
@@ -1059,6 +1076,34 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </p>
                 <p style={{ fontSize:15, color:T.textMid, lineHeight:1.6 }}>
                   <strong>Try:</strong> Hit Generate again — it usually works on a second attempt. If you're using Expand, try without it first, then use the Expand button on individual platforms once results load.
+                </p>
+              </div>
+            )}
+
+            {genError === "ratelimit" && (
+              <div role="alert" style={{
+                background:"#f5f0ff", border:`3px solid #7c3aed`,
+                borderRadius:12, padding:"20px 24px", marginBottom:28,
+                position:"relative",
+              }}>
+                <button
+                  onClick={() => setGenError(null)}
+                  aria-label="Dismiss error"
+                  style={{
+                    position:"absolute", top:14, right:16,
+                    background:"none", border:"none", cursor:"pointer",
+                    fontSize:22, color:"#7c3aed", fontWeight:900, lineHeight:1,
+                    fontFamily:"inherit",
+                  }}
+                >✕</button>
+                <p style={{ fontSize:18, fontWeight:900, color:"#7c3aed", marginBottom:10 }}>
+                  🚦 Daily limit reached
+                </p>
+                <p style={{ fontSize:16, color:T.textMid, lineHeight:1.6, marginBottom:10 }}>
+                  You've used all your AI calls for today. Your limit resets at midnight UTC.
+                </p>
+                <p style={{ fontSize:15, color:T.textMid, lineHeight:1.6 }}>
+                  Need more access? Contact your coalition administrator.
                 </p>
               </div>
             )}
