@@ -604,6 +604,12 @@ export default function RapidResponseReader() {
         return;
       }
 
+      if (res.status === 429) {
+        setLoading(false);
+        setError("ratelimit");
+        return;
+      }
+
       if (res.status === 422) {
         setLoading(false);
         setError("scrape");
@@ -611,6 +617,10 @@ export default function RapidResponseReader() {
       }
 
       const data = await res.json();
+      if (data.usageWarning) {
+        const { used, limit, remaining } = data.usageWarning;
+        notify(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.`, "warn");
+      }
       const raw = data.result?.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
       const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
       setArticle({ ...parsed, url: targetUrl, id: `article_${Date.now()}`, isManual: false });
@@ -648,7 +658,18 @@ export default function RapidResponseReader() {
         return;
       }
 
+      if (res.status === 429) {
+        setLoading(false);
+        setError("ratelimit");
+        notify("Daily AI call limit reached. Resets at midnight UTC.", "err");
+        return;
+      }
+
       const data = await res.json();
+      if (data.usageWarning) {
+        const { used, limit, remaining } = data.usageWarning;
+        notify(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.`, "warn");
+      }
       const raw = data.result?.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
       const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
       setArticle({ ...parsed, url: srcUrl, id: `article_${Date.now()}`, isManual });
@@ -874,6 +895,17 @@ export default function RapidResponseReader() {
                 </p>
                 <p style={{ fontSize: 14, color: B.textMute }}>
                   Your session may have expired. Try signing out and back in.
+                </p>
+              </div>
+            )}
+
+            {error === "ratelimit" && (
+              <div style={{ ...S.card, padding: "24px", textAlign: "center" }}>
+                <p style={{ fontSize: 15, fontWeight: 700, color: B.text, marginBottom: 6 }}>
+                  🚦 Daily limit reached
+                </p>
+                <p style={{ fontSize: 14, color: B.textMute }}>
+                  You've used all your AI calls for today. Your limit resets at midnight UTC. Contact your coalition administrator if you need more access.
                 </p>
               </div>
             )}
