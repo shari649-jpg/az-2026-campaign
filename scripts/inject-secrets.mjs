@@ -14,9 +14,16 @@
 // This script sidesteps the problem at the root: instead of letting large
 // credentials travel through Lambda's runtime env-var injection (the thing
 // that's capped), it reads them once at BUILD TIME — which has no 4KB limit —
-// and writes each one to a small local .json file inside only the specific
-// function folder(s) that need it. Those functions then `import` the file
-// directly instead of doing `JSON.parse(process.env.WHATEVER)`.
+// and writes each one to a small local .json file sitting directly in
+// netlify/functions/, right alongside the .mjs function files. Those
+// functions then read the local file directly instead of doing
+// JSON.parse(process.env.WHATEVER).
+//
+// NOTE: this project's functions live as FLAT FILES directly in
+// netlify/functions/ (e.g. netlify/functions/manage-user.mjs), not in
+// per-function subfolders. Because of that, each credential only needs to
+// be written ONCE — every function in that same folder can read it via a
+// plain relative path, since they're all siblings in the same directory.
 //
 // HOW TO ADD A NEW LARGE CREDENTIAL IN THE FUTURE
 // ────────────────────────────────────────────────────────────────────────
@@ -24,16 +31,17 @@
 //    so it's Builds-only. (This is what keeps it OUT of the 4KB runtime
 //    budget — if you leave Functions/Runtime checked, it'll still count
 //    against every function's limit even though this script also runs.)
-// 2. Add one entry to CREDENTIALS below: the env var name, the output
-//    filename, and which function folders should receive a copy.
+// 2. Add one entry to CREDENTIALS below: the env var name and the output
+//    filename. You don't need to list which functions use it — every
+//    function in netlify/functions/ can read any file written here.
 // 3. In the function code, replace:
 //        const creds = JSON.parse(process.env.YOUR_VAR_NAME);
 //    with:
-//        import creds from "./your-file-name.json" with { type: "json" };
-//    (Node 22+ / modern ESM import-attributes syntax — matches Netlify's
-//    current default Node runtime. If your build's Node version is older,
-//    use: import { readFileSync } from "node:fs"; then
-//    JSON.parse(readFileSync(new URL("./your-file-name.json", import.meta.url)))
+//        import { readFileSync } from "node:fs";
+//        import { fileURLToPath } from "node:url";
+//        import { dirname, join } from "node:path";
+//        const __dirname = dirname(fileURLToPath(import.meta.url));
+//        const creds = JSON.parse(readFileSync(join(__dirname, "your-file-name.json"), "utf8"));
 // 4. Done. No netlify.toml changes needed — this script runs automatically
 //    as part of `npm run build` (see the "prebuild" hook in package.json).
 //
@@ -41,7 +49,7 @@
 // break from an upstream package update, and the logic is short enough to
 // read end-to-end in two minutes if something ever needs debugging.
 
-import { writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -63,25 +71,20 @@ const CREDENTIALS = [
   {
     envVar: "FIREBASE_SERVICE_ACCOUNT_JSON",
     outputFile: "firebase-service-account.json",
-    // Every function that calls admin.credential.cert(...) needs a copy.
-    functions: [
-      "manage-user",
-      "generate-message",
-      "generate-rebuttal",
-      "rapid-response",
-      "coaching-response",
-    ],
   },
   {
     envVar: "GOOGLE_SERVICE_ACCOUNT_JSON",
     outputFile: "google-service-account.json",
-    functions: [
-      "query-candidates",
-    ],
   },
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
+
+if (!existsSync(FUNCTIONS_DIR)) {
+  console.error(`[inject-secrets] ❌ Functions directory not found: ${FUNCTIONS_DIR}`);
+  console.error(`[inject-secrets]    Check FUNCTIONS_DIR at the top of scripts/inject-secrets.mjs`);
+  process.exit(1);
+}
 
 let wrote = 0;
 let skipped = 0;
@@ -105,21 +108,12 @@ for (const cred of CREDENTIALS) {
     process.exit(1);
   }
 
-  for (const fn of cred.functions) {
-    const targetDir = join(FUNCTIONS_DIR, fn);
+  const targetPath = join(FUNCTIONS_DIR, cred.outputFile);
+  writeFileSync(targetPath, raw, "utf8");
+  wrote++;
 
-    if (!existsSync(targetDir)) {
-      console.error(`[inject-secrets] ❌ Function directory not found: ${targetDir}`);
-      console.error(`[inject-secrets]    Check FUNCTIONS_DIR at the top of scripts/inject-secrets.mjs`);
-      process.exit(1);
-    }
-
-    const targetPath = join(targetDir, cred.outputFile);
-    writeFileSync(targetPath, raw, "utf8");
-    wrote++;
-  }
-
-  console.log(`[inject-secrets] ✓ ${cred.envVar} → ${cred.functions.length} function(s): ${cred.functions.join(", ")}`);
+  console.log(`[inject-secrets] ✓ ${cred.envVar} → ${cred.outputFile}`);
 }
 
 console.log(`[inject-secrets] Done. ${wrote} file(s) written, ${skipped} credential(s) skipped.`);
+
