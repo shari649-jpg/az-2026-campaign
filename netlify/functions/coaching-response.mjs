@@ -1,5 +1,5 @@
 // netlify/functions/coaching-response.mjs
-// Conversation Coach — situational dialogue practice & social media response help
+// Conversation Coach — situational dialogue practice & social media response helper
 //
 // Auth:       requires a valid Firebase ID token (any signed-in user)
 // Rate limit: 50/day (user), 100/day (manager), 200/day (administrator)
