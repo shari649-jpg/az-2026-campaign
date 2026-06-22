@@ -234,7 +234,18 @@ export default function ConversationCoach() {
         return;
       }
 
+      if (res.status === 429) {
+        setError("🚦 Daily limit reached — you've used all your AI calls for today. Resets at midnight UTC. Contact an admin for more access.");
+        return;
+      }
+
       const data = await res.json();
+      if (data.usageWarning) {
+        const { used, limit, remaining } = data.usageWarning;
+        setError(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining today.`);
+        // Clear the warning after 5s so it doesn't block the conversation
+        setTimeout(() => setError(null), 5000);
+      }
       const text = data?.content?.[0]?.text || "";
       if (!text) throw new Error("Empty response from coach");
 
