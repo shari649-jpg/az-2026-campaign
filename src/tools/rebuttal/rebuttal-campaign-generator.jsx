@@ -148,11 +148,12 @@ const checkBox = (checked) => ({ width: "13px", height: "13px", border: `1.5px s
 
 // ── Error messages ────────────────────────────────────────────────────────
 const ERROR_MSGS = {
-  NOT_SIGNED_IN:   { heading: "Please sign in to use this tool.",                     body: "Your session may have expired. Sign out and back in, then try again." },
-  CONTENT_FLAGGED: { heading: "This topic was flagged before it reached the AI.", body: "Anthropic's API filters certain sensitive phrases — particularly around elections — before they can be processed, even when the intent is to rebut them. Try rephrasing your input as a description of the false claim rather than quoting it directly. For example: \"False narratives are circulating that claim [describe the claim].\" This signals you're building a rebuttal, not spreading misinformation." },
-  RATE_LIMITED:    { heading: "Too many requests — please wait a moment.",          body: "The API has received too many requests in a short window. Wait 30–60 seconds and try again." },
-  OVERLOADED:      { heading: "The AI is temporarily overloaded.",                  body: "Anthropic's servers are under heavy load. Wait a minute and try generating again." },
-  GENERIC:         { heading: "Something went wrong.",                              body: "An unexpected error occurred. Check that your input isn't empty and try again. If it persists, try refreshing the page." },
+  NOT_SIGNED_IN:      { heading: "Please sign in to use this tool.",                     body: "Your session may have expired. Sign out and back in, then try again." },
+  RATE_LIMITED_DAILY: { heading: "Daily limit reached.",                                  body: "You've used all your AI calls for today. Your limit resets at midnight UTC. Contact your coalition administrator if you need more access today." },
+  CONTENT_FLAGGED:    { heading: "This topic was flagged before it reached the AI.", body: "Anthropic's API filters certain sensitive phrases — particularly around elections — before they can be processed, even when the intent is to rebut them. Try rephrasing your input as a description of the false claim rather than quoting it directly. For example: \"False narratives are circulating that claim [describe the claim].\" This signals you're building a rebuttal, not spreading misinformation." },
+  RATE_LIMITED:       { heading: "Too many requests — please wait a moment.",          body: "The API has received too many requests in a short window. Wait 30–60 seconds and try again." },
+  OVERLOADED:         { heading: "The AI is temporarily overloaded.",                  body: "Anthropic's servers are under heavy load. Wait a minute and try generating again." },
+  GENERIC:            { heading: "Something went wrong.",                              body: "An unexpected error occurred. Check that your input isn't empty and try again. If it persists, try refreshing the page." },
 };
 
 // ── Copy helper with execCommand fallback (works inside iframes) ──────────
@@ -450,6 +451,7 @@ export default function RebuttalGenerator() {
       if (!res.ok) {
         const err = await res.json();
         const raw = (err?.error?.message || err?.error || "").toLowerCase();
+        if (res.status === 429 && err?.error === "rate_limit_exceeded") throw new Error("RATE_LIMITED_DAILY");
         if (res.status === 401 || res.status === 403) throw new Error("NOT_SIGNED_IN");
         if (raw.includes("string did not match") || raw.includes("pattern") || res.status === 400) throw new Error("CONTENT_FLAGGED");
         if (res.status === 429) throw new Error("RATE_LIMITED");
@@ -457,6 +459,9 @@ export default function RebuttalGenerator() {
         throw new Error("GENERIC");
       }
       const data = await res.json();
+      if (data.usageWarning) {
+        window.__rlWarning = data.usageWarning;
+      }
       return data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
     };
 
@@ -496,6 +501,14 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
 
       setOutput(`${part1}\n\n${part2}`);
       setStatus("Campaign ready.");
+
+      // Surface usage warning if we're approaching the daily limit
+      if (window.__rlWarning) {
+        const { used, limit, remaining } = window.__rlWarning;
+        // Reuse the error state briefly as a dismissible info panel
+        setError({ heading: `⚠️ ${used}/${limit} daily AI calls used`, body: `You have ${remaining} calls remaining today. Your limit resets at midnight UTC.` });
+        window.__rlWarning = null;
+      }
 
     } catch (e) {
       setError(ERROR_MSGS[e.message] ?? ERROR_MSGS.GENERIC);
