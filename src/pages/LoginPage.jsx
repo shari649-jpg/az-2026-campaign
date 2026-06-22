@@ -67,14 +67,18 @@ export default function LoginPage() {
       }
 
       const waitlistDoc = waitlistSnap.docs[0];
+      const waitlistData = waitlistDoc.data();
 
       // Create the Firestore user doc now that approval is confirmed.
+      // Carry forward everything the person already gave us at waitlist time —
+      // social handle, platform, and organization — instead of starting blank.
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
-        fullName: user.displayName || waitlistDoc.data().fullName || "",
+        fullName: user.displayName || waitlistData.fullName || "",
         email: user.email,
         role: "user",
-        primarySocial: { platform: "", handle: "" },
+        primarySocial: waitlistData.primarySocial || { platform: "", handle: "" },
+        organization: waitlistData.organization || "",
         createdAt: serverTimestamp(),
         googleSignIn: true,
       });
