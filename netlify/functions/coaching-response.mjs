@@ -1,10 +1,15 @@
 // netlify/functions/coaching-response.mjs
-// Conversation Coach — situational dialogue practice & social media response help
+// Conversation Coach — situational dialogue practice & social media response helper
 //
 // Auth:       requires a valid Firebase ID token (any signed-in user)
 // Rate limit: 50/day (user), 100/day (manager), 200/day (administrator)
 
 import admin from "firebase-admin";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 
 const CORS_ORIGIN = "https://az-coalition-2026-election.netlify.app";
@@ -12,9 +17,13 @@ const CORS_HEADERS = { "Content-Type": "application/json", "Access-Control-Allow
 
 function getAdminApp() {
   if (admin.apps.length) return admin.app();
-  const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!json) throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON env var not set");
-  return admin.initializeApp({ credential: admin.credential.cert(JSON.parse(json)) });
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(readFileSync(join(__dirname, "firebase-service-account.json"), "utf8"));
+  } catch {
+    throw new Error("firebase-service-account.json not found — run `npm run build` to regenerate via scripts/inject-secrets.mjs.");
+  }
+  return admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 
 async function requireSignedIn(app, idToken) {

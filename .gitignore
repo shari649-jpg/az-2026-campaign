@@ -4,3 +4,5 @@ node_modules/
 .DS_Store
 dist/
 build/
+netlify/functions/*/firebase-service-account.json
+netlify/functions/*/google-service-account.json
