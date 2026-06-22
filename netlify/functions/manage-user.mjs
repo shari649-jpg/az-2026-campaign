@@ -20,10 +20,6 @@
 
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SITE_URL = "https://az-coalition-2026-election.netlify.app";
 const CORS_HEADERS = {
@@ -35,7 +31,7 @@ function getAdminApp() {
   if (admin.apps.length) return admin.app();
   let serviceAccount;
   try {
-    const raw = readFileSync(join(__dirname, "firebase-service-account.json"), "utf8");
+    const raw = readFileSync(new URL("./firebase-service-account.json", import.meta.url), "utf8");
     serviceAccount = JSON.parse(raw);
   } catch (err) {
     throw new Error(
