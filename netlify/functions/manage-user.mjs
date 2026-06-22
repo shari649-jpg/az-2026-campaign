@@ -5,12 +5,25 @@
 //
 // Setup required before this function will work:
 //   1. Firebase Console → Project Settings → Service Accounts → Generate new private key
-//   2. Set the downloaded JSON (as a single-line string) as the Netlify env var:
-//      FIREBASE_SERVICE_ACCOUNT_JSON
+//   2. Set the downloaded JSON (as a single-line string) as the Netlify env var
+//      FIREBASE_SERVICE_ACCOUNT_JSON, scoped to BUILDS ONLY (not Functions/Runtime).
 //   3. Add "firebase-admin" to package.json dependencies and to
 //      netlify.toml's [functions] external_node_modules list.
+//
+// NOTE ON CREDENTIAL LOADING: this function reads its Firebase credential from
+// a local firebase-service-account.json file rather than process.env. That file
+// is generated automatically at build time by scripts/inject-secrets.mjs (see
+// that file for why — short version: AWS Lambda caps total env var size at 4KB
+// per function, and a full service-account JSON alone is most of that budget).
+// If this file is missing, run `npm run build` locally to regenerate it, or
+// check that FIREBASE_SERVICE_ACCOUNT_JSON is set in Netlify with Builds scope.
 
 import admin from "firebase-admin";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SITE_URL = "https://az-coalition-2026-election.netlify.app";
 const CORS_HEADERS = {
@@ -20,9 +33,16 @@ const CORS_HEADERS = {
 
 function getAdminApp() {
   if (admin.apps.length) return admin.app();
-  const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!json) throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON env var not set");
-  const credential = admin.credential.cert(JSON.parse(json));
+  let serviceAccount;
+  try {
+    const raw = readFileSync(join(__dirname, "firebase-service-account.json"), "utf8");
+    serviceAccount = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      "firebase-service-account.json not found or invalid — run `npm run build` to regenerate it via scripts/inject-secrets.mjs, or confirm FIREBASE_SERVICE_ACCOUNT_JSON is set in Netlify (Builds scope)."
+    );
+  }
+  const credential = admin.credential.cert(serviceAccount);
   return admin.initializeApp({ credential });
 }
 
