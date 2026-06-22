@@ -4,7 +4,7 @@
 // WHY THIS EXISTS
 // ────────────────────────────────────────────────────────────────────────
 // Netlify Functions run on AWS Lambda under the hood, and AWS caps the total
-// size of all environment variables injected into a single function at 4KB
+// size of all environment variables injected into a single function at 4KB.
 // Large credentials — full service-account JSON keys in particular — eat
 // most or all of that budget by themselves, and Netlify's per-variable
 // scoping only goes down to category level (Builds / Functions / Runtime),
