@@ -9,16 +9,29 @@
 // A: Race Type  B: District ID  C: Location Note  D: Registration Data
 // E: Voting History  F: Demographics  G: Top Issues  H: Message Guidance  I: Notes
 //
+// NOTE ON CREDENTIAL LOADING: the Google service-account credential is read
+// from a local google-service-account.json file rather than process.env.
+// That file is written automatically at build time by scripts/inject-secrets.mjs
+// — see that file for why (AWS Lambda's 4KB env-var cap per function).
+//
 // Modern Netlify Functions runtime (ESM)
 
 import { google } from "googleapis";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
 function getAuthClient() {
-  const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (!credentialsJson) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON env var not set");
-  const credentials = JSON.parse(credentialsJson);
+  let credentials;
+  try {
+    credentials = JSON.parse(readFileSync(join(__dirname, "google-service-account.json"), "utf8"));
+  } catch {
+    throw new Error("google-service-account.json not found — run `npm run build` to regenerate via scripts/inject-secrets.mjs.");
+  }
   return new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
