@@ -18,17 +18,13 @@
 
 import { google } from "googleapis";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
 function getAuthClient() {
   let credentials;
   try {
-    credentials = JSON.parse(readFileSync(join(__dirname, "google-service-account.json"), "utf8"));
+    credentials = JSON.parse(readFileSync(new URL("./google-service-account.json", import.meta.url), "utf8"));
   } catch {
     throw new Error("google-service-account.json not found — run `npm run build` to regenerate via scripts/inject-secrets.mjs.");
   }
