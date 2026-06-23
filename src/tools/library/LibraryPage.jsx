@@ -283,11 +283,9 @@ export default function LibraryPage() {
           <div style={{ marginBottom: 40 }}>
             {filter === "all" && (
               <h2
-                onClick={() => navigate("/rapid-response")}
-                title="Go to Rapid Response"
-                style={{ fontSize: 18, fontWeight: 700, color: TEAL, marginBottom: 16, paddingBottom: 8, borderBottom: `2px solid ${GOLD}`, display: "inline-block", cursor: "pointer" }}
+                style={{ fontSize: 18, fontWeight: 700, color: TEAL, marginBottom: 16, paddingBottom: 8, borderBottom: `2px solid ${GOLD}`, display: "inline-block" }}
               >
-                📡 Rapid Response Articles →
+                📡 Rapid Response Articles
               </h2>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
