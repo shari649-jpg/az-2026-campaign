@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { saveCampaign, loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
-import { auth } from "../../firebase";
 
 // ── 9 activist profile choices ────────────────────────────────────────────
 const PROFILES = [
@@ -148,12 +147,10 @@ const checkBox = (checked) => ({ width: "13px", height: "13px", border: `1.5px s
 
 // ── Error messages ────────────────────────────────────────────────────────
 const ERROR_MSGS = {
-  NOT_SIGNED_IN:      { heading: "Please sign in to use this tool.",                     body: "Your session may have expired. Sign out and back in, then try again." },
-  RATE_LIMITED_DAILY: { heading: "Daily limit reached.",                                  body: "You've used all your AI calls for today. Your limit resets at midnight UTC. Contact your coalition administrator if you need more access today." },
-  CONTENT_FLAGGED:    { heading: "This topic was flagged before it reached the AI.", body: "Anthropic's API filters certain sensitive phrases — particularly around elections — before they can be processed, even when the intent is to rebut them. Try rephrasing your input as a description of the false claim rather than quoting it directly. For example: \"False narratives are circulating that claim [describe the claim].\" This signals you're building a rebuttal, not spreading misinformation." },
-  RATE_LIMITED:       { heading: "Too many requests — please wait a moment.",          body: "The API has received too many requests in a short window. Wait 30–60 seconds and try again." },
-  OVERLOADED:         { heading: "The AI is temporarily overloaded.",                  body: "Anthropic's servers are under heavy load. Wait a minute and try generating again." },
-  GENERIC:            { heading: "Something went wrong.",                              body: "An unexpected error occurred. Check that your input isn't empty and try again. If it persists, try refreshing the page." },
+  CONTENT_FLAGGED: { heading: "This topic was flagged before it reached the AI.", body: "Anthropic's API filters certain sensitive phrases — particularly around elections — before they can be processed, even when the intent is to rebut them. Try rephrasing your input as a description of the false claim rather than quoting it directly. For example: \"False narratives are circulating that claim [describe the claim].\" This signals you're building a rebuttal, not spreading misinformation." },
+  RATE_LIMITED:    { heading: "Too many requests — please wait a moment.",          body: "The API has received too many requests in a short window. Wait 30–60 seconds and try again." },
+  OVERLOADED:      { heading: "The AI is temporarily overloaded.",                  body: "Anthropic's servers are under heavy load. Wait a minute and try generating again." },
+  GENERIC:         { heading: "Something went wrong.",                              body: "An unexpected error occurred. Check that your input isn't empty and try again. If it persists, try refreshing the page." },
 };
 
 // ── Copy helper with execCommand fallback (works inside iframes) ──────────
@@ -356,25 +353,7 @@ function CampaignOutput({ output, onCopy, onSave, onPushToMachine, onEdit, copie
   );
 }
 
-function useScrollArrows() {
-  const [showUp, setShowUp] = useState(false);
-  const [showDown, setShowDown] = useState(false);
-  useEffect(() => {
-    const onScroll = () => {
-      const scrolled = window.scrollY;
-      const atBottom = window.innerHeight + scrolled >= document.body.scrollHeight - 80;
-      setShowUp(scrolled > 200);
-      setShowDown(!atBottom && document.body.scrollHeight > window.innerHeight + 200);
-    };
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-  return { showUp, showDown };
-}
-
 export default function RebuttalGenerator() {
-  const { showUp, showDown } = useScrollArrows();
   const [narrative,   setNarrative]   = useState("");
   const [profile,     setProfile]     = useState(null);  // single selected profile key or null
   const [tone,        setTone]        = useState(null);
@@ -435,13 +414,9 @@ export default function RebuttalGenerator() {
     setCopied(false); setSaved(false);
 
     const callAPI = async (systemPrompt, userContent, maxTokens) => {
-      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch("/.netlify/functions/generate-rebuttal", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           max_tokens: maxTokens,
           system: systemPrompt,
@@ -450,18 +425,13 @@ export default function RebuttalGenerator() {
       });
       if (!res.ok) {
         const err = await res.json();
-        const raw = (err?.error?.message || err?.error || "").toLowerCase();
-        if (res.status === 429 && err?.error === "rate_limit_exceeded") throw new Error("RATE_LIMITED_DAILY");
-        if (res.status === 401 || res.status === 403) throw new Error("NOT_SIGNED_IN");
+        const raw = (err?.error?.message || "").toLowerCase();
         if (raw.includes("string did not match") || raw.includes("pattern") || res.status === 400) throw new Error("CONTENT_FLAGGED");
         if (res.status === 429) throw new Error("RATE_LIMITED");
         if (res.status === 529 || res.status === 503) throw new Error("OVERLOADED");
         throw new Error("GENERIC");
       }
       const data = await res.json();
-      if (data.usageWarning) {
-        window.__rlWarning = data.usageWarning;
-      }
       return data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
     };
 
@@ -501,14 +471,6 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
 
       setOutput(`${part1}\n\n${part2}`);
       setStatus("Campaign ready.");
-
-      // Surface usage warning if we're approaching the daily limit
-      if (window.__rlWarning) {
-        const { used, limit, remaining } = window.__rlWarning;
-        // Reuse the error state briefly as a dismissible info panel
-        setError({ heading: `⚠️ ${used}/${limit} daily AI calls used`, body: `You have ${remaining} calls remaining today. Your limit resets at midnight UTC.` });
-        window.__rlWarning = null;
-      }
 
     } catch (e) {
       setError(ERROR_MSGS[e.message] ?? ERROR_MSGS.GENERIC);
@@ -615,17 +577,6 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
 
   return (
     <div style={S.app}>
-      {/* Floating scroll arrows */}
-      {showUp && (
-        <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          style={{ position: 'fixed', bottom: 72, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: TEAL, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
-          aria-label="Scroll to top">↑</button>
-      )}
-      {showDown && (
-        <button onClick={() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })}
-          style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: TEAL, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
-          aria-label="Scroll to bottom">↓</button>
-      )}
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         textarea:focus { border-color: ${INK} !important; }
@@ -786,15 +737,6 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
           </>
         )}
       </main>
-
-      {/* ── Back to top ── */}
-      {output && (
-        <button
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          style={{ position: "fixed", bottom: "28px", right: "28px", width: "44px", height: "44px", borderRadius: "50%", background: INK, color: BG, border: "none", fontSize: "18px", cursor: "pointer", boxShadow: "0 2px 12px rgba(0,0,0,0.28)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, lineHeight: 1 }}
-          title="Back to top"
-        >↑</button>
-      )}
     </div>
   );
 }
