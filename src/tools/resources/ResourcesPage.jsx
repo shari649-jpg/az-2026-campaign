@@ -102,19 +102,6 @@ export default function ResourcesPage() {
       accentColor="#4A4558"
     >
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "36px 24px 64px" }}>
-        <div style={{
-          background: "var(--teal-light)",
-          border: "2px solid var(--teal)",
-          borderRadius: "var(--radius)",
-          padding: "14px 20px",
-          marginBottom: 36,
-          fontSize: 14,
-          color: "var(--teal)",
-          lineHeight: 1.6,
-        }}>
-          <strong>To add links:</strong> Edit <code style={{ fontSize: 12, background: "var(--bg)", padding: "1px 6px", borderRadius: 4 }}>src/tools/resources/ResourcesPage.jsx</code> and update the <code style={{ fontSize: 12, background: "var(--bg)", padding: "1px 6px", borderRadius: 4 }}>href: null</code> values with your Google Drive and other URLs.
-        </div>
-
         <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
           {RESOURCE_GROUPS.map(group => (
             <ResourceGroup key={group.title} group={group} />
