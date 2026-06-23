@@ -7,10 +7,6 @@
 
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 
 const CORS_ORIGIN = "https://az-coalition-2026-election.netlify.app";
@@ -21,7 +17,7 @@ function getAdminApp() {
   if (admin.apps.length) return admin.app();
   let serviceAccount;
   try {
-    serviceAccount = JSON.parse(readFileSync(join(__dirname, "firebase-service-account.json"), "utf8"));
+    serviceAccount = JSON.parse(readFileSync(new URL("./firebase-service-account.json", import.meta.url), "utf8"));
   } catch {
     throw new Error("firebase-service-account.json not found — run `npm run build` to regenerate via scripts/inject-secrets.mjs.");
   }
