@@ -475,59 +475,6 @@ function LibraryPanel({ items, onLoad, onDelete }) {
   );
 }
 
-// ── Profile setup ─────────────────────────────────────────────────────────────
-function ProfileSetup({ onSave }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [org, setOrg] = useState("");
-  const [county, setCounty] = useState("");
-
-  const AZ_COUNTIES = ["Apache","Cochise","Coconino","Gila","Graham","Greenlee","La Paz","Maricopa","Mohave","Navajo","Pima","Pinal","Santa Cruz","Yavapai","Yuma","Statewide / Coalition"];
-
-  return (
-    <div style={{ minHeight: "100vh", background: B.pageBg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ maxWidth: 480, width: "100%" }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ width: 64, height: 64, background: B.teal, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 30 }}>📡</div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, fontFamily: "'DM Serif Display', Georgia, serif", color: B.teal, marginBottom: 8 }}>Welcome to Rapid Response</h1>
-          <p style={{ fontSize: 16, color: B.textMid, lineHeight: 1.6 }}>Set up your profile so your saved articles are attributed correctly.</p>
-        </div>
-        <div style={{ ...S.card, display: "flex", flexDirection: "column", gap: 16 }}>
-          <div>
-            <label style={S.label}>Your Name <span style={{ color: B.terracotta }}>*</span></label>
-            <input style={S.input} placeholder="First and last name" value={name} onChange={e => setName(e.target.value)} />
-          </div>
-          <div>
-            <label style={S.label}>Email</label>
-            <input style={S.input} type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
-          </div>
-          <div>
-            <label style={S.label}>Organization / Role</label>
-            <input style={S.input} placeholder="e.g. LD13 Volunteer Coordinator" value={org} onChange={e => setOrg(e.target.value)} />
-          </div>
-          <div>
-            <label style={S.label}>County / Region</label>
-            <select style={{ ...S.input }} value={county} onChange={e => setCounty(e.target.value)}>
-              <option value="">Select county...</option>
-              {AZ_COUNTIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <button
-            onClick={() => name.trim() && onSave({ name: name.trim(), email, org, county, createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) })}
-            disabled={!name.trim()}
-            style={{ ...S.btnPrimary, justifyContent: "center", opacity: name.trim() ? 1 : 0.5, cursor: name.trim() ? "pointer" : "not-allowed", marginTop: 4 }}
-          >
-            Get Started →
-          </button>
-        </div>
-        <p style={{ textAlign: "center", fontSize: 13, color: B.textMute, marginTop: 16 }}>
-          This info stays on your device until a real login system is connected.
-        </p>
-      </div>
-    </div>
-  );
-}
-
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function RapidResponseReader() {
   const [view, setView]             = useState("reader");
@@ -541,7 +488,6 @@ export default function RapidResponseReader() {
   const [saved, setSaved]           = useState(false);
   const [pushed, setPushed]         = useState(false);
   const [notif, setNotif]           = useState(null);
-  const [profile, setProfile]       = useState(null);
 
   useEffect(() => {
     loadAll();
@@ -561,7 +507,6 @@ export default function RapidResponseReader() {
   }, []);
 
   const loadAll = async () => {
-    try { const p = localStorage.getItem("rr_profile"); if (p) setProfile(JSON.parse(p)); } catch {}
     try {
       const articles = await loadArticles();
       setLibrary(articles);
@@ -571,11 +516,6 @@ export default function RapidResponseReader() {
   const notify = (msg, type = "ok") => {
     setNotif({ msg, type });
     setTimeout(() => setNotif(null), 3500);
-  };
-
-  const saveProfile = (prof) => {
-    setProfile(prof);
-    try { localStorage.setItem("rr_profile", JSON.stringify(prof)); } catch {}
   };
 
   // ── Fetch + parse ───────────────────────────────────────────────────────────
@@ -688,10 +628,6 @@ export default function RapidResponseReader() {
     try {
       const entry = {
         ...article,
-        savedBy: profile?.name || "Anonymous",
-        savedByEmail: profile?.email || "",
-        savedByOrg: profile?.org || "",
-        savedByCounty: profile?.county || "",
         savedAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
         linkedCampaigns: [],
       };
@@ -743,14 +679,6 @@ export default function RapidResponseReader() {
     setPushed(false);
   };
 
-  // ── Profile gate ────────────────────────────────────────────────────────────
-  if (!profile) return (
-    <>
-      <style>{globalCSS}</style>
-      <ProfileSetup onSave={saveProfile} />
-    </>
-  );
-
   const tabStyle = (active) => ({
     padding: "10px 20px",
     borderRadius: 8,
@@ -786,19 +714,6 @@ export default function RapidResponseReader() {
             <button onClick={() => setView("library")} style={tabStyle(view === "library")}>
               Library ({library.length})
             </button>
-            {/* Profile chip */}
-            <div style={{
-              display: "flex", alignItems: "center", gap: 8,
-              padding: "6px 12px", background: B.surfaceAlt,
-              border: `1px solid ${B.border}`, borderRadius: 20,
-              marginLeft: 8,
-            }}>
-              <div style={{ width: 24, height: 24, borderRadius: "50%", background: B.gold, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: B.teal }}>
-                {profile.name.charAt(0)}
-              </div>
-              <span style={{ fontSize: 13, fontWeight: 700, color: B.textMid }}>{profile.name.split(" ")[0]}</span>
-              <button onClick={() => setProfile(null)} style={{ fontSize: 11, color: B.textMute, background: "none", border: "none", cursor: "pointer", padding: 0 }}>✕</button>
-            </div>
           </div>
         </div>
       </header>
