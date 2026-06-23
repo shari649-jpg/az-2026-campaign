@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import ConversationCoach from "./ConversationCoach";
@@ -18,6 +18,20 @@ const MORE_ITEMS = [
   { path: "/quick-start",       short: "Quick Start" },
   { path: "/misinfo-monitor",   short: "BS Monitor" },
 ];
+
+// Scrolls the window to the top whenever the route changes, regardless of
+// how the user arrived (nav click, direct link, tool-to-tool push, or
+// browser back/forward). Lives once here in AppShell since every routed
+// page renders through the single <Outlet /> below.
+function ScrollToTopOnNavigate() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
+}
 
 // Floating scroll-to-top / scroll-to-bottom arrows.
 // Appears once the user has scrolled down; hidden at the very top of the page.
@@ -488,6 +502,7 @@ export default function AppShell() {
       </div>
 
       {/* ── Page content ── */}
+      <ScrollToTopOnNavigate />
       <main style={{ flex: 1 }}>
         <Outlet />
       </main>
