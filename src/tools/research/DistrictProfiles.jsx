@@ -84,6 +84,14 @@ export default function GeographicProfiles() {
     setExpanded(p => ({ ...p, [id]: !p[id] }));
   }
 
+  // Returns a single county name only if unambiguous (no comma-separated multi-county string)
+  function singleCountyFrom(d) {
+    if (!d || !d.counties) return null;
+    const c = d.counties.trim();
+    if (!c || c.includes(',')) return null;
+    return c;
+  }
+
   function pushToMM(d) {
     const issueText = buildDistrictIssueText(d);
     const payload = {
@@ -91,6 +99,7 @@ export default function GeographicProfiles() {
       sourceTitle: `District Profile: ${d.district_id}`,
       sourcePublication: 'AZ 2026 District Research',
       issueText,
+      county: singleCountyFrom(d),
       focalPoint: '',
       pushedAt: new Date().toISOString(),
     };
