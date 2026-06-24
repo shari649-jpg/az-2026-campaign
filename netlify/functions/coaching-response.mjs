@@ -73,13 +73,13 @@ ${FACTUAL_ACCURACY_RULE}`;
 
 function buildTrollSystemPrompt(persona, tone, pastedContent) {
   const personaContext = {
-    bot:        `The comment was likely posted by a bot or coordinated agitator account — low follower count, recently created, repetitive talking points, no genuine engagement history. Treat it as adversarial and strategic, not as genuine discourse.`,
-    realpeople: `The comment was posted by a real person who is hostile or misinformed. They may have real grievances mixed with bad-faith framing. There may be genuine lurkers watching this exchange who are persuadable.`,
+    bot:        `The comment was likely posted by a bot or coordinated agitator account — low follower count, recently created, repetitive talking points, no genuine engagement history. Don't try to persuade the account itself; it isn't a good-faith interlocutor. But do NOT assume the claim can be ignored just because it came from a bot — lurkers reading the thread often can't tell it's a bot, and an unanswered accusation reads as conceded whether or not the source was real. If the comment contains a checkable factual claim, treat correcting it for the room as just as important as it would be from a real person; only the delivery changes (don't address the bot directly as if debating it).`,
+    realpeople: `The comment was posted by a real person who is hostile or misinformed. They may have real grievances mixed with bad-faith framing. There may be genuine lurkers watching this exchange who are persuadable, even if the commenter themselves isn't.`,
   };
   const toneInstructions = {
-    adult:    `Draft a response that positions the user as the calm, factual adult in the room. The PRIMARY audience is the lurkers — people who will read this thread later. The goal is not to convince the commenter, but to look credible and reasonable to neutral observers. Use factual framing, no name-calling, no all-caps. Then explain in 1–2 sentences why this approach works for the lurker audience.`,
-    pushback: `Draft a firm, confident pushback that corrects the record without being cruel. Don't let the premise stand unchallenged. The tone should be: we're not afraid of this fight, and we have the facts. Brief, pointed, and confident. Then explain in 1 sentence what this accomplishes strategically.`,
-    ignore:   `Assess whether engaging is worth it. If not, explain why silence or a minimal response is the right call here (e.g. feeding the algorithm, amplifying bad content, etc.). If there IS a brief thing worth saying — like correcting a factual error for lurkers without addressing the commenter directly — draft that. Keep it ruthlessly short.`,
+    correct: `Draft a brief, factual correction aimed at the lurking audience, not at convincing the commenter — they likely won't be persuaded, but unanswered claims read as true to anyone scrolling past. If the persona context above indicates this is a bot/agitator account, write the correction so it stands on its own (state the fact, don't debate the account) rather than addressing the bot as a good-faith party. No name-calling, no all-caps. Then explain in 1–2 sentences why this correction matters for the lurker audience specifically.`,
+    pushback: `Draft a firm, confident pushback that corrects the record without conceding the premise. Don't let the claim stand unchallenged. The tone should be: we're not afraid of this fight, and we have the facts — brief, pointed, and confident, not cruel. Then explain in 1 sentence what this accomplishes strategically.`,
+    ignore: `First assess whether there's a real, checkable claim in this comment that lurkers would otherwise take as true if left unanswered — if so, say that engaging IS warranted despite this option being selected, and explain why silence would actually read as concession here. Only recommend genuine silence (or a minimal, non-engaging response) if the comment is pure insult, noise, or bait with no factual claim worth correcting for the room. Be explicit about which case applies before drafting anything.`,
   };
   return `You are The Coach, a social media response advisor for Arizona Coalition volunteers.
 
@@ -91,7 +91,7 @@ ${pastedContent || "[No comment pasted]"}
 ${personaContext[persona] || personaContext.realpeople}
 
 Response mode: ${tone}
-${toneInstructions[tone] || toneInstructions.adult}
+${toneInstructions[tone] || toneInstructions.correct}
 
 Format your output as:
 SUGGESTED RESPONSE:
@@ -103,6 +103,31 @@ STRATEGY NOTE:
 Keep the suggested response tight — social media length. Do not invent facts. Do not attribute specific quotes or statistics unless the user's original post contained them.
 
 ${FACTUAL_ACCURACY_RULE}`;
+}
+
+function buildSuggestSystemPrompt(persona, pastedContent) {
+  const personaNote = persona === "bot"
+    ? `The user has flagged this as likely from a bot or agitator account. Do not let that alone push you toward recommending silence — lurkers usually can't tell it's a bot, and an unanswered factual claim reads as conceded regardless of the source. Source type should affect HOW a reply is written (don't address the account as a good-faith party), not WHETHER the underlying claim needs answering.`
+    : `The user has flagged this as a real hostile or misinformed person. There may be persuadable lurkers watching even if the commenter isn't persuadable themselves.`;
+
+  return `You are The Coach, advising an Arizona Coalition volunteer on how to handle a hostile or misleading comment on their social media post.
+
+The comment:
+---
+${pastedContent || "[No comment provided]"}
+---
+
+${personaNote}
+
+Decide which ONE of these three response strategies fits best, based on the comment's actual content:
+- "correct": There is a checkable factual claim or accusation that lurkers would likely take as true if it goes unanswered. A correction aimed at the room (not at convincing the commenter) is warranted.
+- "pushback": The comment makes a charged claim or attack that calls for a firm, confident rebuttal that holds the line without conceding the premise — more direct than a quiet correction.
+- "ignore": The comment is pure insult, noise, or bait with no real factual claim worth correcting — replying would only amplify it, and silence does not read as concession here.
+
+Default to "correct" or "pushback" whenever there is a factual claim sitting unanswered — "ignore" is only right when there is genuinely nothing worth correcting for the room's sake.
+
+Respond with ONLY a JSON object, no other text, no markdown fences:
+{"suggestion": "correct" | "pushback" | "ignore", "reason": "one sentence, plain language, explaining the call"}`;
 }
 
 // ── Handler ─────────────────────────────────────────────────────────────────
@@ -144,7 +169,24 @@ export default async function (req) {
     }
 
     // ── Claude call ─────────────────────────────────────────────────────────
-    const { situation, persona, tone, pastedContent, history, userMessage } = body;
+    const { situation, persona, tone, pastedContent, history, userMessage, mode } = body;
+
+    // Suggest mode: classify the comment and recommend a tone, instead of
+    // drafting a full response. Used by the "Suggest a strategy" button in
+    // step 2/3 of troll mode, before the user picks a tone themselves.
+    if (mode === "suggest") {
+      const system = buildSuggestSystemPrompt(persona, pastedContent);
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 200, system, messages: [{ role: "user", content: "Classify this comment now." }] }),
+      });
+      const data = await response.json();
+      if (usage.warning) {
+        data.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
+      }
+      return new Response(JSON.stringify(data), { status: 200, headers: CORS_HEADERS });
+    }
 
     const system = situation === "troll"
       ? buildTrollSystemPrompt(persona, tone, pastedContent)
