@@ -89,6 +89,7 @@ export default function IssuesPage() {
       sourceTitle: `Issue Brief: ${issue.issue}`,
       sourcePublication: 'AZ 2026 Issues Research',
       issueText,
+      county: null, // Issues are not reliably tied to a single county — "affected" is free text
       focalPoint: '',
       pushedAt: new Date().toISOString(),
     };
