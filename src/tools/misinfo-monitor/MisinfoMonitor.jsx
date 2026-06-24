@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { auth } from "../../firebase";
 
 // ── Brand tokens ────────────────────────────────────────────────────────────
 const TEAL      = "#1D5C4A";
@@ -89,9 +90,13 @@ function NoteCard({ note, onSendToRebuttal }) {
 
       // Ask Claude to infer the original false claim from the correction note
       try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
         const res = await fetch("/.netlify/functions/generate-message", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+          },
           body: JSON.stringify({
             max_tokens: 150,
             messages: [{
