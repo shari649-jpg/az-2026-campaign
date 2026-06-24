@@ -281,13 +281,6 @@ export default function LibraryPage() {
         {/* Rapid Response articles */}
         {showArticles && filteredArticles.length > 0 && (
           <div style={{ marginBottom: 40 }}>
-            {filter === "all" && (
-              <h2
-                style={{ fontSize: 18, fontWeight: 700, color: TEAL, marginBottom: 16, paddingBottom: 8, borderBottom: `2px solid ${GOLD}`, display: "inline-block" }}
-              >
-                📡 Rapid Response Articles
-              </h2>
-            )}
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {pageArticles.map(a => {
                 const deletable = canDelete(a);
