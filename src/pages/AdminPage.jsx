@@ -168,10 +168,12 @@ export default function AdminPage() {
   const handleSendInvite = async (entry) => {
     setInviting(entry.id);
     try {
+      const idToken = await auth.currentUser.getIdToken();
       const res = await fetch("/.netlify/functions/send-invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          idToken,
           waitlistId: entry.id,
           email:      entry.email,
           fullName:   entry.fullName,
