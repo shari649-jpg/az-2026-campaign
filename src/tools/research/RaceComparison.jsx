@@ -195,13 +195,22 @@ export default function RaceComparison() {
     }
   }
 
-  function doSend(issueText, withDistrict) {
+  // Returns a single county name only if unambiguous (no comma-separated multi-county string)
+  function singleCountyFrom(district) {
+    if (!district || !district.counties) return null;
+    const c = district.counties.trim();
+    if (!c || c.includes(',')) return null;
+    return c;
+  }
+
+  function doSend(issueText, withDistrict, county) {
     const candidatesForTitle = hasSelected ? selectedList : (races||[]).flatMap(r=>r.candidates);
     const payload = {
       sourceArticleId:   null,
       sourceTitle:       hasSelectedFacts ? 'Selected Facts — AZ 2026 Research' : `Candidate Research: ${candidatesForTitle.map(c=>c.candidate_name).join(', ')}`,
       sourcePublication: 'AZ 2026 Candidate Research',
       issueText,
+      county:            withDistrict ? (county || null) : null,
       focalPoint:        '',
       pushedAt:          new Date().toISOString(),
     };
@@ -226,7 +235,7 @@ export default function RaceComparison() {
     if (singleDistrict) {
       setDistrictPrompt({ district: singleDistrict, candidateIssueText });
     } else {
-      doSend(candidateIssueText, false);
+      doSend(candidateIssueText, false, null);
     }
   }
 
@@ -242,7 +251,7 @@ export default function RaceComparison() {
       district.demographics   ? `Demographics: ${district.demographics}`   : null,
       district.top_issues     ? `Top Issues: ${district.top_issues}`       : null,
     ].filter(Boolean).join('\n');
-    doSend(candidateIssueText + districtText, true);
+    doSend(candidateIssueText + districtText, true, singleCountyFrom(district));
   }
 
   const S = {
