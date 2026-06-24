@@ -2,6 +2,7 @@ import { useState } from 'react';
 import CandidateQuery from './CandidateQuery';
 import RaceComparison from './RaceComparison';
 import DistrictProfiles from './DistrictProfiles';
+import IssuesPage from './IssuesPage';
 
 const B = {
   teal:      '#1D5C4A',
@@ -28,9 +29,14 @@ const TABS = [
     desc:  'Browse all races — D vs R side-by-side',
   },
   {
-    id:    'districts',
-    label: '🗺️ District Profiles',
-    desc:  'Demographics, registration & messaging by district',
+    id:    'geo',
+    label: '🗺️ Geographic Profiles',
+    desc:  'Districts, counties & statewide demographics',
+  },
+  {
+    id:    'issues',
+    label: '🌶️ Issues',
+    desc:  'Statewide & local issue briefs with messaging angles',
   },
 ];
 
@@ -40,12 +46,30 @@ export default function ResearchPage() {
   return (
     <div style={{ fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: B.text }}>
 
+      {/* Eyebrow */}
+      <div style={{
+        background: `${B.teal}08`,
+        border: `1px solid ${B.teal}25`,
+        borderRadius: 10,
+        padding: '14px 20px',
+        marginBottom: 20,
+      }}>
+        <p style={{ fontSize: 14, color: B.textMid, lineHeight: 1.7, margin: 0 }}>
+          <strong style={{ color: B.teal }}>Research Hub —</strong>{' '}
+          everything you need to know your races, your districts, and your issues. Search every
+          candidate's record, compare D vs R head-to-head, look up district and county demographics
+          and messaging guidance, or pull a ready-made brief on a statewide issue. Anything you find
+          can be sent straight to Message Machine to start drafting.
+        </p>
+      </div>
+
       {/* Tab bar */}
       <div style={{
         display: 'flex',
         borderBottom: `2px solid ${B.border}`,
         marginBottom: 28,
         gap: 0,
+        flexWrap: 'wrap',
       }}>
         {TABS.map(tab => {
           const isActive = activeTab === tab.id;
@@ -55,6 +79,7 @@ export default function ResearchPage() {
               onClick={() => setActiveTab(tab.id)}
               style={{
                 flex: 1,
+                minWidth: 180,
                 padding: '14px 20px',
                 border: 'none',
                 borderBottom: isActive ? `4px solid ${B.gold}` : `4px solid transparent`,
@@ -77,9 +102,10 @@ export default function ResearchPage() {
       </div>
 
       {/* Tab content */}
-      {activeTab === 'search'    && <CandidateQuery />}
-      {activeTab === 'races'     && <RaceComparison />}
-      {activeTab === 'districts' && <DistrictProfiles />}
+      {activeTab === 'search' && <CandidateQuery />}
+      {activeTab === 'races'  && <RaceComparison />}
+      {activeTab === 'geo'    && <DistrictProfiles />}
+      {activeTab === 'issues' && <IssuesPage />}
     </div>
   );
 }
