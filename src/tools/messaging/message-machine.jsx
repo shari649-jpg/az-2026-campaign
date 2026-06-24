@@ -31,6 +31,25 @@ const VOICE_PRESETS = [
     text: "Young Men voice: casual — advice from a trusted buddy, not a lecture. Blend humor, practicality, and motivation. Sarcasm and self-deprecation are fine; stay authentic, never preachy. Motivational but grounded — \"level up your game\" energy, no corporate polish. Short sentences and short paragraphs, contractions throughout. Structure: hook with a one-line pain point or question, deliver value fast (a list or how-to), close with a clear call to action."
   },
 ];
+
+// County-specific voice grounding — from the Rural Arizona Style Sheet (County Voices doc).
+// Layered ON TOP of Voice/Persona, not a replacement for it — county is about place/local
+// stakes, persona (Mom Blog, Young Men, etc.) is about who's speaking. Only the 11 counties
+// covered by the rural style sheet are included; others fall through with no county voice.
+const COUNTY_VOICES = {
+  "Coconino": "Coconino neighbors protecting our lands, homes, and futures — from Flagstaff to the Navajo/Hopi Nations. Speak as a lifelong local (30-50s) — warm, inclusive, no jargon, like NAU coffee or canyon trail talk. Lean on \"we/our,\" bilingual English/Spanish/Diné phrases where natural. Ground posts in local stakes (rising rents from Flagstaff to Page, tourism jobs needing water security) and local landmarks (San Francisco Peaks, Lowell Observatory). Pillars: land/heritage, homes/cost of living, youth opportunity, every voice counted.",
+  "Cochise": "Cochise neighbors delivering fair votes, steady jobs, strong families — from Sierra Vista to Bisbee. Speak as a pragmatic local (40-60s) — calm, neighborly, plainspoken, like a Sierra Vista office chat. Name-drop Bisbee/Douglas/Willcox/Palominas/Fort Huachuca. Bilingual Spanish integration (about a third of the county is Latino). \"We/our\" over party labels; never partisan drama. Pillars: local democracy, economic/senior security, Latino dignity, shared values first.",
+  "Gila": "Gila neighbors fixing rural families — from Payson trails to Globe mines. Speak as a teacher/farmer/volunteer (50+) — warm \"rural fixer,\" short and plain, \"we/us/our\" unity. Local touchstones: trails, families, mine shifts, childcare deserts. Low-barrier, neighborly CTAs (\"Drop by Payson HQ\"). Pillars: family support, economic stability, water/resources, fair elections.",
+  "Graham": "Graham neighbors grounded in work, family, faith, and land — from Safford to Bylas, honoring Apache ties and the Gila Valley. Speak as a proud/humble local (40-60s) — warm/direct, plain words, \"we/our.\" Place-based (Mount Graham, Salsa Trail, EAC, Friday night lights), faith-respectful (\"church groups\"), hopeful realism. Pillars: neighbors first, roots/land, kids/future, work/dignity.",
+  "Greenlee": "Greenlee neighbors with mining grit and family resilience — from Clifton pits to York farms. Speak as a lifelong miner/local (40-60s) — warm/direct, plain and short, \"we/our.\" Rugged plainspoken tone grounded in wildfire/drought realities and mining heritage, honored without flash. Pillars: drought/wildfires, mining economy/housing, rural connectivity.",
+  "La Paz": "La Paz neighbors rising together — from Parker tribes to Quartzsite retirees, sharing river-isolation realities. Speak as a town hall host (50+) — practical, hopeful, simple bilingual phrasing, empathetic. Mostly hyper-local solutions, with local imagery (river sunsets, retiree picnics). Pillars: water/infrastructure, senior/worker supports, election equity, inclusive unity.",
+  "Mohave": "Mohave neighbors straight-talking water, jobs, and retirees — from Kingman VFW to Lake Mead. Speak as a tough/caring local (50+) — plain, no jargon, county-first before any partisan tag. Respect gun culture and independence (\"responsible gun owners, law-abiding neighbors\"); villains are \"career politicians/grifters,\" never local conservatives. Structure: local-stakes hook, then contrast, then a simple CTA. Pillars: local stakes, independence respect, outsider villains, practical wins.",
+  "Navajo": "Navajo County empowering land stewards — from the Nation to rural towns, centering Hózhó and family resilience. Speak as a Native-rooted neighbor (30-50s) — warm, inclusive, Diné phrases used only when culturally vetted. Resilience stories, youth and tribal spotlights, cultural imagery. Pillars: tribal rights, rural security, voter protections, cultural resilience.",
+  "Santa Cruz": "Santa Cruz familias unidas — from the Nogales port to rural homes. Speak as a warm abuelita/tío figure (30-50s) — bilingual, solutions-oriented, visual-heavy. Fight border fear with concrete wins on jobs and schools (\"puentes no muros\"). Bilingual Spanish phrasing should feel authentic, not like translation. Pillars: trade revival, education/health, youth engagement, immigration dignity.",
+  "Yavapai": "Yavapai rural families standing for their wallets and way of life — from Prescott to the Verde Valley. Speak as an everywoman/everyman senior (50+) — empathetic populism, testimonial-driven, non-confrontational and cross-aisle. Anchor in retirement security (Social Security, fixed incomes) and sustainable growth. Pillars: secure retirements, sustainable growth, safety/environment, cross-aisle appeal.",
+  "Yuma": "Yuma families and fields building voting culture — from farms to the border. Speak as a working neighbor (30-50s) — vivid, localized Yuma stories (farmers feeling heat, students needing cooler classrooms), step-by-step and mentoring in tone. Spanish integration where natural; family-event framing. Pillars: Yuma stories first, voting culture, youth/family focus, local wins and services.",
+};
+
 // National frames defined above; SPEAKER_PERSPECTIVES defined above
 
 // Layer 2 national frames — available in both AZ and National mode
@@ -39,7 +58,7 @@ const NATIONAL_FRAMES = [
     id: "anti_corruption",
     label: "Anti-Corruption",
     desc: "Donor influence, rate hikes, stock trades, slush funds",
-    prompt: "Emphasize the money trail: who gave, who got, what it cost regular people. Connect every corrupt act to a specific cost someone is paying today. Name the mechanism — the donor class, the politicians who take corporate money then do their bidding — not the party.",
+    prompt: "Emphasize the money trail: who gave, who got, what it cost regular people. Connect every corrupt act to a specific cost someone is paying today. If the input names a specific villain (a person, an official, a party), use that name directly. If it does not, name the mechanism instead — the donor class, the politicians who take corporate money then do their bidding — without inventing a specific name that isn't in the input.",
   },
   {
     id: "economic_populism",
@@ -57,7 +76,7 @@ const NATIONAL_FRAMES = [
     id: "competence_contrast",
     label: "Competence Contrast",
     desc: "Gridlock, chaos, failed promises",
-    prompt: "Use the Shapiro model: builders vs. chaos-makers, results vs. performance. Never name the opponent — talk about the chaos, the corruption, the cost. Let the audience make the connection. Forward-looking, not nostalgic.",
+    prompt: "Use the Shapiro model: builders vs. chaos-makers, results vs. performance. If the input names a specific opponent or party, use that name directly. If it does not, talk about the chaos, the corruption, the cost without inventing a name — let the audience make the connection. Forward-looking, not nostalgic.",
   },
 ];
 
@@ -383,8 +402,10 @@ export default function App() {
   const [view, setView]             = useState("form");
   const [msgMode, setMsgMode]       = useState("");   // "" (neutral, default) | "az" | "national"
   const [msgFrame, setMsgFrame]     = useState("");      // NATIONAL_FRAMES id or ""
-  const [formData, setFormData]     = useState({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", perspective:"", platforms:[] });
+  const [formData, setFormData]     = useState({ issue:"", focalPoint:"", audience:"", voice:"", county:"", style:"", modifier:"", perspective:"", platforms:[] });
   const [fromResearch, setFromResearch] = useState(false);
+  const [countySuggestion, setCountySuggestion] = useState(""); // detected from Research push, not yet applied
+  const [proModeOpen, setProModeOpen] = useState(false); // Pro Mode panel — collapsed by default
   const [messages, setMessages]     = useState({});
   const [generating, setGenerating] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
@@ -427,6 +448,11 @@ export default function App() {
         const p = JSON.parse(pending);
         setFormData(f => ({ ...f, issue: p.issueText || "", focalPoint: p.focalPoint || "" }));
         setFromResearch(true);
+        // Surface a detected county as a suggestion only — never auto-applied.
+        // Only recognized if it matches one of the counties in COUNTY_VOICES.
+        if (p.county && COUNTY_VOICES[p.county]) {
+          setCountySuggestion(p.county);
+        }
         localStorage.removeItem("rr_pending_article");
         try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
         return;
@@ -483,6 +509,13 @@ export default function App() {
     const perspObj = SPEAKER_PERSPECTIVES.find(p => p.id === formData.perspective);
     const perspLine = perspObj ? `Grammatical person: ${perspObj.label} — ${perspObj.desc}` : "";
 
+    // County voice injection — AZ mode only. Layered ON TOP of Voice/Persona, not a
+    // replacement for it. Only applies if the user explicitly selected a county in Pro Mode.
+    const countyVoiceText = formData.county ? COUNTY_VOICES[formData.county] : null;
+    const countyBlock = countyVoiceText
+      ? `\nCOUNTY VOICE — ${formData.county.toUpperCase()} COUNTY:\n${countyVoiceText}\n`
+      : "";
+
     // Layer 2 frame injection (available in both modes)
     const frameObj = NATIONAL_FRAMES.find(f => f.id === msgFrame);
     const frameBlock = frameObj
@@ -537,7 +570,7 @@ This is a professional political communications tool. Content will reference pub
 
 ARIZONA CONTEXT — GROUND ALL MESSAGING HERE:
 Ground all messaging in the Arizona context. Reference communities, landscapes, and values familiar to Arizona voters — urban centers like Phoenix and Tucson, rural and tribal communities, the border, the desert. Reflect issues as they affect Arizonans specifically. When referencing costs, use Arizona examples where possible (utility bills, housing, healthcare, water, education). Write for an Arizona audience, not a generic national one.
-
+${countyBlock}
 FACTUAL ACCURACY — NON-NEGOTIABLE:
 - NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date. If you do not have a verified figure from the content provided, do not include one.
 - NEVER fabricate or paraphrase quotes from real people. Only use quotes explicitly provided in the input.
@@ -551,7 +584,7 @@ Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
 Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
-Style: ${styleLabel}
+${formData.county ? `County Voice: ${formData.county} County\n` : ""}Style: ${styleLabel}
 ${modifierLine}
 ${perspLine}
 
@@ -585,11 +618,11 @@ VOICE — Write like a trusted neighbor explaining something important over a ki
 STRUCTURE — Use the five-beat framework:
 0. FREEDOM FIRST: Before the cost, lead with what democracy and good governance give people — freedom to live the life they choose, freedom to have a say, freedom from a system rigged against them. Freedom is the entry point that crosses all partisan lines. Then connect that to the specific cost someone is paying when that freedom is taken away.
 1. THE COST: Lead with a specific cost someone is paying right now — in dollars, services lost, or dignity. Make it concrete and human.
-2. THE RIGGING: Name the mechanism that caused it. Not the party — the system, the money, the deal. Who gave, who got, what it cost regular people.
+2. THE RIGGING: Name the mechanism that caused it — the system, the money, the deal. Who gave, who got, what it cost regular people. If the input names a specific villain (Trump, a political party, a named official), use that name directly. If it does not, do not invent one — keep it to the mechanism.
 3. THE FIX: A specific reform, bill, ban, or change — not "we need change." Give the audience a door to walk through.
 4. THE ASK — CLOSE THE DEMOCRATIC LOOP: End with one specific, low-barrier action — and frame it as the mechanism that delivers freedom back to the people. Voting, showing up, calling, signing — these aren't just tasks, they are the verdict. "Here's what you can do" should always connect to "and here's what changes when you do."
 
-VILLAIN FRAMING — Name billionaires, corporate donors, and rigged systems. NOT political parties or named opponents by name. Say "politicians who take corporate money, then do their bidding" — not "Republicans." Let the audience make the connection. This keeps persuadable voters in the room.
+VILLAIN FRAMING — If the input content names a specific villain (Trump, a political party, a named official), use that name directly — don't launder it into vague language. If the input does NOT name a specific person or party, do not invent one: frame the villain generally as billionaires, corporate donors, or a rigged system, and let the audience make the connection. Never invent a named villain that isn't present in the input.
 
 HOPE DISCIPLINE — Anger opens the door. Hope closes the deal. Every message must end somewhere: a reform, an action, a change that's possible. Rage without resolution loses people.
 
@@ -845,10 +878,11 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
   const startNewCampaign = () => {
     try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
-    setFormData({ issue:"", focalPoint:"", audience:"", voice:"", style:"", modifier:"", perspective:"", platforms:[] });
+    setFormData({ issue:"", focalPoint:"", audience:"", voice:"", county:"", style:"", modifier:"", perspective:"", platforms:[] });
     setMsgMode("");
     setMsgFrame("");
     setFromResearch(false);
+    setCountySuggestion("");
     setMessages({});
     setHashtags(null);
     setGenError(null);
@@ -1211,6 +1245,81 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 <p style={S.hint}>{fromResearch && !formData.focalPoint ? "Content has been loaded from Research — add a focal point to frame your message before generating." : "The one thing you want every post to drive home"}</p>
               </section>
 
+              {/* ── Pro Mode toggle ── */}
+              {(() => {
+                const proModeActiveCount = [
+                  formData.audience, formData.voice, formData.county,
+                  formData.style, formData.modifier, formData.perspective,
+                ].filter(Boolean).length;
+                return (
+                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                    {countySuggestion && !formData.county && (
+                      <div style={{
+                        display:"flex", alignItems:"center", gap:10, flexWrap:"wrap",
+                        background:"#fffdf0", border:`1.5px solid ${T.gold}`, borderRadius:10,
+                        padding:"10px 16px", fontSize:14, color:T.text,
+                      }}>
+                        <span>📍 <strong>{countySuggestion} County</strong> detected from Research — apply its local voice?</span>
+                        <button type="button"
+                          onClick={() => { upd("county", countySuggestion); setProModeOpen(true); }}
+                          style={{ padding:"5px 14px", borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit", background:T.teal, color:"#fff", border:"none" }}>
+                          Apply {countySuggestion} voice
+                        </button>
+                        <button type="button" onClick={() => setCountySuggestion("")}
+                          style={{ padding:"5px 14px", borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit", background:"transparent", color:T.textMute, border:`1px solid ${T.border}` }}>
+                          No thanks
+                        </button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => setProModeOpen(o => !o)}
+                      style={{
+                        display:"flex", alignItems:"center", justifyContent:"space-between",
+                        width:"100%", padding:"12px 18px", borderRadius:10, cursor:"pointer",
+                        fontFamily:"inherit", fontSize:15, fontWeight:700,
+                        background: proModeOpen ? "#e8f4f1" : T.surface,
+                        border: `2px solid ${proModeOpen ? T.teal : T.border}`,
+                        color: T.teal,
+                      }}>
+                      <span>⚙️ Pro Mode — Audience, Voice, Style &amp; County
+                        {proModeActiveCount > 0 ? ` (${proModeActiveCount} active)` : ""}
+                      </span>
+                      <span style={{ fontSize:18, transform: proModeOpen ? "rotate(180deg)" : "none", transition:"transform 0.15s" }}>▾</span>
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {proModeOpen && (
+              <>
+
+              {/* County Voice — AZ mode only */}
+              {msgMode === "az" && (
+                <section style={S.card}>
+                  <fieldset style={{ border:"none", padding:0 }}>
+                    <legend style={S.label}>County Voice <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional — layers on top of Voice/Persona)</span></legend>
+                    <p style={{ ...S.hint, marginBottom:10 }}>Grounds the message in a specific county's local style — landmarks, local stakes, and tone. Stacks with Voice/Persona rather than replacing it.</p>
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginTop:4 }}>
+                      {Object.keys(COUNTY_VOICES).map(c => {
+                        const on = formData.county === c;
+                        return (
+                          <button key={c} type="button"
+                            onClick={() => upd("county", on ? "" : c)}
+                            style={{
+                              padding:"7px 16px", borderRadius:20, fontSize:13, fontWeight:700,
+                              cursor:"pointer", fontFamily:"inherit",
+                              background: on ? T.teal : "transparent",
+                              color: on ? "#fff" : T.teal,
+                              border: `1.5px solid ${T.teal}`,
+                            }}>
+                            {c}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                </section>
+              )}
+
               {/* Audience + Voice */}
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:18 }}>
                 <section style={S.card}>
@@ -1330,6 +1439,9 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   <p style={S.hint}>This changes whether posts sound like a statement, a direct conversation, or a news update</p>
                 </fieldset>
               </section>
+
+              </>
+              )}
 
               {/* Platforms */}
               <section style={S.card}>
