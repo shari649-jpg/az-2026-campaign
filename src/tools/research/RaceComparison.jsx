@@ -1,6 +1,23 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+function useScrollArrows() {
+  const [showUp, setShowUp] = useState(false);
+  const [showDown, setShowDown] = useState(false);
+  useEffect(() => {
+    const onScroll = () => {
+      const scrolled = window.scrollY;
+      const atBottom = window.innerHeight + scrolled >= document.body.scrollHeight - 80;
+      setShowUp(scrolled > 200);
+      setShowDown(!atBottom && document.body.scrollHeight > window.innerHeight + 200);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  return { showUp, showDown };
+}
+
 function localStorageSafe(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); return true; }
   catch { return false; }
@@ -26,12 +43,24 @@ const B = {
   rRedBg:     '#fff1f1',
 };
 
+const FACT_LABELS = {
+  accomplishment: 'Accomplishment',
+  vulnerability:  'Vulnerability',
+  strength:       'Strength',
+  quote:          'Quote',
+  background:     'Background',
+  policy:         'Policy Platform',
+  notes:          'Additional Notes',
+};
+
 const FACT_COLORS = {
   accomplishment: { bg: '#dcfce7', text: '#166534', border: '#86efac' },
   vulnerability:  { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
   strength:       { bg: '#dbeafe', text: '#1e40af', border: '#93c5fd' },
   quote:          { bg: '#fef9c3', text: '#854d0e', border: '#fde047' },
   background:     { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' },
+  policy:         { bg: '#e6faf7', text: '#1D5C4A', border: '#3ECFB2' },
+  notes:          { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' },
 };
 
 function partyColor(party) {
@@ -52,7 +81,8 @@ function candidateLabel(c) {
 function factsToText(c) {
   const header = `── ${candidateLabel(c)} ──`;
   const lines = (c.facts || []).map(f => {
-    const tag = f.type ? `[${f.type.toUpperCase()}${f.category ? ' – ' + f.category : ''}] ` : '';
+    const label = FACT_LABELS[f.type] || (f.type || '').toUpperCase();
+    const tag = f.type ? `[${label}] ` : '';
     return `• ${tag}${f.text}`;
   });
   return [header, ...lines].join('\n');
@@ -60,6 +90,7 @@ function factsToText(c) {
 
 export default function RaceComparison() {
   const navigate = useNavigate();
+  const { showUp, showDown } = useScrollArrows();
   const [races,    setRaces]    = useState(null);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState(null);
@@ -117,6 +148,7 @@ export default function RaceComparison() {
 
   function buildDistrictIssueText(d) {
     const lines = [`── District Context: ${d.district_id} ──`];
+    if (d.counties)       lines.push(`Counties: ${d.counties}`);
     if (d.location_note)  lines.push(`Location: ${d.location_note}`);
     if (d.registration)   lines.push(`Registration: ${d.registration}`);
     if (d.voting_history) lines.push(`Voting History: ${d.voting_history}`);
@@ -167,7 +199,8 @@ export default function RaceComparison() {
       selectedFactList.forEach(({ candidate, fact }) => {
         const label = candidateLabel(candidate);
         if (!byCandidate[label]) byCandidate[label] = [];
-        const tag = fact.type ? `[${fact.type.toUpperCase()}${fact.category ? ' – ' + fact.category : ''}] ` : '';
+        const label2 = FACT_LABELS[fact.type] || (fact.type || '').toUpperCase();
+        const tag = fact.type ? `[${label2}] ` : '';
         byCandidate[label].push(`• ${tag}${fact.text}`);
       });
       return Object.entries(byCandidate)
@@ -220,6 +253,7 @@ export default function RaceComparison() {
     const { district, candidateIssueText } = districtPrompt;
     const districtText = [
       `\n── District Context: ${district.district_id} ──`,
+      district.counties        ? `Counties: ${district.counties}`         : null,
       district.location_note  ? `Location: ${district.location_note}`     : null,
       district.registration   ? `Registration: ${district.registration}`   : null,
       district.voting_history ? `Voting History: ${district.voting_history}` : null,
@@ -239,6 +273,18 @@ export default function RaceComparison() {
 
   return (
     <div style={S.wrap}>
+      {/* Floating scroll arrows */}
+      {showUp && (
+        <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          style={{ position: 'fixed', bottom: 72, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: B.teal, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          aria-label="Scroll to top">↑</button>
+      )}
+      {showDown && (
+        <button onClick={() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })}
+          style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: B.teal, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          aria-label="Scroll to bottom">↓</button>
+      )}
+
       {/* Instructions */}
       <div style={{ background: B.surfaceAlt, border: `1px solid ${B.border}`, borderRadius: 10, padding: '14px 18px', marginBottom: 20 }}>
         <p style={{ fontSize: 14, color: B.textMid, lineHeight: 1.7, margin: 0 }}>
@@ -374,11 +420,18 @@ export default function RaceComparison() {
                   >
                     <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>🗺️ District Context: {raceDistrict.district_id}</span>
                     {raceDistrict.location_note && <span style={{ fontSize: 12, color: B.textMute }}>{raceDistrict.location_note}</span>}
+                    {raceDistrict.counties && <span style={{ fontSize: 12, color: B.textMute }}>· {raceDistrict.counties} {raceDistrict.counties.includes(',') ? 'Counties' : 'County'}</span>}
                     <span style={{ marginLeft: 'auto', fontSize: 14, color: B.textMute, transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▾</span>
                   </button>
                   {isOpen && (
                     <div style={{ padding: '12px 20px', borderTop: `1px solid ${B.teal}15` }}>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+                        {raceDistrict.counties && (
+                          <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 8, padding: '10px 12px' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Counties</div>
+                            <div style={{ fontSize: 13, color: B.text, lineHeight: 1.5 }}>{raceDistrict.counties}</div>
+                          </div>
+                        )}
                         {raceDistrict.registration && (
                           <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 8, padding: '10px 12px' }}>
                             <div style={{ fontSize: 10, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Registration</div>
@@ -482,8 +535,7 @@ export default function RaceComparison() {
                               style={{ width: 15, height: 15, accentColor: B.teal, cursor: 'pointer', flexShrink: 0 }}
                               aria-label={`Select fact: ${fact.text.substring(0, 40)}`}
                             />
-                            <span style={{ fontSize: 11, fontWeight: 700, color: fc.text, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{fact.type}</span>
-                            {fact.category && <span style={{ fontSize: 11, color: fc.text, opacity: 0.8 }}>· {fact.category}</span>}
+                            <span style={{ fontSize: 11, fontWeight: 700, color: fc.text, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{FACT_LABELS[fact.type] || fact.type}</span>
                           </div>
                           <p style={{ fontSize: 14, color: B.text, lineHeight: 1.6, margin: '0 0 10px 0', fontStyle: fact.type === 'quote' ? 'italic' : 'normal' }}>
                             {fact.type === 'quote' ? `"${fact.text}"` : fact.text}
