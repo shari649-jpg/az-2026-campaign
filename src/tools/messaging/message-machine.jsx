@@ -26,25 +26,28 @@ const VOICE_PRESETS = [
     text: "Mom Blog voice: relatable, conversational — like chatting with a friend. Emphasize authenticity and emotional connection over formal tone. Use personal anecdotes; make complex topics feel approachable and fun. Be honest and comfortable with vulnerability — real-life struggles, from parenting mishaps to career hurdles, without sugarcoating. Validate the reader's own experience. Lean into life tips and reflective, inspirational moments — life lessons, humor, and motivation around wellness, relationships, and self-growth — written as engaging narratives that spark comments and shares."
   },
   {
-    id: "young_men",
-    label: "Young Men",
-    text: "Young Men voice: casual — advice from a trusted buddy, not a lecture. Blend humor, practicality, and motivation. Sarcasm and self-deprecation are fine; stay authentic, never preachy. Motivational but grounded — \"level up your game\" energy, no corporate polish. Short sentences and short paragraphs, contractions throughout. Structure: hook with a one-line pain point or question, deliver value fast (a list or how-to), close with a clear call to action."
+    id: "bro_code",
+    label: "Bro Code",
+    text: "Bro Code voice: casual — advice from a trusted buddy, not a lecture. Blend humor, practicality, and motivation. Sarcasm and self-deprecation are fine; stay authentic, never preachy. Motivational but grounded — \"level up your game\" energy, no corporate polish. Short sentences and short paragraphs, contractions throughout. Structure: hook with a one-line pain point or question, deliver value fast (a list or how-to), close with a clear call to action."
   },
 ];
 
-// County-specific voice grounding — from the Rural Arizona Style Sheet (County Voices doc).
+// County-specific voice grounding — from the AZ County Voices doc (15 counties).
 // Layered ON TOP of Voice/Persona, not a replacement for it — county is about place/local
-// stakes, persona (Mom Blog, Young Men, etc.) is about who's speaking. Only the 11 counties
-// covered by the rural style sheet are included; others fall through with no county voice.
+// stakes, persona (Mom Blog, Bro Code, etc.) is about who's speaking.
 const COUNTY_VOICES = {
+  "Apache": "Apache County neighbors protecting tribal and rural communities — from chapter houses to small towns. Speak as a longtime local — warm, humble, plainspoken, no jargon, like a chapter-house meeting or front-porch conversation. \"We/our\" dominant, respectful and grounded, culturally aware, service-first. Use Indigenous language only when accurate and natural. Never preachy or performative; lead with trust, listening, and practical support. Pillars: sovereignty and respect, water and roads, schools and healthcare, voting access, community resilience.",
   "Coconino": "Coconino neighbors protecting our lands, homes, and futures — from Flagstaff to the Navajo/Hopi Nations. Speak as a lifelong local (30-50s) — warm, inclusive, no jargon, like NAU coffee or canyon trail talk. Lean on \"we/our,\" bilingual English/Spanish/Diné phrases where natural. Ground posts in local stakes (rising rents from Flagstaff to Page, tourism jobs needing water security) and local landmarks (San Francisco Peaks, Lowell Observatory). Pillars: land/heritage, homes/cost of living, youth opportunity, every voice counted.",
   "Cochise": "Cochise neighbors delivering fair votes, steady jobs, strong families — from Sierra Vista to Bisbee. Speak as a pragmatic local (40-60s) — calm, neighborly, plainspoken, like a Sierra Vista office chat. Name-drop Bisbee/Douglas/Willcox/Palominas/Fort Huachuca. Bilingual Spanish integration (about a third of the county is Latino). \"We/our\" over party labels; never partisan drama. Pillars: local democracy, economic/senior security, Latino dignity, shared values first.",
   "Gila": "Gila neighbors fixing rural families — from Payson trails to Globe mines. Speak as a teacher/farmer/volunteer (50+) — warm \"rural fixer,\" short and plain, \"we/us/our\" unity. Local touchstones: trails, families, mine shifts, childcare deserts. Low-barrier, neighborly CTAs (\"Drop by Payson HQ\"). Pillars: family support, economic stability, water/resources, fair elections.",
   "Graham": "Graham neighbors grounded in work, family, faith, and land — from Safford to Bylas, honoring Apache ties and the Gila Valley. Speak as a proud/humble local (40-60s) — warm/direct, plain words, \"we/our.\" Place-based (Mount Graham, Salsa Trail, EAC, Friday night lights), faith-respectful (\"church groups\"), hopeful realism. Pillars: neighbors first, roots/land, kids/future, work/dignity.",
   "Greenlee": "Greenlee neighbors with mining grit and family resilience — from Clifton pits to York farms. Speak as a lifelong miner/local (40-60s) — warm/direct, plain and short, \"we/our.\" Rugged plainspoken tone grounded in wildfire/drought realities and mining heritage, honored without flash. Pillars: drought/wildfires, mining economy/housing, rural connectivity.",
   "La Paz": "La Paz neighbors rising together — from Parker tribes to Quartzsite retirees, sharing river-isolation realities. Speak as a town hall host (50+) — practical, hopeful, simple bilingual phrasing, empathetic. Mostly hyper-local solutions, with local imagery (river sunsets, retiree picnics). Pillars: water/infrastructure, senior/worker supports, election equity, inclusive unity.",
+  "Maricopa": "Maricopa neighbors keeping a fast-growing county livable — from Phoenix suburbs to the desert edge. Speak as a local in their 30s-50s — clear, confident, no jargon, like neighborhood chat, not a think tank. \"We/our\" dominant, family-centered, broad and inclusive. Bilingual English/Spanish where natural. Use place names and everyday scenes (rent in Mesa, school funding in Glendale); never coastal, preachy, or abstract. Pillars: housing/costs, water/infrastructure, schools/family stability, growth that works for everyone.",
   "Mohave": "Mohave neighbors straight-talking water, jobs, and retirees — from Kingman VFW to Lake Mead. Speak as a tough/caring local (50+) — plain, no jargon, county-first before any partisan tag. Respect gun culture and independence (\"responsible gun owners, law-abiding neighbors\"); villains are \"career politicians/grifters,\" never local conservatives. Structure: local-stakes hook, then contrast, then a simple CTA. Pillars: local stakes, independence respect, outsider villains, practical wins.",
   "Navajo": "Navajo County empowering land stewards — from the Nation to rural towns, centering Hózhó and family resilience. Speak as a Native-rooted neighbor (30-50s) — warm, inclusive, Diné phrases used only when culturally vetted. Resilience stories, youth and tribal spotlights, cultural imagery. Pillars: tribal rights, rural security, voter protections, cultural resilience.",
+  "Pima": "Pima neighbors protecting Tucson's future and the communities around it — from downtown to the desert towns. Speak as a local adult in their 30s-50s — warm, civic, grounded, no jargon, like a Tucson neighborhood or campus conversation. \"We/our\" dominant, inclusive, plainspoken but smart. Use Tucson landmarks and neighborhood references; bilingual English/Spanish naturally. Never detached or overly academic; connect city issues to daily life. Pillars: affordable housing, schools/childcare, heat and water resilience, healthcare access, inclusive countywide democracy.",
+  "Pinal": "Pinal neighbors keeping a growing county livable — from suburbs to rural edges. Speak as a practical local in their 30s-50s — plain, steady, future-focused, like a school pickup line or community meeting. \"We/our\" dominant, family-first, growth-aware, no jargon. Use place names and everyday scenes (crowded roads, stretched schools); Spanish where it fits naturally. Never sound like you're ignoring growth pains. Pillars: housing and infrastructure, schools and childcare, water and land-use planning, healthcare access, responsible growth.",
   "Santa Cruz": "Santa Cruz familias unidas — from the Nogales port to rural homes. Speak as a warm abuelita/tío figure (30-50s) — bilingual, solutions-oriented, visual-heavy. Fight border fear with concrete wins on jobs and schools (\"puentes no muros\"). Bilingual Spanish phrasing should feel authentic, not like translation. Pillars: trade revival, education/health, youth engagement, immigration dignity.",
   "Yavapai": "Yavapai rural families standing for their wallets and way of life — from Prescott to the Verde Valley. Speak as an everywoman/everyman senior (50+) — empathetic populism, testimonial-driven, non-confrontational and cross-aisle. Anchor in retirement security (Social Security, fixed incomes) and sustainable growth. Pillars: secure retirements, sustainable growth, safety/environment, cross-aisle appeal.",
   "Yuma": "Yuma families and fields building voting culture — from farms to the border. Speak as a working neighbor (30-50s) — vivid, localized Yuma stories (farmers feeling heat, students needing cooler classrooms), step-by-step and mentoring in tone. Spanish integration where natural; family-event framing. Pillars: Yuma stories first, voting culture, youth/family focus, local wins and services.",
@@ -1187,38 +1190,6 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                       );
                     })}
                   </div>
-
-                  {/* Layer 2 Frame Selector — available in both modes */}
-                  <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:16, marginTop:4 }}>
-                    <p style={{ ...S.label, marginBottom:8 }}>
-                      Messaging Frame{" "}
-                      <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional — Layer 2)</span>
-                    </p>
-                    <p style={{ ...S.hint, marginBottom:12 }}>Focus the entire message on one strategic theme. Leave blank for general messaging.</p>
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-                      {NATIONAL_FRAMES.map(f => {
-                        const on = msgFrame === f.id;
-                        return (
-                          <label key={f.id} style={{
-                            display:"flex", flexDirection:"column", gap:3,
-                            padding:"11px 14px", borderRadius:9, cursor:"pointer",
-                            border: on ? `3px solid ${T.charcoal}` : `2px solid ${T.border}`,
-                            background: on ? "#f5f3ff" : T.surface,
-                            transition:"all 0.15s",
-                          }}>
-                            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                              <input type="radio" name="msgFrame" value={f.id} checked={on}
-                                onChange={() => setMsgFrame(on ? "" : f.id)}
-                                onClick={() => { if(on) setMsgFrame(""); }}
-                                style={{ width:18, height:18, accentColor:T.charcoal, cursor:"pointer", flexShrink:0 }} />
-                              <span style={{ fontSize:15, fontWeight:900, color: on ? T.charcoal : T.text }}>{f.label}</span>
-                            </div>
-                            <span style={{ fontSize:12, color:T.textMute, paddingLeft:26, lineHeight:1.4 }}>{f.desc}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
                 </fieldset>
               </section>
 
@@ -1249,7 +1220,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               {(() => {
                 const proModeActiveCount = [
                   formData.audience, formData.voice, formData.county,
-                  formData.style, formData.modifier, formData.perspective,
+                  formData.style, formData.modifier, formData.perspective, msgFrame,
                 ].filter(Boolean).length;
                 return (
                   <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
@@ -1274,13 +1245,16 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                     <button type="button" onClick={() => setProModeOpen(o => !o)}
                       style={{
                         display:"flex", alignItems:"center", justifyContent:"space-between",
-                        width:"100%", padding:"12px 18px", borderRadius:10, cursor:"pointer",
+                        width:"100%", padding:"12px 18px",
+                        borderRadius: proModeOpen ? "10px 10px 0 0" : 10,
+                        cursor:"pointer",
                         fontFamily:"inherit", fontSize:15, fontWeight:700,
                         background: proModeOpen ? "#e8f4f1" : T.surface,
                         border: `2px solid ${proModeOpen ? T.teal : T.border}`,
+                        borderBottom: proModeOpen ? "none" : `2px solid ${T.border}`,
                         color: T.teal,
                       }}>
-                      <span>⚙️ Pro Mode — Audience, Voice, Style &amp; County
+                      <span>⚙️ Pro Mode — Frame, Audience, Voice, Style &amp; County
                         {proModeActiveCount > 0 ? ` (${proModeActiveCount} active)` : ""}
                       </span>
                       <span style={{ fontSize:18, transform: proModeOpen ? "rotate(180deg)" : "none", transition:"transform 0.15s" }}>▾</span>
@@ -1290,7 +1264,43 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               })()}
 
               {proModeOpen && (
-              <>
+              <div style={{
+                display:"flex", flexDirection:"column", gap:22,
+                background:"#e8f4f1", border:`2px solid ${T.teal}`, borderTop:"none",
+                borderRadius:"0 0 14px 14px",
+                padding:20, marginTop:0,
+              }}>
+
+              {/* Messaging Frame — relocated here for Pro users */}
+              <section style={S.card}>
+                <fieldset style={{ border:"none", padding:0 }}>
+                  <legend style={S.label}>Messaging Frame <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
+                  <p style={{ ...S.hint, marginBottom:12 }}>Focus the entire message on one strategic theme. Leave blank for general messaging.</p>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                    {NATIONAL_FRAMES.map(f => {
+                      const on = msgFrame === f.id;
+                      return (
+                        <label key={f.id} style={{
+                          display:"flex", flexDirection:"column", gap:3,
+                          padding:"11px 14px", borderRadius:9, cursor:"pointer",
+                          border: on ? `3px solid ${T.charcoal}` : `2px solid ${T.border}`,
+                          background: on ? "#f5f3ff" : T.surface,
+                          transition:"all 0.15s",
+                        }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                            <input type="radio" name="msgFrame" value={f.id} checked={on}
+                              onChange={() => setMsgFrame(on ? "" : f.id)}
+                              onClick={() => { if(on) setMsgFrame(""); }}
+                              style={{ width:18, height:18, accentColor:T.charcoal, cursor:"pointer", flexShrink:0 }} />
+                            <span style={{ fontSize:15, fontWeight:900, color: on ? T.charcoal : T.text }}>{f.label}</span>
+                          </div>
+                          <span style={{ fontSize:12, color:T.textMute, paddingLeft:26, lineHeight:1.4 }}>{f.desc}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              </section>
 
               {/* County Voice — AZ mode only */}
               {msgMode === "az" && (
@@ -1440,7 +1450,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </fieldset>
               </section>
 
-              </>
+              </div>
               )}
 
               {/* Platforms */}
