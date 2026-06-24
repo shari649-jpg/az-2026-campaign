@@ -15,23 +15,6 @@ const B = {
   border:    '#ddd',
 };
 
-function useScrollArrows() {
-  const [showUp, setShowUp] = useState(false);
-  const [showDown, setShowDown] = useState(false);
-  useEffect(() => {
-    const onScroll = () => {
-      const scrolled = window.scrollY;
-      const atBottom = window.innerHeight + scrolled >= document.body.scrollHeight - 80;
-      setShowUp(scrolled > 200);
-      setShowDown(!atBottom && document.body.scrollHeight > window.innerHeight + 200);
-    };
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-  return { showUp, showDown };
-}
-
 function localStorageSafe(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); return true; }
   catch { return false; }
@@ -65,7 +48,6 @@ function raceTypeColor(type) {
 
 export default function GeographicProfiles() {
   const navigate = useNavigate();
-  const { showUp, showDown } = useScrollArrows();
 
   const [districts,  setDistricts]  = useState(null);
   const [loading,    setLoading]    = useState(false);
@@ -127,18 +109,6 @@ export default function GeographicProfiles() {
 
   return (
     <div style={{ padding: '0 24px' }}>
-      {/* Floating scroll arrows */}
-      {showUp && (
-        <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          style={{ position: 'fixed', bottom: 72, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: B.teal, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
-          aria-label="Scroll to top">↑</button>
-      )}
-      {showDown && (
-        <button onClick={() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })}
-          style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: B.teal, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
-          aria-label="Scroll to bottom">↓</button>
-      )}
-
       {/* lsError */}
       {lsError && (
         <div style={{ background: '#fff7ed', border: '1.5px solid #f5c842', borderRadius: 10, padding: '14px 18px', marginBottom: 16, color: '#7a4f00', fontSize: 14 }}>
