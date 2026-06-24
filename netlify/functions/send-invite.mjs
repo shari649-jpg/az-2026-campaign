@@ -1,9 +1,16 @@
 // netlify/functions/send-invite.mjs
 // Stores invite token in Netlify Blobs, sends invite email via Gmail SMTP (Nodemailer).
+//
+// AUTH: admin-only, same pattern as manage-user.mjs. Without this check, anyone
+// with the URL could send a real invite email containing a working registration
+// link to any address. See that file's header comment for the credential setup
+// (firebase-service-account.json generated at build time by inject-secrets.mjs).
 
 import { randomBytes } from "crypto";
 import { getStore } from "@netlify/blobs";
 import nodemailer from "nodemailer";
+import admin from "firebase-admin";
+import { readFileSync } from "node:fs";
 
 const SITE_URL  = "https://az-coalition-2026-election.netlify.app";
 const FROM_EMAIL = "az.coalition.socials@gmail.com";
@@ -13,6 +20,34 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Origin": SITE_URL,
   "Content-Type": "application/json",
 };
+
+function getAdminApp() {
+  if (admin.apps.length) return admin.app();
+  let serviceAccount;
+  try {
+    const raw = readFileSync(new URL("./firebase-service-account.json", import.meta.url), "utf8");
+    serviceAccount = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      "firebase-service-account.json not found or invalid — run `npm run build` to regenerate it via scripts/inject-secrets.mjs, or confirm FIREBASE_SERVICE_ACCOUNT_JSON is set in Netlify (Builds scope)."
+    );
+  }
+  const credential = admin.credential.cert(serviceAccount);
+  return admin.initializeApp({ credential });
+}
+
+// Verify the caller's ID token and confirm they hold the administrator role
+// in Firestore before allowing an invite to be sent. This is the only thing
+// standing between this endpoint and "anyone can email themselves a working
+// registration link."
+async function requireAdmin(app, idToken) {
+  if (!idToken) throw new Error("unauthenticated");
+  const decoded = await admin.auth(app).verifyIdToken(idToken);
+  const snap = await admin.firestore(app).doc(`users/${decoded.uid}`).get();
+  const role = snap.exists ? snap.data().role : null;
+  if (role !== "administrator") throw new Error("forbidden");
+  return decoded.uid;
+}
 
 function getTransporter() {
   return nodemailer.createTransport({
@@ -68,8 +103,28 @@ export default async function (req) {
   if (req.method === "OPTIONS") return new Response("", { status: 200, headers: CORS_HEADERS });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
+  let app;
   try {
-    const { waitlistId, email, fullName } = await req.json();
+    app = getAdminApp();
+  } catch (err) {
+    console.error("[send-invite] admin init error:", err.message);
+    return new Response(JSON.stringify({ error: "Server is not configured for invites yet." }), {
+      status: 500, headers: CORS_HEADERS,
+    });
+  }
+
+  try {
+    const { idToken, waitlistId, email, fullName } = await req.json();
+
+    try {
+      await requireAdmin(app, idToken);
+    } catch (err) {
+      const status = err.message === "unauthenticated" ? 401 : 403;
+      return new Response(JSON.stringify({ error: "Not authorized to send invites." }), {
+        status, headers: CORS_HEADERS,
+      });
+    }
+
     if (!waitlistId || !email || !fullName) {
       return new Response(JSON.stringify({ error: "Missing required fields." }), {
         status: 400, headers: CORS_HEADERS,
