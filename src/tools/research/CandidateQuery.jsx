@@ -1,5 +1,22 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+
+function useScrollArrows() {
+  const [showUp, setShowUp] = useState(false);
+  const [showDown, setShowDown] = useState(false);
+  useEffect(() => {
+    const onScroll = () => {
+      const scrolled = window.scrollY;
+      const atBottom = window.innerHeight + scrolled >= document.body.scrollHeight - 80;
+      setShowUp(scrolled > 200);
+      setShowDown(!atBottom && document.body.scrollHeight > window.innerHeight + 200);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  return { showUp, showDown };
+}
 
 function localStorageSafe(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); return true; }
@@ -31,7 +48,19 @@ const FILTER_TYPES = [
   { id: 'strength',       label: 'Strengths' },
   { id: 'quote',          label: 'Quotes' },
   { id: 'background',     label: 'Background' },
+  { id: 'policy',         label: 'Policy Platform' },
+  { id: 'notes',          label: 'Additional Notes' },
 ];
+
+const FACT_LABELS = {
+  accomplishment: 'Accomplishment',
+  vulnerability:  'Vulnerability',
+  strength:       'Strength',
+  quote:          'Quote',
+  background:     'Background',
+  policy:         'Policy Platform',
+  notes:          'Additional Notes',
+};
 
 const FACT_COLORS = {
   accomplishment: { bg: '#dcfce7', text: '#166534', border: '#86efac' },
@@ -39,6 +68,8 @@ const FACT_COLORS = {
   strength:       { bg: '#dbeafe', text: '#1e40af', border: '#93c5fd' },
   quote:          { bg: '#fef9c3', text: '#854d0e', border: '#fde047' },
   background:     { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' },
+  policy:         { bg: '#e6faf7', text: '#1D5C4A', border: '#3ECFB2' },
+  notes:          { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' },
 };
 
 function partyColor(party) {
@@ -59,7 +90,8 @@ function candidateLabel(c) {
 function factsToText(c) {
   const header = `── ${candidateLabel(c)} ──`;
   const lines = (c.facts || []).map(f => {
-    const tag = f.type ? `[${f.type.toUpperCase()}${f.category ? ' – ' + f.category : ''}] ` : '';
+    const label = FACT_LABELS[f.type] || (f.type || '').toUpperCase();
+    const tag = f.type ? `[${label}] ` : '';
     return `• ${tag}${f.text}`;
   });
   return [header, ...lines].join('\n');
@@ -78,6 +110,7 @@ function groupByseat(results) {
 
 export default function CandidateQuery() {
   const navigate = useNavigate();
+  const { showUp, showDown } = useScrollArrows();
   const [query,     setQuery]     = useState('');
   const [filter,    setFilter]    = useState('all');
   const [results,   setResults]   = useState(null);
@@ -186,7 +219,8 @@ export default function CandidateQuery() {
       selectedFactList.forEach(({ candidate, fact }) => {
         const label = candidateLabel(candidate);
         if (!byCandidate[label]) byCandidate[label] = [];
-        const tag = fact.type ? `[${fact.type.toUpperCase()}${fact.category ? ' – ' + fact.category : ''}] ` : '';
+        const label2 = FACT_LABELS[fact.type] || (fact.type || '').toUpperCase();
+        const tag = fact.type ? `[${label2}] ` : '';
         byCandidate[label].push(`• ${tag}${fact.text}`);
       });
       issueText = Object.entries(byCandidate)
@@ -229,6 +263,17 @@ export default function CandidateQuery() {
 
   return (
     <div style={{ ...S.wrap, padding: '0 24px' }}>
+      {/* ── Floating scroll arrows ── */}
+      {showUp && (
+        <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          style={{ position: 'fixed', bottom: 72, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: B.teal, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          aria-label="Scroll to top">↑</button>
+      )}
+      {showDown && (
+        <button onClick={() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })}
+          style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: B.teal, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          aria-label="Scroll to bottom">↓</button>
+      )}
       {/* ── Instructions ── */}
       <div style={{ background: B.surfaceAlt, border: `1px solid ${B.border}`, borderRadius: 10, padding: '14px 18px', marginBottom: 20 }}>
         <p style={{ fontSize: 14, color: B.textMid, lineHeight: 1.7, margin: 0 }}>
@@ -402,8 +447,7 @@ export default function CandidateQuery() {
                                           style={{ width: 15, height: 15, accentColor: B.teal, cursor: 'pointer', flexShrink: 0 }}
                                           aria-label={`Select fact: ${fact.text.substring(0, 40)}`}
                                         />
-                                        <span style={{ fontSize: 11, fontWeight: 700, color: fc.text, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{fact.type}</span>
-                                        {fact.category && <span style={{ fontSize: 11, color: fc.text, opacity: 0.8 }}>· {fact.category}</span>}
+                                        <span style={{ fontSize: 11, fontWeight: 700, color: fc.text, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{FACT_LABELS[fact.type] || fact.type}</span>
                                       </div>
                                       <p style={{ fontSize: 14, color: B.text, lineHeight: 1.6, margin: '0 0 10px 0', fontStyle: fact.type === 'quote' ? 'italic' : 'normal' }}>
                                         {fact.type === 'quote' ? `"${fact.text}"` : fact.text}
