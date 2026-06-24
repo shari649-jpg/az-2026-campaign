@@ -2,7 +2,6 @@
 // Floating "The Coach" widget — sits in AppShell, available on every page
 
 import { useState, useRef, useEffect } from "react";
-import { auth } from "../firebase";
 
 const TEAL       = "#1D5C4A";
 const TEAL_MID   = "#3ECFB2";
@@ -32,10 +31,16 @@ const TONES_ENGAGE = [
   { id: "lurkers",     label: "Talk to the room",    desc: "Your reply is for observers, not just this person" },
 ];
 
+// Whether to engage, and how, depends on the comment itself — is there a
+// checkable claim sitting unanswered, would lurkers read silence as
+// concession — not on who posted it. Persona (bot vs. real person) still
+// shapes HOW the backend frames a reply (e.g. don't address a bot directly
+// as a good-faith interlocutor), but it doesn't change which of these three
+// strategic options makes sense.
 const TONES_TROLL = [
-  { id: "adult",    label: "Adult in the room", desc: "Calm and factual — credible to neutral observers" },
-  { id: "pushback", label: "Firm pushback",     desc: "Correct the record, don't back down" },
-  { id: "ignore",   label: "Don't engage",      desc: "Sometimes silence (or brevity) wins" },
+  { id: "correct",  label: "Correct it for the room", desc: "Lurkers need the truth — don't bother trying to convince the commenter" },
+  { id: "pushback", label: "Firm pushback",           desc: "Hold the line on the facts, don't concede the premise" },
+  { id: "ignore",   label: "Don't engage",            desc: "No real claim worth answering — replying would just amplify it" },
 ];
 
 const OPENER_INTROS = {
@@ -116,17 +121,22 @@ const S = {
     transition: "all 0.15s",
     marginBottom: 8,
   }),
-  chip: (selected, color) => ({
+  chip: (selected, color, suggested) => ({
     flex: 1,
     padding: "10px 8px",
     borderRadius: 10,
-    border: selected ? `2px solid ${color || TEAL}` : `1.5px solid #b0b0b0`,
-    background: selected ? (color ? color + "18" : TEAL_LIGHT) : "#fafafa",
+    border: selected
+      ? `2px solid ${color || TEAL}`
+      : suggested
+        ? `2px dashed ${GOLD}`
+        : "1.5px solid #b0b0b0",
+    background: selected ? (color ? color + "18" : TEAL_LIGHT) : suggested ? GOLD + "14" : "#fafafa",
     cursor: "pointer",
     fontSize: 13,
     textAlign: "center",
     transition: "all 0.15s",
     lineHeight: 1.4,
+    position: "relative",
   }),
   primaryBtn: (disabled) => ({
     width: "100%",
@@ -192,6 +202,9 @@ export default function ConversationCoach() {
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState(null);
   const [inputText, setInputText]     = useState("");
+  const [suggestion, setSuggestion]   = useState(null); // { tone, reason } | null
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestError, setSuggestError] = useState(null);
   const threadRef = useRef(null);
 
   useEffect(() => {
@@ -204,6 +217,35 @@ export default function ConversationCoach() {
     setStep(1); setSituation(null); setPersona(null); setTone(null);
     setPastedContent(""); setStarterText(""); setMessages([]);
     setError(null); setInputText("");
+    setSuggestion(null); setSuggestLoading(false); setSuggestError(null);
+  }
+
+  // ── Strategy suggestion (troll mode only) ───────────────────────────────────
+
+  async function getSuggestion() {
+    setSuggestLoading(true);
+    setSuggestError(null);
+    setSuggestion(null);
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "suggest",
+          persona,
+          pastedContent: pastedContent || "",
+        }),
+      });
+      const data = await res.json();
+      const text = data?.content?.[0]?.text || "";
+      const parsed = JSON.parse(text.trim());
+      if (!parsed?.suggestion) throw new Error("No suggestion returned");
+      setSuggestion({ tone: parsed.suggestion, reason: parsed.reason || "" });
+    } catch (e) {
+      setSuggestError("Couldn't get a suggestion — please try again, or just pick a strategy below.");
+    } finally {
+      setSuggestLoading(false);
+    }
   }
 
   // ── API call ──────────────────────────────────────────────────────────────
@@ -212,13 +254,9 @@ export default function ConversationCoach() {
     setLoading(true);
     setError(null);
     try {
-      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch(API_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           situation,
           persona,
@@ -228,24 +266,7 @@ export default function ConversationCoach() {
           userMessage: userMessage || "",
         }),
       });
-
-      if (res.status === 401 || res.status === 403) {
-        setError("Please sign in to use The Coach.");
-        return;
-      }
-
-      if (res.status === 429) {
-        setError("🚦 Daily limit reached — you've used all your AI calls for today. Resets at midnight UTC. Contact an admin for more access.");
-        return;
-      }
-
       const data = await res.json();
-      if (data.usageWarning) {
-        const { used, limit, remaining } = data.usageWarning;
-        setError(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining today.`);
-        // Clear the warning after 5s so it doesn't block the conversation
-        setTimeout(() => setError(null), 5000);
-      }
       const text = data?.content?.[0]?.text || "";
       if (!text) throw new Error("Empty response from coach");
 
@@ -408,7 +429,7 @@ export default function ConversationCoach() {
                       style={{ ...S.textarea, minHeight: 80 }}
                       placeholder="Paste the tweet, reply, or comment here…"
                       value={pastedContent}
-                      onChange={e => setPastedContent(e.target.value)}
+                      onChange={e => { setPastedContent(e.target.value); setSuggestion(null); setSuggestError(null); }}
                       rows={3}
                     />
                   </div>
@@ -421,7 +442,7 @@ export default function ConversationCoach() {
                     <button
                       key={p.id}
                       style={S.choiceBtn(persona === p.id)}
-                      onClick={() => { setPersona(p.id); setStep(3); }}
+                      onClick={() => { setPersona(p.id); setSuggestion(null); setSuggestError(null); setStep(3); }}
                     >
                       <div style={{ fontWeight: 700, fontSize: 15, color: persona === p.id ? TEAL : "#1a1a1a", marginBottom: 3 }}>
                         {p.emoji} {p.label}
@@ -436,18 +457,57 @@ export default function ConversationCoach() {
             {/* Step 3 — Tone + launch */}
             {step === 3 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {situation === "troll" && (
+                  <div>
+                    <button
+                      onClick={getSuggestion}
+                      disabled={suggestLoading || !pastedContent.trim()}
+                      style={{
+                        width: "100%", padding: "9px 12px", borderRadius: 10,
+                        border: `1.5px dashed ${GOLD}`, background: "#fffbf0",
+                        color: "#4a3800", fontSize: 13, fontWeight: 700,
+                        cursor: suggestLoading || !pastedContent.trim() ? "not-allowed" : "pointer",
+                        opacity: suggestLoading || !pastedContent.trim() ? 0.55 : 1,
+                        fontFamily: "inherit",
+                      }}
+                      title={!pastedContent.trim() ? "Paste or type the comment first" : "Ask The Coach which strategy fits this comment"}
+                    >
+                      {suggestLoading ? "🧭 Thinking…" : "🧭 Suggest a strategy"}
+                    </button>
+                    {suggestion?.reason && (
+                      <div style={{ ...S.coachNote, marginTop: 8, alignSelf: "stretch", maxWidth: "100%" }}>
+                        💡 {suggestion.reason}
+                      </div>
+                    )}
+                    {suggestError && (
+                      <div style={{ fontSize: 12, color: "#7a2a10", marginTop: 8 }}>{suggestError}</div>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <div style={S.stepLabel}>How do you want to respond?</div>
                   <div style={{ display: "flex", gap: 6 }}>
                     {toneOptions.map((t, i) => {
                       const colors = [TEAL, TERRA, GOLD];
                       const c = colors[i];
+                      const isSuggested = suggestion?.tone === t.id;
                       return (
                         <button
                           key={t.id}
-                          style={S.chip(tone === t.id, c)}
+                          style={S.chip(tone === t.id, c, isSuggested)}
                           onClick={() => setTone(t.id)}
                         >
+                          {isSuggested && tone !== t.id && (
+                            <div style={{
+                              position: "absolute", top: -9, left: "50%", transform: "translateX(-50%)",
+                              background: GOLD, color: "#4a3800", fontSize: 10, fontWeight: 700,
+                              padding: "1px 7px", borderRadius: 8, letterSpacing: "0.03em",
+                              whiteSpace: "nowrap",
+                            }}>
+                              SUGGESTED
+                            </div>
+                          )}
                           <div style={{ fontWeight: 700, fontSize: 13, color: tone === t.id ? (c === GOLD ? "#4a3800" : c) : "#1a1a1a", marginBottom: 3 }}>
                             {t.label}
                           </div>
