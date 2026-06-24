@@ -2,6 +2,7 @@
 // Floating "The Coach" widget — sits in AppShell, available on every page
 
 import { useState, useRef, useEffect } from "react";
+import { auth } from "../firebase";
 
 const TEAL       = "#1D5C4A";
 const TEAL_MID   = "#3ECFB2";
@@ -227,9 +228,13 @@ export default function ConversationCoach() {
     setSuggestError(null);
     setSuggestion(null);
     try {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch(API_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({
           mode: "suggest",
           persona,
@@ -254,9 +259,13 @@ export default function ConversationCoach() {
     setLoading(true);
     setError(null);
     try {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch(API_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({
           situation,
           persona,
