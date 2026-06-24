@@ -3,11 +3,16 @@
 // Tab 1 — Candidates (one row per candidate):
 // A: Name  B: Office  C: Party  D: District  E: Level  F: Incumbent Status
 // G: Background  H: Record & Accomplishments  I: Strengths
-// J: Vulnerabilities  K: Key Quotes  L: Notes
+// J: Vulnerabilities  K: Key Quotes  L: Notes  M: Policy Platform
 //
 // Tab 2 — Race_Demographics (one row per race/district):
-// A: Race Type  B: District ID  C: Location Note  D: Registration Data
-// E: Voting History  F: Demographics  G: Top Issues  H: Message Guidance  I: Notes
+// A: Race Type  B: District ID  C: Counties  D: Location Note  E: Registration Data
+// F: Voting History  G: Demographics  H: Top Issues  I: Message Guidance  J: Notes
+//
+// Tab 3 — Issues (one row per issue):
+// A: Issue  B: Heat Rating  C: Active: Y/N  D: Brief Statement  E: Relevant Stats
+// F: Races, Districts, Counties Affected  G: GOP Vulnerabilities
+// H: Messaging Angle, AZ Angle  I: Notes
 //
 // NOTE ON CREDENTIAL LOADING: the Google service-account credential is read
 // from a local google-service-account.json file rather than process.env.
@@ -38,7 +43,7 @@ async function fetchAllRows(auth) {
   const sheets = google.sheets({ version: "v4", auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "A2:L",
+    range: "A2:M",
   });
   return response.data.values || [];
 }
@@ -47,7 +52,16 @@ async function fetchDistrictRows(auth) {
   const sheets = google.sheets({ version: "v4", auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Race_Demographics!A2:I",
+    range: "Race_Demographics!A2:J",
+  });
+  return response.data.values || [];
+}
+
+async function fetchIssueRows(auth) {
+  const sheets = google.sheets({ version: "v4", auth });
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Issues!A2:I",
   });
   return response.data.values || [];
 }
@@ -58,14 +72,38 @@ function parseDistricts(rows) {
     .map(row => ({
       race_type:        (row[0] || "").trim(),
       district_id:      (row[1] || "").trim(),
-      location_note:    (row[2] || "").trim(),
-      registration:     (row[3] || "").trim(),
-      voting_history:   (row[4] || "").trim(),
-      demographics:     (row[5] || "").trim(),
-      top_issues:       (row[6] || "").trim(),
-      message_guidance: (row[7] || "").trim(),
-      notes:            (row[8] || "").trim(),
+      counties:         (row[2] || "").trim(),
+      location_note:    (row[3] || "").trim(),
+      registration:     (row[4] || "").trim(),
+      voting_history:   (row[5] || "").trim(),
+      demographics:     (row[6] || "").trim(),
+      top_issues:       (row[7] || "").trim(),
+      message_guidance: (row[8] || "").trim(),
+      notes:            (row[9] || "").trim(),
     }));
+}
+
+const HEAT_PEPPERS = { "1": "🌶️", "2": "🌶️🌶️", "3": "🌶️🌶️🌶️" };
+
+function parseIssues(rows) {
+  return rows
+    .filter(row => row[0] && row[0].trim())
+    .map(row => {
+      const heatRaw = (row[1] || "").trim();
+      const heatNum = parseInt(heatRaw, 10) || 0;
+      return {
+        issue:              (row[0] || "").trim(),
+        heat_rating:        heatNum,
+        heat_display:       HEAT_PEPPERS[String(heatNum)] || heatRaw,
+        active:             (row[2] || "").trim().toUpperCase() === "Y",
+        brief_statement:    (row[3] || "").trim(),
+        relevant_stats:     (row[4] || "").trim(),
+        affected:           (row[5] || "").trim(),
+        gop_vulnerabilities:(row[6] || "").trim(),
+        messaging_angle:    (row[7] || "").trim(),
+        notes:              (row[8] || "").trim(),
+      };
+    });
 }
 
 function parseRows(rows) {
@@ -84,14 +122,16 @@ function parseRows(rows) {
       const vulnerabilities = (row[9]  || "").trim();
       const keyQuotes       = (row[10] || "").trim();
       const notes           = (row[11] || "").trim();
+      const policyPlatform  = (row[12] || "").trim();
 
       const facts = [];
-      if (background)      facts.push({ type: "background",     category: "",           text: background });
-      if (accomplishments) facts.push({ type: "accomplishment", category: "Record",     text: accomplishments });
-      if (strengths)       facts.push({ type: "strength",       category: "",           text: strengths });
-      if (vulnerabilities) facts.push({ type: "vulnerability",  category: "",           text: vulnerabilities });
-      if (keyQuotes)       facts.push({ type: "quote",          category: "Key Quote",  text: keyQuotes });
-      if (notes)           facts.push({ type: "background",     category: "Notes",      text: notes });
+      if (background)      facts.push({ type: "background",     category: "",   text: background });
+      if (accomplishments) facts.push({ type: "accomplishment", category: "",   text: accomplishments });
+      if (strengths)       facts.push({ type: "strength",       category: "",   text: strengths });
+      if (vulnerabilities) facts.push({ type: "vulnerability",  category: "",   text: vulnerabilities });
+      if (keyQuotes)       facts.push({ type: "quote",          category: "",   text: keyQuotes });
+      if (notes)           facts.push({ type: "notes",          category: "",   text: notes });
+      if (policyPlatform)  facts.push({ type: "policy",         category: "",   text: policyPlatform });
 
       return {
         candidate_name:   name,
@@ -100,6 +140,7 @@ function parseRows(rows) {
         district,
         level,
         incumbent_status: incumbentStatus,
+        policy_platform:  policyPlatform,
         facts,
       };
     });
@@ -169,6 +210,15 @@ export default async function (req) {
       const districts = parseDistricts(rows);
       return new Response(
         JSON.stringify({ success: true, districts, total: districts.length }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    if (mode === "issues") {
+      const rows = await fetchIssueRows(auth);
+      const issues = parseIssues(rows);
+      return new Response(
+        JSON.stringify({ success: true, issues, total: issues.length }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
