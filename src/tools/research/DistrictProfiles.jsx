@@ -15,6 +15,23 @@ const B = {
   border:    '#ddd',
 };
 
+function useScrollArrows() {
+  const [showUp, setShowUp] = useState(false);
+  const [showDown, setShowDown] = useState(false);
+  useEffect(() => {
+    const onScroll = () => {
+      const scrolled = window.scrollY;
+      const atBottom = window.innerHeight + scrolled >= document.body.scrollHeight - 80;
+      setShowUp(scrolled > 200);
+      setShowDown(!atBottom && document.body.scrollHeight > window.innerHeight + 200);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  return { showUp, showDown };
+}
+
 function localStorageSafe(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); return true; }
   catch { return false; }
@@ -23,6 +40,7 @@ function localStorageSafe(key, value) {
 function buildDistrictIssueText(d) {
   const lines = [`── District Profile: ${d.district_id} ──`];
   if (d.race_type)        lines.push(`Race Type: ${d.race_type}`);
+  if (d.counties)         lines.push(`Counties: ${d.counties}`);
   if (d.location_note)    lines.push(`Location: ${d.location_note}`);
   if (d.registration)     lines.push(`Registration: ${d.registration}`);
   if (d.voting_history)   lines.push(`Voting History: ${d.voting_history}`);
@@ -45,8 +63,9 @@ function raceTypeColor(type) {
   return { bg: B.surfaceAlt, text: B.textMid, border: B.border };
 }
 
-export default function DistrictProfiles() {
+export default function GeographicProfiles() {
   const navigate = useNavigate();
+  const { showUp, showDown } = useScrollArrows();
 
   const [districts,  setDistricts]  = useState(null);
   const [loading,    setLoading]    = useState(false);
@@ -102,12 +121,24 @@ export default function DistrictProfiles() {
   const filtered = (districts || []).filter(d => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
-    return [d.district_id, d.race_type, d.location_note, d.top_issues, d.demographics]
+    return [d.district_id, d.race_type, d.counties, d.location_note, d.top_issues, d.demographics]
       .join(' ').toLowerCase().includes(q);
   });
 
   return (
     <div style={{ padding: '0 24px' }}>
+      {/* Floating scroll arrows */}
+      {showUp && (
+        <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          style={{ position: 'fixed', bottom: 72, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: B.teal, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          aria-label="Scroll to top">↑</button>
+      )}
+      {showDown && (
+        <button onClick={() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })}
+          style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: B.teal, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+          aria-label="Scroll to bottom">↓</button>
+      )}
+
       {/* lsError */}
       {lsError && (
         <div style={{ background: '#fff7ed', border: '1.5px solid #f5c842', borderRadius: 10, padding: '14px 18px', marginBottom: 16, color: '#7a4f00', fontSize: 14 }}>
@@ -119,11 +150,11 @@ export default function DistrictProfiles() {
       {/* Search */}
       <div style={{ marginBottom: 20 }}>
         <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: B.textMid, marginBottom: 8 }}>
-          Search Districts
+          Search Geographic Profiles
         </label>
         <input
           style={{ width: '100%', padding: '12px 16px', border: `2px solid ${B.border}`, borderRadius: 10, fontSize: 15, fontFamily: 'inherit', color: B.text, outline: 'none' }}
-          placeholder='e.g. "LD04", "CD01", "Tucson", "housing"'
+          placeholder='e.g. "LD04", "CD01", "Maricopa", "Tucson", "housing"'
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -170,7 +201,12 @@ export default function DistrictProfiles() {
                 <div style={{ fontSize: 12, color: B.textMute, marginTop: 2 }}>{d.race_type}</div>
               </div>
               {d.location_note && (
-                <div style={{ fontSize: 14, color: B.textMid, flex: 1 }}>{d.location_note}</div>
+                <div style={{ fontSize: 14, color: B.textMid, flex: 1, minWidth: 0 }}>
+                  {d.location_note}
+                  {d.counties && (
+                    <div style={{ fontSize: 12, color: B.textMute, marginTop: 2 }}>📍 {d.counties}</div>
+                  )}
+                </div>
               )}
               <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, background: rc.bg, color: rc.text, border: `1px solid ${rc.border}`, whiteSpace: 'nowrap' }}>
                 {d.race_type}
@@ -182,6 +218,12 @@ export default function DistrictProfiles() {
             {isExpanded && (
               <div style={{ borderTop: `1.5px solid ${B.border}`, padding: '18px 20px', background: '#fafafa' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14, marginBottom: 18 }}>
+                  {d.counties && (
+                    <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 8, padding: '12px 14px' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Counties</div>
+                      <div style={{ fontSize: 14, color: B.text, lineHeight: 1.6 }}>{d.counties}</div>
+                    </div>
+                  )}
                   {d.registration && (
                     <div style={{ background: '#fff', border: `1px solid ${B.border}`, borderRadius: 8, padding: '12px 14px' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: B.textMute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Registration</div>
