@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { saveCampaign, loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
+import { auth } from "../../firebase";
 
 // ── 9 activist profile choices ────────────────────────────────────────────
 const PROFILES = [
@@ -414,9 +415,13 @@ export default function RebuttalGenerator() {
     setCopied(false); setSaved(false);
 
     const callAPI = async (systemPrompt, userContent, maxTokens) => {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch("/.netlify/functions/generate-rebuttal", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({
           max_tokens: maxTokens,
           system: systemPrompt,
