@@ -19,6 +19,18 @@ const STYLES = [
   { id: "strong_contrast", label: "Strong Contrast" },
 ];
 const MODIFIERS = ["Casual","Friendly","Witty","Sarcastic","Empathetic","Professional","Excited","Funny","Dramatic","Disgusted","Angry"];
+const VOICE_PRESETS = [
+  {
+    id: "mom_blog",
+    label: "Mom Blog",
+    text: "Mom Blog voice: relatable, conversational — like chatting with a friend. Emphasize authenticity and emotional connection over formal tone. Use personal anecdotes; make complex topics feel approachable and fun. Be honest and comfortable with vulnerability — real-life struggles, from parenting mishaps to career hurdles, without sugarcoating. Validate the reader's own experience. Lean into life tips and reflective, inspirational moments — life lessons, humor, and motivation around wellness, relationships, and self-growth — written as engaging narratives that spark comments and shares."
+  },
+  {
+    id: "young_men",
+    label: "Young Men",
+    text: "Young Men voice: casual — advice from a trusted buddy, not a lecture. Blend humor, practicality, and motivation. Sarcasm and self-deprecation are fine; stay authentic, never preachy. Motivational but grounded — \"level up your game\" energy, no corporate polish. Short sentences and short paragraphs, contractions throughout. Structure: hook with a one-line pain point or question, deliver value fast (a list or how-to), close with a clear call to action."
+  },
+];
 // National frames defined above; SPEAKER_PERSPECTIVES defined above
 
 // Layer 2 national frames — available in both AZ and National mode
@@ -1222,10 +1234,31 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </section>
                 <section style={S.card}>
                   <label htmlFor="voice" style={S.label}>Voice / Persona</label>
+                  <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
+                    {VOICE_PRESETS.map(p => {
+                      const on = formData.voice === p.text;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => upd("voice", on ? "" : p.text)}
+                          style={{
+                            padding:"6px 14px", borderRadius:20, fontSize:13, fontWeight:700,
+                            cursor:"pointer", fontFamily:"inherit",
+                            background: on ? T.teal : "transparent",
+                            color: on ? "#fff" : T.teal,
+                            border: `1.5px solid ${T.teal}`,
+                          }}
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <input id="voice" type="text" style={S.input}
                     placeholder='e.g. "Rural AZ neighborly mom" or "GenZ activist"'
                     value={formData.voice} onChange={e=>upd("voice",e.target.value)} />
-                  <p style={S.hint}>Who is speaking? Write from this person's point of view.</p>
+                  <p style={S.hint}>Who is speaking? Pick a preset to start, then edit freely — or write your own from scratch.</p>
                 </section>
               </div>
 
