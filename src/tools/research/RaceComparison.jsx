@@ -195,12 +195,20 @@ export default function RaceComparison() {
     }
   }
 
-  // Returns a single county name only if unambiguous (no comma-separated multi-county string)
-  function singleCountyFrom(district) {
+  // Must match the RURAL_MULTI_COUNTY sentinel in message-machine.jsx — these
+  // two files aren't on a shared constants module, so the literal string is
+  // duplicated by value. If one changes, update the other.
+  const RURAL_MULTI_COUNTY = '__rural_multi__';
+
+  // Resolves a district's county field to what Message Machine's County Voice
+  // picker can actually use: a single real county name, the rural multi-county
+  // sentinel (when the district spans more than one county), or null only when
+  // the data itself is missing/unusable.
+  function resolveCountyFor(district) {
     if (!district || !district.counties) return null;
     const c = district.counties.trim();
-    if (!c || c.includes(',')) return null;
-    return c;
+    if (!c) return null;
+    return c.includes(',') ? RURAL_MULTI_COUNTY : c;
   }
 
   function doSend(issueText, withDistrict, county) {
@@ -251,7 +259,7 @@ export default function RaceComparison() {
       district.demographics   ? `Demographics: ${district.demographics}`   : null,
       district.top_issues     ? `Top Issues: ${district.top_issues}`       : null,
     ].filter(Boolean).join('\n');
-    doSend(candidateIssueText + districtText, true, singleCountyFrom(district));
+    doSend(candidateIssueText + districtText, true, resolveCountyFor(district));
   }
 
   const S = {
