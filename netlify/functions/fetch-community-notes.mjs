@@ -9,12 +9,21 @@
 
 import { getStore } from "@netlify/blobs";
 
-const CORS_ORIGIN = "https://az-coalition-2026-election.netlify.app";
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": CORS_ORIGIN,
-  "Content-Type": "application/json",
-};
+// Transition period: both the new custom domain and the legacy Netlify
+// subdomain are accepted. Browsers only honor a single exact-match origin
+// in this header (no comma lists, no wildcarding with credentials), so we
+// reflect back whichever allowed origin actually made the request.
+// TODO: drop ALLOWED_ORIGINS[1] (legacy netlify.app) once the old domain
+// is fully retired and nothing still links to it.
+const ALLOWED_ORIGINS = [
+  "https://arizonacoalition.net",
+  "https://az-coalition-2026-election.netlify.app",
+];
+function corsHeaders(req) {
+  const origin = req.headers.get("origin");
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return { "Access-Control-Allow-Origin": allowOrigin, "Content-Type": "application/json" };
+}
 
 // ── Classifiers ───────────────────────────────────────────────────────────
 const REP_KEYWORDS = [
@@ -114,7 +123,7 @@ function buildStats(notes) {
 
 export default async function (req) {
   if (req.method === "OPTIONS") {
-    return new Response("", { status: 200, headers: CORS_HEADERS });
+    return new Response("", { status: 200, headers: corsHeaders(req) });
   }
 
   const url = new URL(req.url);
@@ -128,7 +137,7 @@ export default async function (req) {
       if (cached && cached.notes?.length) {
         return new Response(
           JSON.stringify({ ...cached, source: "cache" }),
-          { status: 200, headers: CORS_HEADERS }
+          { status: 200, headers: corsHeaders(req) }
         );
       }
       // Cache empty — fall through to live fetch below
@@ -187,7 +196,7 @@ export default async function (req) {
         error: fetchError || "Failed to fetch Community Notes data from X.",
         hint: "X may have changed the URL. Check https://communitynotes.x.com/guide/en/under-the-hood/download-data",
       }),
-      { status: 502, headers: CORS_HEADERS }
+      { status: 502, headers: corsHeaders(req) }
     );
   }
 
@@ -199,7 +208,7 @@ export default async function (req) {
           notes: [], stats: { weeklyData: [], totalR: 0, totalD: 0, repNar: {}, demNar: {} },
           count: 0, warning: "No politically-classified notes found in dataset.",
         }),
-        { status: 200, headers: CORS_HEADERS }
+        { status: 200, headers: corsHeaders(req) }
       );
     }
 
@@ -217,12 +226,12 @@ export default async function (req) {
 
     return new Response(
       JSON.stringify({ ...payload, source: "live" }),
-      { status: 200, headers: CORS_HEADERS }
+      { status: 200, headers: corsHeaders(req) }
     );
   } catch (err) {
     return new Response(
       JSON.stringify({ error: `Parse error: ${err.message}` }),
-      { status: 500, headers: CORS_HEADERS }
+      { status: 500, headers: corsHeaders(req) }
     );
   }
 }
