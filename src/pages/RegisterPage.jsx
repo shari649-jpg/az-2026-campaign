@@ -139,14 +139,13 @@ export default function RegisterPage() {
         } catch {}
       }
 
-      // Send welcome email (non-fatal if it fails)
-      try {
-        await fetch("/.netlify/functions/send-welcome", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: form.email, fullName: form.fullName.trim() }),
-        });
-      } catch {}
+      // The welcome email used to be sent here, immediately at registration.
+      // That was wrong: it told the person "you're in, open the hub" before
+      // they'd verified their email, while AuthGuard was simultaneously
+      // blocking every route until verification succeeded — two contradictory
+      // messages arriving minutes apart. The welcome email now fires from
+      // AuthContext, triggered by the actual moment Firebase reports
+      // emailVerified: true, so it only ever goes out once that's actually true.
 
       setRegistered(true);
     } catch (err) {
