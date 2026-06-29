@@ -140,14 +140,20 @@ export default async function (req) {
         if (pageRes.ok) {
           const html = await pageRes.text();
           pageText = html
-            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
-            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
-            .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, " ")
-            .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, " ")
-            .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, " ")
+            .replace(/<script[^>]*>[\s\S]*?<\/script\s*>/gi, " ")
+            .replace(/<style[^>]*>[\s\S]*?<\/style\s*>/gi, " ")
+            .replace(/<nav[^>]*>[\s\S]*?<\/nav\s*>/gi, " ")
+            .replace(/<header[^>]*>[\s\S]*?<\/header\s*>/gi, " ")
+            .replace(/<footer[^>]*>[\s\S]*?<\/footer\s*>/gi, " ")
             .replace(/<[^>]+>/g, " ")
             .replace(/\s{3,}/g, "\n\n")
-            .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+            // Decode &amp; LAST. If this ran first (as it did before), a
+            // double-encoded sequence like "&amp;lt;" would resolve to a
+            // literal "<" — reintroducing something tag-shaped *after* the
+            // tag-stripping passes above already ran, with no second pass
+            // to catch it. Decoding &amp; last keeps a double-escaped input
+            // safely at "&lt;" instead of "<". (CodeQL: js/double-escaping)
+            .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&")
             .trim();
           if (pageText.length > 300) fetchOk = true;
         }
