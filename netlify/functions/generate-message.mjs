@@ -9,11 +9,21 @@ import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 
-const CORS_ORIGIN = "https://az-coalition-2026-election.netlify.app";
-const CORS_HEADERS = {
-  "Content-Type": "application/json",
-  "Access-Control-Allow-Origin": CORS_ORIGIN,
-};
+// Transition period: both the new custom domain and the legacy Netlify
+// subdomain are accepted. Browsers only honor a single exact-match origin
+// in this header (no comma lists, no wildcarding with credentials), so we
+// reflect back whichever allowed origin actually made the request.
+// TODO: drop ALLOWED_ORIGINS[1] (legacy netlify.app) once the old domain
+// is fully retired and nothing still links to it.
+const ALLOWED_ORIGINS = [
+  "https://arizonacoalition.net",
+  "https://az-coalition-2026-election.netlify.app",
+];
+function corsHeaders(req) {
+  const origin = req.headers.get("origin");
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return { "Content-Type": "application/json", "Access-Control-Allow-Origin": allowOrigin };
+}
 
 function getAdminApp() {
   if (admin.apps.length) return admin.app();
@@ -36,7 +46,7 @@ export default async function (req) {
   if (req.method === "OPTIONS") {
     return new Response("", {
       status: 200,
-      headers: { ...CORS_HEADERS, "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Allow-Methods": "POST, OPTIONS" },
+      headers: { ...corsHeaders(req), "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Allow-Methods": "POST, OPTIONS" },
     });
   }
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
@@ -44,7 +54,7 @@ export default async function (req) {
   let app;
   try { app = getAdminApp(); } catch (err) {
     console.error("[generate-message] admin init:", err.message);
-    return new Response(JSON.stringify({ error: "Server configuration error." }), { status: 500, headers: CORS_HEADERS });
+    return new Response(JSON.stringify({ error: "Server configuration error." }), { status: 500, headers: corsHeaders(req) });
   }
 
   const authHeader = req.headers.get("authorization") || "";
@@ -59,13 +69,13 @@ export default async function (req) {
     try {
       uid = await requireSignedIn(app, idToken);
     } catch {
-      return new Response(JSON.stringify({ error: "You must be signed in to use this tool." }), { status: 401, headers: CORS_HEADERS });
+      return new Response(JSON.stringify({ error: "You must be signed in to use this tool." }), { status: 401, headers: corsHeaders(req) });
     }
 
     // ── Rate limit ──────────────────────────────────────────────────────────
     const usage = await checkAndIncrementRateLimit(app, uid);
     if (usage.blocked) {
-      return new Response(JSON.stringify(usage.blockedPayload), { status: 429, headers: CORS_HEADERS });
+      return new Response(JSON.stringify(usage.blockedPayload), { status: 429, headers: corsHeaders(req) });
     }
 
     // ── Claude call ─────────────────────────────────────────────────────────
@@ -83,8 +93,8 @@ export default async function (req) {
       data.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
     }
 
-    return new Response(JSON.stringify(data), { status: 200, headers: CORS_HEADERS });
+    return new Response(JSON.stringify(data), { status: 200, headers: corsHeaders(req) });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: CORS_HEADERS });
+    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders(req) });
   }
 }
