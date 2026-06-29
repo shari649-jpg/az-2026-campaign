@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
 const AuthContext = createContext(null);
@@ -17,7 +17,39 @@ export function AuthProvider({ children }) {
         // Fetch role + profile from Firestore
         try {
           const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-          setProfile(snap.exists() ? snap.data() : null);
+          const profileData = snap.exists() ? snap.data() : null;
+          setProfile(profileData);
+
+          // The welcome email used to be sent at account-registration time,
+          // before the person had clicked Firebase's own verification link —
+          // so it invited them in ("Open the Comms Hub") while AuthGuard was
+          // simultaneously blocking every route until verification actually
+          // succeeded. It now fires here instead, the first time we observe
+          // Firebase reporting emailVerified: true for an account whose
+          // Firestore doc hasn't already recorded that. The Firestore flag
+          // is updated in the same step so this can only ever fire once per
+          // account, regardless of how many times they load the app or which
+          // device they verify from.
+          if (
+            firebaseUser.emailVerified &&
+            profileData &&
+            profileData.emailVerified === false
+          ) {
+            try {
+              await updateDoc(doc(db, "users", firebaseUser.uid), { emailVerified: true });
+              setProfile(p => p ? { ...p, emailVerified: true } : p);
+            } catch {}
+            try {
+              await fetch("/.netlify/functions/send-welcome", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  email: firebaseUser.email,
+                  fullName: profileData.fullName || firebaseUser.displayName || "",
+                }),
+              });
+            } catch {}
+          }
         } catch {
           setProfile(null);
         }
