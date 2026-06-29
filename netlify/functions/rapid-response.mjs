@@ -9,9 +9,26 @@ import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 
-const CORS_ORIGIN = "https://az-coalition-2026-election.netlify.app";
-const CORS_HEADERS = { "Access-Control-Allow-Origin": CORS_ORIGIN, "Content-Type": "application/json" };
-const OPTIONS_HEADERS = { "Access-Control-Allow-Origin": CORS_ORIGIN, "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+// Transition period: both the new custom domain and the legacy Netlify
+// subdomain are accepted. Browsers only honor a single exact-match origin
+// in this header (no comma lists, no wildcarding with credentials), so we
+// reflect back whichever allowed origin actually made the request.
+// TODO: drop ALLOWED_ORIGINS[1] (legacy netlify.app) once the old domain
+// is fully retired and nothing still links to it.
+const ALLOWED_ORIGINS = [
+  "https://arizonacoalition.net",
+  "https://az-coalition-2026-election.netlify.app",
+];
+function corsHeaders(req) {
+  const origin = req.headers.get("origin");
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return { "Access-Control-Allow-Origin": allowOrigin, "Content-Type": "application/json" };
+}
+function optionsHeaders(req) {
+  const origin = req.headers.get("origin");
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return { "Access-Control-Allow-Origin": allowOrigin, "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+}
 
 function getAdminApp() {
   if (admin.apps.length) return admin.app();
@@ -71,13 +88,13 @@ Format:
 }`;
 
 export default async function (req) {
-  if (req.method === "OPTIONS") return new Response("", { status: 200, headers: OPTIONS_HEADERS });
+  if (req.method === "OPTIONS") return new Response("", { status: 200, headers: optionsHeaders(req) });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
   let app;
   try { app = getAdminApp(); } catch (err) {
     console.error("[rapid-response] admin init:", err.message);
-    return new Response(JSON.stringify({ error: "Server configuration error." }), { status: 500, headers: CORS_HEADERS });
+    return new Response(JSON.stringify({ error: "Server configuration error." }), { status: 500, headers: corsHeaders(req) });
   }
 
   const authHeader = req.headers.get("authorization") || "";
@@ -92,13 +109,13 @@ export default async function (req) {
     try {
       uid = await requireSignedIn(app, idToken);
     } catch {
-      return new Response(JSON.stringify({ error: "You must be signed in to use this tool." }), { status: 401, headers: CORS_HEADERS });
+      return new Response(JSON.stringify({ error: "You must be signed in to use this tool." }), { status: 401, headers: corsHeaders(req) });
     }
 
     // ── Rate limit ──────────────────────────────────────────────────────────
     const usage = await checkAndIncrementRateLimit(app, uid);
     if (usage.blocked) {
-      return new Response(JSON.stringify(usage.blockedPayload), { status: 429, headers: CORS_HEADERS });
+      return new Response(JSON.stringify(usage.blockedPayload), { status: 429, headers: corsHeaders(req) });
     }
 
     const { action, url, text, manualMeta } = body;
@@ -106,7 +123,7 @@ export default async function (req) {
     // ── fetch_and_analyze ───────────────────────────────────────────────────
     if (action === "fetch_and_analyze") {
       if (!isUrlAllowed(url)) {
-        return new Response(JSON.stringify({ error: "invalid_url" }), { status: 400, headers: CORS_HEADERS });
+        return new Response(JSON.stringify({ error: "invalid_url" }), { status: 400, headers: corsHeaders(req) });
       }
 
       let pageText = "";
@@ -136,7 +153,7 @@ export default async function (req) {
         }
       } catch { fetchOk = false; }
 
-      if (!fetchOk) return new Response(JSON.stringify({ error: "scrape_failed" }), { status: 422, headers: CORS_HEADERS });
+      if (!fetchOk) return new Response(JSON.stringify({ error: "scrape_failed" }), { status: 422, headers: corsHeaders(req) });
 
       const analysisRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -146,7 +163,7 @@ export default async function (req) {
 
       const analysisData = await analysisRes.json();
       if (usage.warning) analysisData.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
-      return new Response(JSON.stringify({ result: analysisData }), { status: 200, headers: CORS_HEADERS });
+      return new Response(JSON.stringify({ result: analysisData }), { status: 200, headers: corsHeaders(req) });
     }
 
     // ── analyze_text ────────────────────────────────────────────────────────
@@ -185,12 +202,12 @@ Format:
 
       const analysisData = await analysisRes.json();
       if (usage.warning) analysisData.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
-      return new Response(JSON.stringify({ result: analysisData }), { status: 200, headers: CORS_HEADERS });
+      return new Response(JSON.stringify({ result: analysisData }), { status: 200, headers: corsHeaders(req) });
     }
 
-    return new Response(JSON.stringify({ error: "Unknown action" }), { status: 400, headers: CORS_HEADERS });
+    return new Response(JSON.stringify({ error: "Unknown action" }), { status: 400, headers: corsHeaders(req) });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: CORS_HEADERS });
+    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders(req) });
   }
 }
