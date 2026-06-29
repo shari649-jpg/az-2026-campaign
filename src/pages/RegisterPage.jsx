@@ -220,7 +220,11 @@ export default function RegisterPage() {
             This invite has expired
           </h2>
           <p style={{ fontSize: 15, color: "#666", lineHeight: 1.7, marginBottom: 24 }}>
-            Invite links are valid for 72 hours. Please contact your coalition administrator to request a new invite.
+            Invite links are valid for 72 hours. Please{" "}
+            <a href="mailto:info@arizonacoalition.net?subject=Invite%20link%20expired" style={{ color: "#1D5C4A", fontWeight: 700, textDecoration: "none" }}>
+              contact your coalition administrator
+            </a>{" "}
+            to request a new invite.
           </p>
           <Link to="/waitlist" style={{
             display: "inline-block", background: "#1D5C4A", color: "#fff",
@@ -245,7 +249,10 @@ export default function RegisterPage() {
             This invite has already been used
           </h2>
           <p style={{ fontSize: 15, color: "#666", lineHeight: 1.7, marginBottom: 24 }}>
-            If you already registered, sign in below. If something went wrong, contact your administrator.
+            If you already registered, sign in below. If something went wrong,{" "}
+            <a href="mailto:info@arizonacoalition.net?subject=Invite%20link%20issue" style={{ color: "#1D5C4A", fontWeight: 700, textDecoration: "none" }}>
+              contact your administrator
+            </a>.
           </p>
           <Link to="/login" style={{
             display: "inline-block", background: "#1D5C4A", color: "#fff",
