@@ -35,6 +35,14 @@ const VOICE_PRESETS = [
 // County-specific voice grounding — from the AZ County Voices doc (15 counties).
 // Layered ON TOP of Voice/Persona, not a replacement for it — county is about place/local
 // stakes, persona (Mom Blog, Bro Code, etc.) is about who's speaking.
+// Sentinel value for formData.county when a multi-county district doesn't map
+// cleanly to one of the 15 named counties below. Kept out of COUNTY_VOICES so
+// downstream code that assumes every key is a real AZ county (e.g. anything
+// that titlecases a key as "<County> County") doesn't have to special-case it.
+const RURAL_MULTI_COUNTY = "__rural_multi__";
+const RURAL_MULTI_COUNTY_LABEL = "Rural Multi-County";
+const RURAL_MULTI_COUNTY_VOICE = "Rural Arizona neighbors across county lines — small towns, tribal communities, and farm-and-ranch families who share more with each other than with any single county seat. Speak as a plainspoken local (40-60s) — warm, practical, no jargon, like a feed-store counter or county-fair conversation. \"We/our\" dominant; lean on shared rural stakes rather than any one county's specific landmarks, since this covers a district that crosses county lines. Respect distance and self-reliance — long drives, thin services, tight budgets — without sounding bleak. Pillars: rural infrastructure and roads, water and land, healthcare and school access across long distances, voting access for spread-out communities.";
+
 const COUNTY_VOICES = {
   "Apache": "Apache County neighbors protecting tribal and rural communities — from chapter houses to small towns. Speak as a longtime local — warm, humble, plainspoken, no jargon, like a chapter-house meeting or front-porch conversation. \"We/our\" dominant, respectful and grounded, culturally aware, service-first. Use Indigenous language only when accurate and natural. Never preachy or performative; lead with trust, listening, and practical support. Pillars: sovereignty and respect, water and roads, schools and healthcare, voting access, community resilience.",
   "Coconino": "Coconino neighbors protecting our lands, homes, and futures — from Flagstaff to the Navajo/Hopi Nations. Speak as a lifelong local (30-50s) — warm, inclusive, no jargon, like NAU coffee or canyon trail talk. Lean on \"we/our,\" bilingual English/Spanish/Diné phrases where natural. Ground posts in local stakes (rising rents from Flagstaff to Page, tourism jobs needing water security) and local landmarks (San Francisco Peaks, Lowell Observatory). Pillars: land/heritage, homes/cost of living, youth opportunity, every voice counted.",
@@ -107,6 +115,7 @@ const T = {
   gold:     "#F5C842",
   goldDark: "#d4aa30",
   turquoise:"#3ECFB2",
+  terracotta:"#C1673A",
   charcoal: "#4A4558",
   green:    "#145214",
   red:      "#c41e1e",
@@ -453,7 +462,10 @@ export default function App() {
         setFromResearch(true);
         // Surface a detected county as a suggestion only — never auto-applied.
         // Only recognized if it matches one of the counties in COUNTY_VOICES.
-        if (p.county && COUNTY_VOICES[p.county]) {
+        // Recognized if it's either a real county in COUNTY_VOICES, or the
+        // rural multi-county sentinel (set upstream for districts that span
+        // more than one county and don't map cleanly to a single one).
+        if (p.county && (COUNTY_VOICES[p.county] || p.county === RURAL_MULTI_COUNTY)) {
           setCountySuggestion(p.county);
         }
         localStorage.removeItem("rr_pending_article");
@@ -513,10 +525,16 @@ export default function App() {
     const perspLine = perspObj ? `Grammatical person: ${perspObj.label} — ${perspObj.desc}` : "";
 
     // County voice injection — AZ mode only. Layered ON TOP of Voice/Persona, not a
-    // replacement for it. Only applies if the user explicitly selected a county in Pro Mode.
-    const countyVoiceText = formData.county ? COUNTY_VOICES[formData.county] : null;
+    // replacement for it. Only applies if the user explicitly selected a county
+    // (or the Rural Multi-County option) in Pro Mode.
+    const countyVoiceText = formData.county === RURAL_MULTI_COUNTY
+      ? RURAL_MULTI_COUNTY_VOICE
+      : formData.county ? COUNTY_VOICES[formData.county] : null;
+    const countyLabel = formData.county === RURAL_MULTI_COUNTY
+      ? RURAL_MULTI_COUNTY_LABEL.toUpperCase()
+      : `${(formData.county || "").toUpperCase()} COUNTY`;
     const countyBlock = countyVoiceText
-      ? `\nCOUNTY VOICE — ${formData.county.toUpperCase()} COUNTY:\n${countyVoiceText}\n`
+      ? `\nCOUNTY VOICE — ${countyLabel}:\n${countyVoiceText}\n`
       : "";
 
     // Layer 2 frame injection (available in both modes)
@@ -587,7 +605,7 @@ Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
 Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
-${formData.county ? `County Voice: ${formData.county} County\n` : ""}Style: ${styleLabel}
+${formData.county ? `County Voice: ${formData.county === RURAL_MULTI_COUNTY ? RURAL_MULTI_COUNTY_LABEL : `${formData.county} County`}\n` : ""}Style: ${styleLabel}
 ${modifierLine}
 ${perspLine}
 
@@ -1224,24 +1242,28 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 ].filter(Boolean).length;
                 return (
                   <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                    {countySuggestion && !formData.county && (
-                      <div style={{
-                        display:"flex", alignItems:"center", gap:10, flexWrap:"wrap",
-                        background:"#fffdf0", border:`1.5px solid ${T.gold}`, borderRadius:10,
-                        padding:"10px 16px", fontSize:14, color:T.text,
-                      }}>
-                        <span>📍 <strong>{countySuggestion} County</strong> detected from Research — apply its local voice?</span>
-                        <button type="button"
-                          onClick={() => { upd("county", countySuggestion); setProModeOpen(true); }}
-                          style={{ padding:"5px 14px", borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit", background:T.teal, color:"#fff", border:"none" }}>
-                          Apply {countySuggestion} voice
-                        </button>
-                        <button type="button" onClick={() => setCountySuggestion("")}
-                          style={{ padding:"5px 14px", borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit", background:"transparent", color:T.textMute, border:`1px solid ${T.border}` }}>
-                          No thanks
+                    {countySuggestion && !formData.county && (() => {
+                      const isRural = countySuggestion === RURAL_MULTI_COUNTY;
+                      const label = isRural ? RURAL_MULTI_COUNTY_LABEL : `${countySuggestion} County`;
+                      return (
+                        <div style={{
+                          display:"flex", alignItems:"center", gap:10, flexWrap:"wrap",
+                          background:"#fffdf0", border:`1.5px solid ${T.gold}`, borderRadius:10,
+                          padding:"10px 16px", fontSize:14, color:T.text,
+                        }}>
+                          <span>📍 <strong>{label}</strong> detected from Research — apply its local voice?</span>
+                          <button type="button"
+                            onClick={() => { upd("county", countySuggestion); setProModeOpen(true); }}
+                            style={{ padding:"5px 14px", borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit", background:T.teal, color:"#fff", border:"none" }}>
+                            Apply {isRural ? RURAL_MULTI_COUNTY_LABEL : `${countySuggestion}`} voice
+                          </button>
+                          <button type="button" onClick={() => setCountySuggestion("")}
+                            style={{ padding:"5px 14px", borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit", background:"transparent", color:T.textMute, border:`1px solid ${T.border}` }}>
+                            No thanks
                         </button>
                       </div>
-                    )}
+                      );
+                    })()}
                     <button type="button" onClick={() => setProModeOpen(o => !o)}
                       style={{
                         display:"flex", alignItems:"center", justifyContent:"space-between",
@@ -1325,6 +1347,25 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                           </button>
                         );
                       })}
+                      {/* Distinct from the named counties above — for districts that span
+                          county lines and don't map cleanly to any single one. */}
+                      {(() => {
+                        const on = formData.county === RURAL_MULTI_COUNTY;
+                        return (
+                          <button type="button"
+                            onClick={() => upd("county", on ? "" : RURAL_MULTI_COUNTY)}
+                            title="For districts spanning multiple counties"
+                            style={{
+                              padding:"7px 16px", borderRadius:20, fontSize:13, fontWeight:700,
+                              cursor:"pointer", fontFamily:"inherit",
+                              background: on ? T.terracotta : "transparent",
+                              color: on ? "#fff" : T.terracotta,
+                              border: `1.5px dashed ${T.terracotta}`,
+                            }}>
+                            {RURAL_MULTI_COUNTY_LABEL}
+                          </button>
+                        );
+                      })()}
                     </div>
                   </fieldset>
                 </section>
