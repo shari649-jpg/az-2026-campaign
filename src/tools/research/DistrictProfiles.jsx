@@ -84,12 +84,20 @@ export default function GeographicProfiles() {
     setExpanded(p => ({ ...p, [id]: !p[id] }));
   }
 
-  // Returns a single county name only if unambiguous (no comma-separated multi-county string)
-  function singleCountyFrom(d) {
+  // Must match the RURAL_MULTI_COUNTY sentinel in message-machine.jsx — these
+  // two files aren't on a shared constants module, so the literal string is
+  // duplicated by value. If one changes, update the other.
+  const RURAL_MULTI_COUNTY = '__rural_multi__';
+
+  // Resolves a district's county field to what Message Machine's County Voice
+  // picker can actually use: a single real county name, the rural multi-county
+  // sentinel (when the district spans more than one county), or null only when
+  // the data itself is missing/unusable.
+  function resolveCountyFor(d) {
     if (!d || !d.counties) return null;
     const c = d.counties.trim();
-    if (!c || c.includes(',')) return null;
-    return c;
+    if (!c) return null;
+    return c.includes(',') ? RURAL_MULTI_COUNTY : c;
   }
 
   function pushToMM(d) {
@@ -99,7 +107,7 @@ export default function GeographicProfiles() {
       sourceTitle: `District Profile: ${d.district_id}`,
       sourcePublication: 'AZ 2026 District Research',
       issueText,
-      county: singleCountyFrom(d),
+      county: resolveCountyFor(d),
       focalPoint: '',
       pushedAt: new Date().toISOString(),
     };
