@@ -6,6 +6,7 @@
 const SITE_URL   = "https://arizonacoalition.net";
 const FROM_EMAIL = "noreply@arizonacoalition.net";
 const FROM_NAME  = "Arizona Coalition Comms Hub";
+const REPLY_TO   = "info@arizonacoalition.net";
 
 // CORS: transition period, both the new custom domain and the legacy
 // Netlify subdomain are accepted as request origins. Browsers only honor a
@@ -35,6 +36,7 @@ async function sendEmail({ to, subject, html }) {
       to,
       subject,
       html,
+      reply_to: REPLY_TO,
     }),
   });
   if (!res.ok) {
