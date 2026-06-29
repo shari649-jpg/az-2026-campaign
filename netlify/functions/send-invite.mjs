@@ -1,5 +1,5 @@
 // netlify/functions/send-invite.mjs
-// Stores invite token in Netlify Blobs, sends invite email via Gmail SMTP (Nodemailer).
+// Stores invite token in Netlify Blobs, sends invite email via Resend.
 //
 // AUTH: admin-only, same pattern as manage-user.mjs. Without this check, anyone
 // with the URL could send a real invite email containing a working registration
@@ -8,15 +8,15 @@
 
 import { randomBytes } from "crypto";
 import { getStore } from "@netlify/blobs";
-import nodemailer from "nodemailer";
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 
 // Used to build the invite link that goes out in the email — always the
 // current canonical domain, since this URL is what the recipient clicks.
 const SITE_URL  = "https://arizonacoalition.net";
-const FROM_EMAIL = "az.coalition.socials@gmail.com";
+const FROM_EMAIL = "noreply@arizonacoalition.net";
 const FROM_NAME  = "Arizona Coalition Comms Hub";
+
 
 // CORS: transition period, both the new custom domain and the legacy
 // Netlify subdomain are accepted as request origins. Browsers only honor a
@@ -62,14 +62,25 @@ async function requireAdmin(app, idToken) {
   return decoded.uid;
 }
 
-function getTransporter() {
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: FROM_EMAIL,
-      pass: process.env.GMAIL_APP_PASSWORD,
+async function sendEmail({ to, subject, html }) {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
     },
+    body: JSON.stringify({
+      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      to,
+      subject,
+      html,
+    }),
   });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Resend send failed (${res.status}): ${body}`);
+  }
+  return res.json();
 }
 
 function inviteEmailHtml({ fullName, inviteUrl }) {
@@ -159,10 +170,8 @@ export default async function (req) {
       createdAt:  new Date().toISOString(),
     }));
 
-    // Send invite email via Gmail SMTP
-    const transporter = getTransporter();
-    await transporter.sendMail({
-      from:    `"${FROM_NAME}" <${FROM_EMAIL}>`,
+    // Send invite email via Resend
+    await sendEmail({
       to:      email,
       subject: "You're invited to the Arizona Coalition Comms Hub",
       html:    inviteEmailHtml({ fullName, inviteUrl }),
