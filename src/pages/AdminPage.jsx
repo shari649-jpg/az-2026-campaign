@@ -41,7 +41,8 @@ export default function AdminPage() {
   const [inviting, setInviting]     = useState(null); // waitlistId being invited
   const [showRegistered, setShowRegistered] = useState(false); // hide completed registrations by default
   const [editingUid, setEditingUid] = useState(null); // uid currently in edit mode
-  const [editForm, setEditForm]     = useState({ fullName: "", platform: "", handle: "" });
+  const [editForm, setEditForm]     = useState({ fullName: "", socials: [{ platform: "", handle: "" }] });
+  const [detailsUid, setDetailsUid] = useState(null); // uid currently shown in the read-only details modal
   const [actionUid, setActionUid]   = useState(null); // uid currently mid disable/enable/delete call
   const [actionError, setActionError] = useState(null); // { uid, message }
   const [confirmDeleteUid, setConfirmDeleteUid] = useState(null); // uid pending delete confirmation
@@ -106,28 +107,46 @@ export default function AdminPage() {
     setSaving(null);
   };
 
-  // ── Edit (name + primary social) — pure Firestore, no server function needed ──
+  // ── Edit (name + social accounts) — pure Firestore, no server function needed ──
   const startEdit = (u) => {
     setEditingUid(u.id);
+    const existing = (u.socialAccounts?.length ? u.socialAccounts : [u.primarySocial, u.secondarySocial].filter(Boolean))
+      .filter(s => s && (s.platform || s.handle));
     setEditForm({
       fullName: u.fullName || "",
-      platform: u.socialAccounts?.[0]?.platform || u.primarySocial?.platform || "",
-      handle:   u.socialAccounts?.[0]?.handle   || u.primarySocial?.handle   || "",
+      socials: existing.length ? existing.map(s => ({ platform: s.platform || "", handle: s.handle || "" })) : [{ platform: "", handle: "" }],
     });
   };
 
-  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", platform: "", handle: "" }); };
+  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", socials: [{ platform: "", handle: "" }] }); };
+
+  const updateSocialField = (i, field, value) => {
+    setEditForm(f => ({ ...f, socials: f.socials.map((s, idx) => idx === i ? { ...s, [field]: value } : s) }));
+  };
+  const addSocialField = () => {
+    setEditForm(f => ({ ...f, socials: [...f.socials, { platform: "", handle: "" }] }));
+  };
+  const removeSocialField = (i) => {
+    setEditForm(f => ({ ...f, socials: f.socials.filter((_, idx) => idx !== i) }));
+  };
 
   const saveEdit = async (uid) => {
     setSaving(uid);
     try {
-      const primary = { platform: editForm.platform.trim(), handle: editForm.handle.trim() };
-      await updateDoc(doc(db, "users", uid), {
+      const cleaned = editForm.socials
+        .map(s => ({ platform: s.platform.trim(), handle: s.handle.trim() }))
+        .filter(s => s.platform || s.handle);
+      const socialAccounts = cleaned.length ? cleaned : [];
+      const primarySocial = socialAccounts[0] || { platform: "", handle: "" };
+      const payload = {
         fullName: editForm.fullName.trim(),
-        primarySocial: primary,
-        socialAccounts: [primary],
-      });
-      setUsers(prev => prev.map(u => u.id === uid ? { ...u, fullName: editForm.fullName.trim(), primarySocial: primary, socialAccounts: [primary] } : u));
+        socialAccounts,
+        primarySocial,
+      };
+      // Keep legacy secondarySocial in sync for any older display code that still reads it.
+      if (socialAccounts[1]) payload.secondarySocial = socialAccounts[1];
+      await updateDoc(doc(db, "users", uid), payload);
+      setUsers(prev => prev.map(u => u.id === uid ? { ...u, ...payload } : u));
       notify("Profile updated.");
       cancelEdit();
     } catch { notify("Failed to save changes.", "err"); }
@@ -229,7 +248,13 @@ export default function AdminPage() {
 
   function formatDate(ts) {
     try {
-      const d = ts?.toDate ? ts.toDate() : ts instanceof Date ? ts : new Date(ts?.seconds ? ts.seconds * 1000 : ts);
+      if (!ts) return "";
+      const d = ts?.toDate ? ts.toDate()
+        : ts instanceof Date ? ts
+        : typeof ts === "number" ? new Date(ts)
+        : ts?.seconds ? new Date(ts.seconds * 1000)
+        : new Date(ts);
+      if (isNaN(d.getTime())) return "";
       return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     } catch { return ""; }
   }
@@ -268,7 +293,7 @@ export default function AdminPage() {
     return `${wk.getMonth() + 1}/${wk.getDate()}`;
   }
 
-  function formatDate(millis) {
+  function formatMillisDate(millis) {
     if (!millis) return "";
     const d = new Date(millis);
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -666,27 +691,39 @@ export default function AdminPage() {
                       </div>
                       <div style={{ flex: 1, minWidth: 200 }}>
                         {isEditing ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 380 }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 420 }}>
                             <input
                               type="text" value={editForm.fullName}
                               onChange={e => setEditForm(f => ({ ...f, fullName: e.target.value }))}
                               placeholder="Full name"
                               style={{ padding: "8px 12px", fontSize: 15, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL }}
                             />
-                            <div style={{ display: "flex", gap: 8 }}>
-                              <input
-                                type="text" value={editForm.platform}
-                                onChange={e => setEditForm(f => ({ ...f, platform: e.target.value }))}
-                                placeholder="Platform"
-                                style={{ flex: "0 0 130px", padding: "8px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL }}
-                              />
-                              <input
-                                type="text" value={editForm.handle}
-                                onChange={e => setEditForm(f => ({ ...f, handle: e.target.value }))}
-                                placeholder="@handle"
-                                style={{ flex: 1, padding: "8px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL }}
-                              />
-                            </div>
+                            {editForm.socials.map((s, i) => (
+                              <div key={i} style={{ display: "flex", gap: 8 }}>
+                                <input
+                                  type="text" value={s.platform}
+                                  onChange={e => updateSocialField(i, "platform", e.target.value)}
+                                  placeholder="Platform"
+                                  style={{ flex: "0 0 120px", padding: "8px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL }}
+                                />
+                                <input
+                                  type="text" value={s.handle}
+                                  onChange={e => updateSocialField(i, "handle", e.target.value)}
+                                  placeholder="@handle"
+                                  style={{ flex: 1, padding: "8px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL }}
+                                />
+                                {editForm.socials.length > 1 && (
+                                  <button onClick={() => removeSocialField(i)} title="Remove this social"
+                                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#aaa", padding: "0 4px" }}>
+                                    ×
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            <button onClick={addSocialField} type="button"
+                              style={{ alignSelf: "flex-start", background: "none", border: "none", color: TEAL, fontWeight: 700, fontSize: 13, cursor: "pointer", padding: "2px 0" }}>
+                              + Add another social
+                            </button>
                             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                               <button onClick={() => saveEdit(u.id)} disabled={isBusy} style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: isBusy ? "not-allowed" : "pointer" }}>
                                 {isBusy ? "Saving…" : "Save"}
@@ -702,6 +739,10 @@ export default function AdminPage() {
                               <span style={{ fontSize: 17, fontWeight: 700, color: CHARCOAL }}>{u.fullName || "—"}</span>
                               {isMe && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: GOLD, color: TEAL, padding: "2px 8px", borderRadius: 4 }}>You</span>}
                               {isDisabled && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "#eee", color: "#777", border: "1px solid #ccc", padding: "2px 8px", borderRadius: 4 }}>Disabled</span>}
+                              <button onClick={() => setDetailsUid(u.id)} title="View full details"
+                                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: TEAL, padding: "2px 4px", textDecoration: "underline" }}>
+                                Details
+                              </button>
                               {!isMe && (
                                 <button onClick={() => startEdit(u)} title="Edit name / social"
                                   style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#aaa", padding: 2 }}>
@@ -965,6 +1006,8 @@ export default function AdminPage() {
                 {filteredWaitlist.map(entry => {
                   const sc = WAITLIST_STATUS_COLORS[entry.status] || WAITLIST_STATUS_COLORS.pending;
                   const isPending  = entry.status === "pending";
+                  const isInvited  = entry.status === "invited";
+                  const canSend    = isPending || isInvited;
                   const isInviting = inviting === entry.id;
                   return (
                     <div key={entry.id} style={{
@@ -1010,7 +1053,7 @@ export default function AdminPage() {
 
                       {/* Action */}
                       <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
-                        {isPending ? (
+                        {canSend ? (
                           <button
                             onClick={() => handleSendInvite(entry)}
                             disabled={isInviting}
@@ -1022,11 +1065,11 @@ export default function AdminPage() {
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {isInviting ? "Sending…" : "Send Invite ✉️"}
+                            {isInviting ? "Sending…" : isInvited ? "Resend Invite ✉️" : "Send Invite ✉️"}
                           </button>
                         ) : (
                           <span style={{ fontSize: 13, color: "#aaa", fontStyle: "italic" }}>
-                            {entry.status === "invited" ? "Invite sent" : entry.status === "registered" ? "✓ Account created" : "—"}
+                            {entry.status === "registered" ? "✓ Account created" : "—"}
                           </span>
                         )}
                       </div>
@@ -1038,6 +1081,80 @@ export default function AdminPage() {
           </>
         )}
       </div>
+
+      {/* ── Read-only user details modal ─────────────────────────────── */}
+      {detailsUid && (() => {
+        const u = users.find(x => x.id === detailsUid);
+        if (!u) return null;
+        const socials = (u.socialAccounts?.length ? u.socialAccounts : [u.primarySocial, u.secondarySocial].filter(Boolean))
+          .filter(s => s && (s.platform || s.handle));
+        const rc = ROLE_COLORS[u.role] || ROLE_COLORS.user;
+        return (
+          <div
+            onClick={() => setDetailsUid(null)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{ background: BG, borderRadius: 16, padding: "32px 32px", maxWidth: 480, width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+                <h2 style={{ margin: 0, fontSize: 20, color: TEAL, fontFamily: "inherit" }}>{u.fullName || "—"}</h2>
+                <button onClick={() => setDetailsUid(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "#aaa", lineHeight: 1 }}>×</button>
+              </div>
+
+              <DetailRow label="Email" value={u.email || "—"} />
+              <DetailRow label="Role" value={
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", background: rc.bg, color: rc.color, border: `1px solid ${rc.border}`, borderRadius: 6, padding: "3px 10px" }}>
+                  {u.role || "user"}
+                </span>
+              } />
+              <DetailRow label="Organization" value={u.organization || "—"} />
+              <DetailRow label="Sign-in method" value={u.googleSignIn ? "Google" : "Email / password"} />
+              <DetailRow label="Joined" value={u.createdAt ? formatDate(u.createdAt) : "—"} />
+              <DetailRow
+                label={`Social account${socials.length === 1 ? "" : "s"}`}
+                value={
+                  socials.length ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      {socials.map((s, i) => (
+                        <span key={i}>{s.platform || "—"}: {s.handle || "—"}</span>
+                      ))}
+                    </div>
+                  ) : "—"
+                }
+              />
+              <DetailRow label="User ID" value={<span style={{ fontFamily: "monospace", fontSize: 12, color: "#999", wordBreak: "break-all" }}>{u.id}</span>} />
+
+              <div style={{ display: "flex", gap: 8, marginTop: 24 }}>
+                <button
+                  onClick={() => { setDetailsUid(null); startEdit(u); }}
+                  style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => setDetailsUid(null)}
+                  style={{ background: "none", color: "#888", border: "2px solid #ccc", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+function DetailRow({ label, value }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#999", marginBottom: 3 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 14, color: CHARCOAL }}>{value}</div>
     </div>
   );
 }
