@@ -21,11 +21,21 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 
-const SITE_URL = "https://az-coalition-2026-election.netlify.app";
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": SITE_URL,
-  "Content-Type": "application/json",
-};
+// CORS: transition period, both the new custom domain and the legacy
+// Netlify subdomain are accepted as request origins. Browsers only honor a
+// single exact-match origin in this header, so we reflect back whichever
+// allowed origin actually made the request.
+// TODO: drop ALLOWED_ORIGINS[1] (legacy netlify.app) once the old domain
+// is fully retired and nothing still links to it.
+const ALLOWED_ORIGINS = [
+  "https://arizonacoalition.net",
+  "https://az-coalition-2026-election.netlify.app",
+];
+function corsHeaders(req) {
+  const origin = req.headers.get("origin");
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return { "Access-Control-Allow-Origin": allowOrigin, "Content-Type": "application/json" };
+}
 
 function getAdminApp() {
   if (admin.apps.length) return admin.app();
@@ -55,7 +65,7 @@ async function requireAdmin(app, idToken) {
 }
 
 export default async function (req) {
-  if (req.method === "OPTIONS") return new Response("", { status: 200, headers: CORS_HEADERS });
+  if (req.method === "OPTIONS") return new Response("", { status: 200, headers: corsHeaders(req) });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
   let app;
@@ -64,7 +74,7 @@ export default async function (req) {
   } catch (err) {
     console.error("[manage-user] admin init error:", err.message);
     return new Response(JSON.stringify({ error: "Server is not configured for user management yet." }), {
-      status: 500, headers: CORS_HEADERS,
+      status: 500, headers: corsHeaders(req),
     });
   }
 
@@ -73,7 +83,7 @@ export default async function (req) {
 
     if (!action || !targetUid) {
       return new Response(JSON.stringify({ error: "Missing action or targetUid." }), {
-        status: 400, headers: CORS_HEADERS,
+        status: 400, headers: corsHeaders(req),
       });
     }
 
@@ -83,7 +93,7 @@ export default async function (req) {
     } catch (err) {
       const status = err.message === "unauthenticated" ? 401 : 403;
       return new Response(JSON.stringify({ error: "Not authorized to perform this action." }), {
-        status, headers: CORS_HEADERS,
+        status, headers: corsHeaders(req),
       });
     }
 
@@ -91,7 +101,7 @@ export default async function (req) {
     // through this tool — avoids accidental lockout with no one left to fix it.
     if (callerUid === targetUid) {
       return new Response(JSON.stringify({ error: "You can't perform this action on your own account." }), {
-        status: 400, headers: CORS_HEADERS,
+        status: 400, headers: corsHeaders(req),
       });
     }
 
@@ -104,7 +114,7 @@ export default async function (req) {
         disabled: action === "disable",
         ...(action === "disable" ? { disabledAt: new Date() } : { disabledAt: admin.firestore.FieldValue.delete() }),
       });
-      return new Response(JSON.stringify({ success: true, action }), { status: 200, headers: CORS_HEADERS });
+      return new Response(JSON.stringify({ success: true, action }), { status: 200, headers: corsHeaders(req) });
     }
 
     if (action === "delete") {
@@ -112,18 +122,18 @@ export default async function (req) {
       // profile too, so neither is left as an orphaned half-record.
       await auth.deleteUser(targetUid);
       await db.doc(`users/${targetUid}`).delete();
-      return new Response(JSON.stringify({ success: true, action }), { status: 200, headers: CORS_HEADERS });
+      return new Response(JSON.stringify({ success: true, action }), { status: 200, headers: corsHeaders(req) });
     }
 
     return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
-      status: 400, headers: CORS_HEADERS,
+      status: 400, headers: corsHeaders(req),
     });
 
   } catch (err) {
     console.error("[manage-user] error:", err.message);
     const status = err.code === "auth/user-not-found" ? 404 : 500;
     return new Response(JSON.stringify({ error: err.message || "Something went wrong." }), {
-      status, headers: CORS_HEADERS,
+      status, headers: corsHeaders(req),
     });
   }
 }
