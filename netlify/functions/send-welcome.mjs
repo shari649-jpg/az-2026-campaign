@@ -1,25 +1,47 @@
 // netlify/functions/send-welcome.mjs
-// Sends welcome email after successful registration via Gmail SMTP (Nodemailer).
+// Sends welcome email after successful registration via Resend.
 
-import nodemailer from "nodemailer";
-
-const SITE_URL   = "https://az-coalition-2026-election.netlify.app";
-const FROM_EMAIL = "az.coalition.socials@gmail.com";
+// Used for the "Open the Comms Hub" link in the welcome email — always the
+// current canonical domain, since this URL is what the recipient clicks.
+const SITE_URL   = "https://arizonacoalition.net";
+const FROM_EMAIL = "noreply@arizonacoalition.net";
 const FROM_NAME  = "Arizona Coalition Comms Hub";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": SITE_URL,
-  "Content-Type": "application/json",
-};
+// CORS: transition period, both the new custom domain and the legacy
+// Netlify subdomain are accepted as request origins. Browsers only honor a
+// single exact-match origin in this header, so we reflect back whichever
+// allowed origin actually made the request.
+// TODO: drop ALLOWED_ORIGINS[1] (legacy netlify.app) once the old domain
+// is fully retired and nothing still links to it.
+const ALLOWED_ORIGINS = [
+  "https://arizonacoalition.net",
+  "https://az-coalition-2026-election.netlify.app",
+];
+function corsHeaders(req) {
+  const origin = req.headers.get("origin");
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return { "Access-Control-Allow-Origin": allowOrigin, "Content-Type": "application/json" };
+}
 
-function getTransporter() {
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: FROM_EMAIL,
-      pass: process.env.GMAIL_APP_PASSWORD,
+async function sendEmail({ to, subject, html }) {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
     },
+    body: JSON.stringify({
+      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      to,
+      subject,
+      html,
+    }),
   });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Resend send failed (${res.status}): ${body}`);
+  }
+  return res.json();
 }
 
 function welcomeEmailHtml({ fullName }) {
@@ -107,34 +129,32 @@ function welcomeEmailHtml({ fullName }) {
 }
 
 export default async function (req) {
-  if (req.method === "OPTIONS") return new Response("", { status: 200, headers: CORS_HEADERS });
+  if (req.method === "OPTIONS") return new Response("", { status: 200, headers: corsHeaders(req) });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
   try {
     const { email, fullName } = await req.json();
     if (!email || !fullName) {
       return new Response(JSON.stringify({ error: "Missing email or fullName." }), {
-        status: 400, headers: CORS_HEADERS,
+        status: 400, headers: corsHeaders(req),
       });
     }
 
-    const transporter = getTransporter();
-    await transporter.sendMail({
-      from:    `"${FROM_NAME}" <${FROM_EMAIL}>`,
+    await sendEmail({
       to:      email,
       subject: "Welcome to the Arizona Coalition Comms Hub 🌵",
       html:    welcomeEmailHtml({ fullName }),
     });
 
     return new Response(JSON.stringify({ success: true }), {
-      status: 200, headers: CORS_HEADERS,
+      status: 200, headers: corsHeaders(req),
     });
 
   } catch (err) {
     console.error("[send-welcome] error:", err.message);
     // Non-fatal — don't surface email errors to the user
     return new Response(JSON.stringify({ success: false, error: err.message }), {
-      status: 200, headers: CORS_HEADERS,
+      status: 200, headers: corsHeaders(req),
     });
   }
 }
