@@ -204,7 +204,7 @@ export default function AdminPage() {
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Failed to resend verification emails.");
       }
-      setVerificationResult({ sent: data.sent, failed: data.failed });
+      setVerificationResult({ sent: data.sent, failed: data.failed, results: data.results });
       notify(
         data.failed > 0
           ? `Sent ${data.sent} verification email${data.sent === 1 ? "" : "s"}, ${data.failed} failed.`
@@ -703,31 +703,55 @@ export default function AdminPage() {
             {!loadingUsers && (() => {
               const unverified = filteredUsers.filter(u => u.emailVerified === false && !u.disabled);
               if (unverified.length === 0) return null;
+              const failures = verificationResult?.results?.filter(r => !r.success) || [];
               return (
                 <div style={{
-                  display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
                   background: "#fffdf0", border: `1.5px solid ${GOLD}`, borderRadius: 10,
                   padding: "14px 20px", marginBottom: 16, fontSize: 14, color: CHARCOAL,
                 }}>
-                  <span>
-                    📬 <strong>{unverified.length}</strong> user{unverified.length === 1 ? "" : "s"} {unverified.length === 1 ? "hasn't" : "haven't"} verified their email yet — they can't sign in until they do.
-                  </span>
-                  <button
-                    onClick={() => resendVerification(unverified.map(u => u.id))}
-                    disabled={resendingVerification}
-                    style={{
-                      background: TEAL, color: "#fff", border: "none", borderRadius: 8,
-                      padding: "8px 18px", fontSize: 13, fontWeight: 700, fontFamily: "inherit",
-                      cursor: resendingVerification ? "not-allowed" : "pointer",
-                      opacity: resendingVerification ? 0.6 : 1, whiteSpace: "nowrap",
-                    }}
-                  >
-                    {resendingVerification ? "Sending…" : `Resend to all ${unverified.length}`}
-                  </button>
-                  {verificationResult && (
-                    <span style={{ fontSize: 13, color: verificationResult.failed > 0 ? "#c41e1e" : "#1a6640" }}>
-                      Last run: {verificationResult.sent} sent{verificationResult.failed > 0 ? `, ${verificationResult.failed} failed` : ""}.
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                    <span>
+                      📬 <strong>{unverified.length}</strong> user{unverified.length === 1 ? "" : "s"} {unverified.length === 1 ? "hasn't" : "haven't"} verified their email yet — they can't sign in until they do.
                     </span>
+                    <button
+                      onClick={() => resendVerification(unverified.map(u => u.id))}
+                      disabled={resendingVerification}
+                      style={{
+                        background: TEAL, color: "#fff", border: "none", borderRadius: 8,
+                        padding: "8px 18px", fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+                        cursor: resendingVerification ? "not-allowed" : "pointer",
+                        opacity: resendingVerification ? 0.6 : 1, whiteSpace: "nowrap",
+                      }}
+                    >
+                      {resendingVerification ? "Sending…" : `Resend to all ${unverified.length}`}
+                    </button>
+                    {verificationResult && (
+                      <span style={{ fontSize: 13, color: verificationResult.failed > 0 ? "#c41e1e" : "#1a6640" }}>
+                        Last run: {verificationResult.sent} sent{verificationResult.failed > 0 ? `, ${verificationResult.failed} failed` : ""}.
+                      </span>
+                    )}
+                  </div>
+                  {failures.length > 0 && (
+                    <details style={{ marginTop: 10 }}>
+                      <summary style={{ cursor: "pointer", fontSize: 13, color: "#9a7b00", fontWeight: 700 }}>
+                        Show {failures.length} failure{failures.length === 1 ? "" : "s"}
+                      </summary>
+                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                        {failures.map(f => {
+                          const u = users.find(x => x.id === f.uid);
+                          const reasonText = {
+                            "already-verified": "already verified (no action needed — list will refresh)",
+                            "no-email-on-account": "account has no email on file",
+                            "auth/too-many-requests": "Firebase rate-limited this — wait a few minutes and retry just this user",
+                          }[f.reason] || f.reason || "unknown error";
+                          return (
+                            <div key={f.uid} style={{ fontSize: 13, color: "#c41e1e" }}>
+                              {(u?.fullName || f.email || f.uid)} — {reasonText}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </details>
                   )}
                 </div>
               );
