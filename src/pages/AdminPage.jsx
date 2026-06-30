@@ -186,7 +186,77 @@ export default function AdminPage() {
     }
   };
 
-  // ── Resend Firebase email verification — single uid or bulk array ──
+  // ── Export registered users to CSV ──────────────────────────────────────
+  const exportUsersCSV = (userList) => {
+    // Determine max number of social accounts across all users so we know
+    // how many platform/handle column pairs to create.
+    const maxSocials = Math.max(1, ...userList.map(u => {
+      const s = u.socialAccounts?.length
+        ? u.socialAccounts
+        : [u.primarySocial, u.secondarySocial].filter(Boolean);
+      return s.filter(x => x && (x.platform || x.handle)).length;
+    }));
+
+    const socialHeaders = Array.from({ length: maxSocials }, (_, i) =>
+      i === 0 ? ["Platform", "Handle"] : [`Platform ${i + 1}`, `Handle ${i + 1}`]
+    ).flat();
+
+    const headers = [
+      "Full Name", "Email", "Role", "Organization",
+      "Email Verified", "Sign-in Method", "Disabled",
+      "Joined", "User ID",
+      ...socialHeaders,
+    ];
+
+    const rows = userList.map(u => {
+      const socials = (u.socialAccounts?.length
+        ? u.socialAccounts
+        : [u.primarySocial, u.secondarySocial].filter(Boolean)
+      ).filter(s => s && (s.platform || s.handle));
+
+      const socialCells = Array.from({ length: maxSocials }, (_, i) => [
+        socials[i]?.platform || "",
+        socials[i]?.handle   || "",
+      ]).flat();
+
+      const joined = u.createdAt
+        ? (u.createdAt?.toDate ? u.createdAt.toDate() : new Date(u.createdAt?.seconds ? u.createdAt.seconds * 1000 : u.createdAt))
+            .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+        : "";
+
+      return [
+        u.fullName     || "",
+        u.email        || "",
+        u.role         || "user",
+        u.organization || "",
+        u.googleSignIn         ? "Yes (Google)" :
+          u.emailVerified === true  ? "Yes" :
+          u.emailVerified === false ? "No"  : "",
+        u.googleSignIn ? "Google" : "Email / password",
+        u.disabled ? "Yes" : "No",
+        joined,
+        u.id           || "",
+        ...socialCells,
+      ];
+    });
+
+    // Escape a CSV cell value — wrap in quotes if it contains commas, quotes,
+    // or newlines; double up any internal quotes per RFC 4180.
+    const esc = (v) => {
+      const s = String(v ?? "");
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const csv = [headers, ...rows].map(r => r.map(esc).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    const date = new Date().toISOString().slice(0, 10);
+    a.href     = url;
+    a.download = `az-coalition-users-${date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
   // Unlike disable/enable/delete, this calls a dedicated function since it
   // needs the Admin SDK's generateEmailVerificationLink(), not anything
   // manage-user.mjs already does.
@@ -666,7 +736,8 @@ export default function AdminPage() {
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "28px 24px" }}>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: `2px solid #ddd`, paddingBottom: 0 }}>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 4, marginBottom: 24, borderBottom: `2px solid #ddd`, paddingBottom: 0 }}>
+          <div style={{ display: "flex", gap: 4, flex: 1 }}>
           {[
             { id: "users",    label: `Registered Users (${counts.total})` },
             { id: "waitlist", label: `Waitlist (${waitlist.length - counts.registered})${counts.pending > 0 ? ` · ${counts.pending} pending` : ""}` },
@@ -682,6 +753,20 @@ export default function AdminPage() {
               {tab.label}
             </button>
           ))}
+          </div>
+          {activeTab === "users" && (
+            <button
+              onClick={() => exportUsersCSV(users)}
+              title="Download all registered users as a CSV file"
+              style={{
+                marginBottom: 4, padding: "7px 14px", fontSize: 12, fontWeight: 700,
+                fontFamily: "inherit", background: "none", border: `1.5px solid ${TEAL}`,
+                borderRadius: 7, color: TEAL, cursor: "pointer", whiteSpace: "nowrap",
+              }}
+            >
+              ⬇ Export CSV
+            </button>
+          )}
         </div>
 
         {/* Search */}
