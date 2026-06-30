@@ -45,6 +45,8 @@ export default function AdminPage() {
   const [detailsUid, setDetailsUid] = useState(null); // uid currently shown in the read-only details modal
   const [actionUid, setActionUid]   = useState(null); // uid currently mid disable/enable/delete call
   const [actionError, setActionError] = useState(null); // { uid, message }
+  const [resendingVerification, setResendingVerification] = useState(false); // bulk or single in flight
+  const [verificationResult, setVerificationResult] = useState(null); // { sent, failed } from last run
   const [confirmDeleteUid, setConfirmDeleteUid] = useState(null); // uid pending delete confirmation
   const [cnFiles, setCnFiles]        = useState([]);
   const [cnParsing, setCnParsing]   = useState(false);
@@ -182,6 +184,37 @@ export default function AdminPage() {
       setActionUid(null);
       setConfirmDeleteUid(null);
     }
+  };
+
+  // ── Resend Firebase email verification — single uid or bulk array ──
+  // Unlike disable/enable/delete, this calls a dedicated function since it
+  // needs the Admin SDK's generateEmailVerificationLink(), not anything
+  // manage-user.mjs already does.
+  const resendVerification = async (uids) => {
+    setResendingVerification(true);
+    setVerificationResult(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch("/.netlify/functions/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, uids }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to resend verification emails.");
+      }
+      setVerificationResult({ sent: data.sent, failed: data.failed });
+      notify(
+        data.failed > 0
+          ? `Sent ${data.sent} verification email${data.sent === 1 ? "" : "s"}, ${data.failed} failed.`
+          : `Sent ${data.sent} verification email${data.sent === 1 ? "" : "s"}.`,
+        data.failed > 0 ? "err" : "ok"
+      );
+    } catch (err) {
+      notify(err.message || "Failed to resend verification emails.", "err");
+    }
+    setResendingVerification(false);
   };
 
   const handleSendInvite = async (entry) => {
@@ -667,6 +700,38 @@ export default function AdminPage() {
             {!loadingUsers && filteredUsers.length === 0 && (
               <p style={{ textAlign: "center", padding: "60px 0", color: "#888" }}>No users found.</p>
             )}
+            {!loadingUsers && (() => {
+              const unverified = filteredUsers.filter(u => u.emailVerified === false && !u.disabled);
+              if (unverified.length === 0) return null;
+              return (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
+                  background: "#fffdf0", border: `1.5px solid ${GOLD}`, borderRadius: 10,
+                  padding: "14px 20px", marginBottom: 16, fontSize: 14, color: CHARCOAL,
+                }}>
+                  <span>
+                    📬 <strong>{unverified.length}</strong> user{unverified.length === 1 ? "" : "s"} {unverified.length === 1 ? "hasn't" : "haven't"} verified their email yet — they can't sign in until they do.
+                  </span>
+                  <button
+                    onClick={() => resendVerification(unverified.map(u => u.id))}
+                    disabled={resendingVerification}
+                    style={{
+                      background: TEAL, color: "#fff", border: "none", borderRadius: 8,
+                      padding: "8px 18px", fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+                      cursor: resendingVerification ? "not-allowed" : "pointer",
+                      opacity: resendingVerification ? 0.6 : 1, whiteSpace: "nowrap",
+                    }}
+                  >
+                    {resendingVerification ? "Sending…" : `Resend to all ${unverified.length}`}
+                  </button>
+                  {verificationResult && (
+                    <span style={{ fontSize: 13, color: verificationResult.failed > 0 ? "#c41e1e" : "#1a6640" }}>
+                      Last run: {verificationResult.sent} sent{verificationResult.failed > 0 ? `, ${verificationResult.failed} failed` : ""}.
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
             {!loadingUsers && filteredUsers.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {filteredUsers.map(u => {
@@ -739,6 +804,18 @@ export default function AdminPage() {
                               <span style={{ fontSize: 17, fontWeight: 700, color: CHARCOAL }}>{u.fullName || "—"}</span>
                               {isMe && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: GOLD, color: TEAL, padding: "2px 8px", borderRadius: 4 }}>You</span>}
                               {isDisabled && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "#eee", color: "#777", border: "1px solid #ccc", padding: "2px 8px", borderRadius: 4 }}>Disabled</span>}
+                              {u.emailVerified === false && !isDisabled && (
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "#fffdf0", color: "#9a7b00", border: `1px solid ${GOLD}`, padding: "2px 8px", borderRadius: 4 }}>
+                                  Unverified
+                                  <button
+                                    onClick={() => resendVerification([u.id])}
+                                    disabled={resendingVerification}
+                                    title="Resend verification email"
+                                    style={{ background: "none", border: "none", cursor: resendingVerification ? "not-allowed" : "pointer", color: TEAL, fontWeight: 700, fontSize: 11, padding: 0, textDecoration: "underline", textTransform: "none", letterSpacing: "normal" }}>
+                                    Resend
+                                  </button>
+                                </span>
+                              )}
                               <button onClick={() => setDetailsUid(u.id)} title="View full details"
                                 style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: TEAL, padding: "2px 4px", textDecoration: "underline" }}>
                                 Details
@@ -1111,6 +1188,18 @@ export default function AdminPage() {
               } />
               <DetailRow label="Organization" value={u.organization || "—"} />
               <DetailRow label="Sign-in method" value={u.googleSignIn ? "Google" : "Email / password"} />
+              <DetailRow label="Email verified" value={
+                u.googleSignIn ? "Yes (via Google)" :
+                u.emailVerified === false ? (
+                  <span style={{ color: "#9a7b00" }}>
+                    No —{" "}
+                    <button onClick={() => resendVerification([u.id])} disabled={resendingVerification}
+                      style={{ background: "none", border: "none", cursor: resendingVerification ? "not-allowed" : "pointer", color: TEAL, fontWeight: 700, padding: 0, textDecoration: "underline", fontSize: 14 }}>
+                      resend verification email
+                    </button>
+                  </span>
+                ) : "Yes"
+              } />
               <DetailRow label="Joined" value={u.createdAt ? formatDate(u.createdAt) : "—"} />
               <DetailRow
                 label={`Social account${socials.length === 1 ? "" : "s"}`}
