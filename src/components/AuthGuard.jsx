@@ -10,6 +10,7 @@ export default function AuthGuard({ children }) {
   const [resending, setResending]       = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resendDone, setResendDone]     = useState(false);
+  const [resendError, setResendError]   = useState("");
 
   if (loading) return null;
 
@@ -68,10 +69,17 @@ export default function AuthGuard({ children }) {
             </div>
           )}
 
+          {resendError && (
+            <div style={{ background: "#fdf2f2", border: "1px solid #f5c6c6", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#c41e1e", marginBottom: 16 }}>
+              {resendError}
+            </div>
+          )}
+
           <button
             onClick={async () => {
               if (resending || resendCooldown > 0) return;
               setResending(true);
+              setResendError("");
               try {
                 await sendEmailVerification(auth.currentUser);
                 setResendDone(true);
@@ -82,7 +90,19 @@ export default function AuthGuard({ children }) {
                     return c - 1;
                   });
                 }, 1000);
-              } catch {}
+              } catch (err) {
+                // Firebase itself rate-limits this call server-side, separate
+                // from our own 60s client-side cooldown — clicking resend
+                // several times in a row can trip Firebase's own throttle.
+                // That used to fail silently here, leaving the button reset
+                // with no feedback and no way to tell whether anything was
+                // actually sent. Surface it instead.
+                setResendError(
+                  err?.code === "auth/too-many-requests"
+                    ? "Too many requests — please wait a few minutes before trying again, or check spam for an earlier email."
+                    : "Couldn't resend the email right now. Please try again in a moment, or contact info@arizonacoalition.net for help."
+                );
+              }
               setResending(false);
             }}
             disabled={resending || resendCooldown > 0}
