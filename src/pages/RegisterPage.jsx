@@ -30,6 +30,7 @@ export default function RegisterPage() {
   const [registered, setRegistered]       = useState(false);
   const [resending, setResending]         = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendError, setResendError]     = useState("");
 
   // Validate invite token on mount via Netlify function
   useEffect(() => {
@@ -158,12 +159,23 @@ export default function RegisterPage() {
   async function handleResend() {
     if (resendCooldown > 0) return;
     setResending(true);
+    setResendError("");
     try {
       if (auth.currentUser) {
         await sendEmailVerification(auth.currentUser);
         setResendCooldown(60);
       }
-    } catch {}
+    } catch (err) {
+      // Firebase rate-limits this call server-side, separate from our own
+      // 60s client-side cooldown — clicking resend repeatedly can trip
+      // Firebase's own throttle. That used to fail silently, leaving the
+      // button reset with no feedback. Surface it instead.
+      setResendError(
+        err?.code === "auth/too-many-requests"
+          ? "Too many requests — please wait a few minutes before trying again, or check spam for an earlier email."
+          : "Couldn't resend the email right now. Please try again in a moment, or contact info@arizonacoalition.net for help."
+      );
+    }
     setResending(false);
   }
 
@@ -294,6 +306,11 @@ export default function RegisterPage() {
           >
             {resending ? "Sending…" : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend verification email"}
           </button>
+          {resendError && (
+            <div style={{ background: "#fdf2f2", border: "1px solid #f5c6c6", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#c41e1e", marginBottom: 20, textAlign: "left" }}>
+              {resendError}
+            </div>
+          )}
           <div style={{ fontSize: 13, color: "#aaa" }}>
             <Link to="/login" style={{ color: "#1D5C4A", fontWeight: 700, textDecoration: "none" }}>
               Go to Sign In →
