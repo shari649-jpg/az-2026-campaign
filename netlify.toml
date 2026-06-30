@@ -45,3 +45,6 @@
 
 [functions."coaching-response"]
   timeout = 26
+
+[functions."resend-verification"]
+  timeout = 26
