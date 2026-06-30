@@ -148,10 +148,12 @@ export default async function (req) {
         status: 400, headers: corsHeaders(req),
       });
     }
-    // Hard cap to keep a single request well inside Netlify's function
-    // timeout — for larger batches, call this endpoint multiple times.
-    if (uids.length > 50) {
-      return new Response(JSON.stringify({ error: "Max 50 users per request." }), {
+    // Hard cap to keep a single request well inside Netlify's 26s function
+    // timeout — sequential processing (required by Resend's rate limit)
+    // means this caps wall-clock time, not just request count. For larger
+    // backlogs, call this endpoint multiple times.
+    if (uids.length > 30) {
+      return new Response(JSON.stringify({ error: "Max 30 users per request." }), {
         status: 400, headers: corsHeaders(req),
       });
     }
@@ -169,15 +171,28 @@ export default async function (req) {
     const db = admin.firestore(app);
     const actionCodeSettings = { url: `${SITE_URL}/login` };
 
-    const results = await Promise.all(uids.map(async (uid) => {
+    // IMPORTANT: process sequentially, not via Promise.all. Resend enforces
+    // a hard 5 requests/second limit per account with no burst allowance —
+    // firing all sends concurrently silently 429s everything past the 5th.
+    // A small delay between each user keeps every call inside that window.
+    // See: https://resend.com/docs/knowledge-base/account-quotas-and-limits
+    const results = [];
+    for (const uid of uids) {
       try {
+        // Re-fetch on every iteration rather than batching ahead of time —
+        // this also surfaces, in logs, the exact emailVerified value Firebase
+        // Auth returns for each uid at the moment it's checked, in case that
+        // value doesn't match what Firestore shows for the same account.
         const userRecord = await auth.getUser(uid);
+        console.log(`[resend-verification] uid=${uid} email=${userRecord.email} auth.emailVerified=${userRecord.emailVerified}`);
 
         if (userRecord.emailVerified) {
-          return { uid, email: userRecord.email, success: false, reason: "already-verified" };
+          results.push({ uid, email: userRecord.email, success: false, reason: "already-verified" });
+          continue;
         }
         if (!userRecord.email) {
-          return { uid, success: false, reason: "no-email-on-account" };
+          results.push({ uid, success: false, reason: "no-email-on-account" });
+          continue;
         }
 
         const profileSnap = await db.doc(`users/${uid}`).get();
@@ -191,12 +206,15 @@ export default async function (req) {
           html: verificationEmailHtml({ fullName: fullName || userRecord.email, link }),
         });
 
-        return { uid, email: userRecord.email, success: true };
+        results.push({ uid, email: userRecord.email, success: true });
       } catch (err) {
         console.error(`[resend-verification] failed for uid ${uid}:`, err.message);
-        return { uid, success: false, reason: err.code || err.message || "unknown-error" };
+        results.push({ uid, success: false, reason: err.code || err.message || "unknown-error" });
       }
-    }));
+      // ~250ms between sends keeps us comfortably under Resend's 5/sec cap
+      // even accounting for the Firebase Admin calls in between.
+      await new Promise(r => setTimeout(r, 250));
+    }
 
     const sent = results.filter(r => r.success).length;
     const failed = results.length - sent;
