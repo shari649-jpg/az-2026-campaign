@@ -1022,6 +1022,13 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
         </div>
       </header>
 
+      {/* AI DISCLAIMER */}
+      <div style={{ maxWidth:860, margin:"0 auto", padding:"16px 20px 0" }}>
+        <div style={{ background: T.gold, border: `2px solid ${T.teal}`, borderRadius: 8, padding: "14px 20px", fontSize: 17, fontWeight: 700, color: T.teal, display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 20 }}>⚠️</span> AI-generated content — always verify facts and claims before publishing.
+        </div>
+      </div>
+
       {/* TOAST */}
       {notif && (
         <div className="slide-down" role="alert" aria-live="assertive" style={{
