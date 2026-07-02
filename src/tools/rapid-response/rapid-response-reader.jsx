@@ -718,6 +718,13 @@ export default function RapidResponseReader() {
         </div>
       </header>
 
+      {/* AI DISCLAIMER */}
+      <div style={{ maxWidth: 860, margin: "0 auto", padding: "16px 20px 0" }}>
+        <div style={{ background: B.gold, border: `2px solid ${B.teal}`, borderRadius: 8, padding: "14px 20px", fontSize: 17, fontWeight: 700, color: B.teal, display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 20 }}>⚠️</span> AI-generated content — always verify facts and claims before publishing.
+        </div>
+      </div>
+
       {/* TOAST */}
       {notif && (
         <div style={{
