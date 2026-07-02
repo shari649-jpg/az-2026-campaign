@@ -183,8 +183,8 @@ export default function LibraryPage() {
               🔒 You can delete your own saved items. Managers and administrators can delete any item.
             </div>
           )}
-          <div style={{ marginTop: 12, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 8, padding: "10px 16px", fontSize: 13, color: "rgba(255,255,255,0.85)" }}>
-            ⚠️ AI-generated content — always verify facts and claims before publishing.
+          <div style={{ marginTop: 14, background: GOLD, border: `2px solid ${TEAL}`, borderRadius: 8, padding: "14px 20px", fontSize: 17, fontWeight: 700, color: TEAL, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20 }}>⚠️</span> AI-generated content — always verify facts and claims before publishing.
           </div>
         </div>
       </div>
