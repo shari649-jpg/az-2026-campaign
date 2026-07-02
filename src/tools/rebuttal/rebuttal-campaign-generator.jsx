@@ -589,6 +589,11 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
         button:disabled { opacity: 1; }
       `}</style>
 
+      {/* ── AI disclaimer ── */}
+      <div style={{ margin: "16px 32px 0", background: GOLD, border: `2px solid ${TEAL}`, borderRadius: 8, padding: "14px 20px", fontSize: 17, fontWeight: 700, color: TEAL, display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 20 }}>⚠️</span> AI-generated content — always verify facts and claims before publishing.
+      </div>
+
       {/* ── Library button row — replaces the removed duplicate header ── */}
       <div style={{ borderBottom: `1px solid ${BORDER}`, padding: "10px 32px", display: "flex", gap: "8px", alignItems: "center", justifyContent: "flex-end", background: SURFACE }}>
         <button style={btnSmall()} onClick={() => setShowLib(v => !v)}>
