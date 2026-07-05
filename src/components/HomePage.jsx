@@ -88,7 +88,7 @@ export default function HomePage() {
               color: "#ffffff",
               marginBottom: 12,
             }}>
-              Coalition Operations Hub
+              Coalition Comms Hub
             </h1>
             <p style={{
               fontSize: 17,
