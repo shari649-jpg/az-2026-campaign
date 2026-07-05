@@ -200,7 +200,7 @@ export default function AppShell() {
                 fontSize: 18,
                 color: "var(--teal)",
                 letterSpacing: "-0.01em",
-              }}>Arizona Coalition</span>
+              }}>Comms Hub</span>
               <span style={{
                 fontFamily: "var(--font-body)",
                 fontSize: 10,
@@ -208,7 +208,7 @@ export default function AppShell() {
                 letterSpacing: "0.14em",
                 textTransform: "uppercase",
                 color: "var(--text-mute)",
-              }}>Comms Hub · 2026</span>
+              }}>Arizona Coalition · 2026</span>
             </div>
           </NavLink>
 
@@ -586,10 +586,10 @@ export default function AppShell() {
 
             {/* Contact */}
             <div>
-              <a href="mailto:az.coalition.socials@gmail.com" style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", textDecoration: "none", letterSpacing: "0.02em" }}
+              <a href="mailto:info@arizonacoalition.net" style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", textDecoration: "none", letterSpacing: "0.02em" }}
                 onMouseEnter={e => e.currentTarget.style.color = "var(--gold)"}
                 onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.65)"}>
-                ✉ az.coalition.socials@gmail.com
+                ✉ info@arizonacoalition.net
               </a>
             </div>
           </div>
