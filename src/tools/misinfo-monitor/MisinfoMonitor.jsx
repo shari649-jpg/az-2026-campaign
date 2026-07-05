@@ -10,6 +10,11 @@ const TERRA     = "#C1673A";
 const SURFACE   = "#F9F8F5";
 const BORDER    = "#E0DDD6";
 const TEAL_LITE = "#e0f2ec";
+
+// Flip to true once a data-source route is chosen and the Monitor goes live.
+// While false: a NOT LIVE badge shows in the header and all Send-to-Rebuttal
+// buttons are disabled.
+const MONITOR_LIVE = false;
 const INK       = CHARCOAL;
 
 // ── Narrative category labels (used for filter dropdown) ────────────────────
@@ -209,19 +214,19 @@ Original false claim:`,
         </div>
         <button
           onClick={handleSend}
-          disabled={sent || inferring}
+          disabled={!MONITOR_LIVE || sent || inferring}
           style={{
             fontSize: 12, fontWeight: 700, fontFamily: "inherit",
             padding: "5px 12px", borderRadius: 6,
-            cursor: (sent || inferring) ? "default" : "pointer",
-            background: sent ? TEAL_LITE : inferring ? "#f5f5f5" : GOLD,
-            color: sent ? TEAL : CHARCOAL,
-            border: `1.5px solid ${sent ? "#b2d9cc" : "#d4a800"}`,
+            cursor: (!MONITOR_LIVE || sent || inferring) ? "default" : "pointer",
+            background: !MONITOR_LIVE ? "#f0f0f0" : sent ? TEAL_LITE : inferring ? "#f5f5f5" : GOLD,
+            color: !MONITOR_LIVE ? "#999" : sent ? TEAL : CHARCOAL,
+            border: `1.5px solid ${!MONITOR_LIVE ? "#ddd" : sent ? "#b2d9cc" : "#d4a800"}`,
             transition: "all 0.2s",
             whiteSpace: "nowrap",
           }}
         >
-          {sent ? "✓ Sent to Rebuttal" : inferring ? "Analyzing…" : "Send to Rebuttal Generator →"}
+          {!MONITOR_LIVE ? "Sends disabled — not live" : sent ? "✓ Sent to Rebuttal" : inferring ? "Analyzing…" : "Send to Rebuttal Generator →"}
         </button>
       </div>
     </div>
@@ -402,6 +407,12 @@ export default function MisinfoMonitor() {
                   fontSize: 10, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase",
                   background: GOLD, color: CHARCOAL, borderRadius: 4, padding: "2px 8px",
                 }}>BS Monitor</span>
+                {!MONITOR_LIVE && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase",
+                    background: "#C1673A", color: "#fff", borderRadius: 4, padding: "2px 8px",
+                  }}>Not Live — Preview</span>
+                )}
               </div>
               <h1 style={{ margin: 0, fontFamily: "'Atkinson Hyperlegible', Georgia, serif", fontSize: 26, color: "#fff", fontWeight: 800, letterSpacing: "-0.01em" }}>
                 Community Notes Dashboard
