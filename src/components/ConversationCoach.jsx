@@ -397,7 +397,7 @@ export default function ConversationCoach() {
           </div>
 
           {/* AI disclaimer */}
-          <div style={{ background: GOLD, borderBottom: `2px solid ${TEAL}`, padding: "10px 14px", fontSize: 14, fontWeight: 700, color: TEAL, display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <div style={{ background: "rgba(29,92,74,0.08)", borderBottom: `2px solid ${TEAL}`, padding: "10px 14px", fontSize: 14, fontWeight: 700, color: TEAL, display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <span style={{ fontSize: 16 }}>⚠️</span> AI-generated — always verify before publishing.
           </div>
 
