@@ -885,7 +885,9 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
     } catch { notify("Save failed — please try again.", "err"); }
   };
 
-  const loadCampaign = (c) => { setFormData(c.formData); setMessages(c.messages); setHashtags(null); setView("results"); notify(`Loaded: ${c.name}`); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  // County picker lives inside Pro Mode — open the panel when a loaded campaign
+  // has a county so the restored selection is visible, not silently applied.
+  const loadCampaign = (c) => { setFormData(c.formData); if (c.formData?.county) setProModeOpen(true); setMessages(c.messages); setHashtags(null); setView("results"); notify(`Loaded: ${c.name}`); window.scrollTo({ top: 0, behavior: "smooth" }); };
 
   const deleteCampaign = async (id) => {
     try {
@@ -1024,7 +1026,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
       {/* AI DISCLAIMER */}
       <div style={{ maxWidth:860, margin:"0 auto", padding:"16px 20px 0" }}>
-        <div style={{ background: T.gold, border: `2px solid ${T.teal}`, borderRadius: 8, padding: "14px 20px", fontSize: 17, fontWeight: 700, color: T.teal, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ background: "rgba(29,92,74,0.08)", border: `2px solid ${T.teal}`, borderRadius: 8, padding: "14px 20px", fontSize: 17, fontWeight: 700, color: T.teal, display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 20 }}>⚠️</span> AI-generated content — always verify facts and claims before publishing.
         </div>
       </div>
