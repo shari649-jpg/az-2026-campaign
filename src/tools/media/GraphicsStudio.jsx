@@ -302,10 +302,6 @@ export default function GraphicsStudio() {
         ))}
       </div>
 
-      <div style={{ background: B.gold, border: `2px solid ${B.teal}`, borderRadius: 8, padding: "14px 20px", fontSize: 17, fontWeight: 700, color: B.teal, display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
-        <span style={{ fontSize: 20 }}>⚠️</span> AI-generated content — always verify facts and claims before publishing.
-      </div>
-
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, alignItems: "start" }}>
 
         {/* ── Left: Controls ── */}
