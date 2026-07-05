@@ -179,6 +179,12 @@ export default function WaitlistPage() {
 
           {error && <div style={errorStyle}>{error}</div>}
 
+          <p style={{ fontSize: 12.5, color: "#999", lineHeight: 1.5, margin: 0 }}>
+            By submitting this form, you agree to our{" "}
+            <Link to="/privacy" target="_blank" style={{ color: TEAL, fontWeight: 700 }}>Privacy Policy</Link>.
+            We use the information you provide here to review your request and manage an invitation if approved.
+          </p>
+
           <button type="submit" disabled={loading}
             style={{ ...primaryBtnStyle, opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }}>
             {loading ? "Submitting…" : "Request Access →"}
