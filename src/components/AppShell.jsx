@@ -200,7 +200,7 @@ export default function AppShell() {
                 fontSize: 18,
                 color: "var(--teal)",
                 letterSpacing: "-0.01em",
-              }}>Comms Hub</span>
+              }}>Arizona Coalition</span>
               <span style={{
                 fontFamily: "var(--font-body)",
                 fontSize: 10,
@@ -208,7 +208,7 @@ export default function AppShell() {
                 letterSpacing: "0.14em",
                 textTransform: "uppercase",
                 color: "var(--text-mute)",
-              }}>Arizona Coalition · 2026</span>
+              }}>Comms Hub · 2026</span>
             </div>
           </NavLink>
 
@@ -610,6 +610,11 @@ export default function AppShell() {
               { label: "AZ SOS Elections",    href: "https://azsos.gov/elections" },
               { label: "Ballotpedia AZ",      href: "https://ballotpedia.org/Arizona" },
               { label: "AZ Legislature",      href: "https://www.azleg.gov" },
+            ]} />
+            <FooterLinkGroup title="Legal" links={[
+              { label: "Terms and Conditions",  path: "/terms" },
+              { label: "Privacy Policy",        path: "/privacy" },
+              { label: "Ethical Use of AI Policy", path: "/ai-policy" },
             ]} />
           </div>
         </div>
