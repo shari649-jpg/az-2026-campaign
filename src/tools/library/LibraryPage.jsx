@@ -34,6 +34,10 @@ export default function LibraryPage() {
   const [notif,      setNotif]      = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [page,       setPage]       = useState(1);
+
+  // Return to top whenever the pagination page changes (the inline smooth-scroll
+  // on the buttons could be interrupted by the re-render; this is authoritative).
+  useEffect(() => { window.scrollTo(0, 0); }, [page]);
   const PAGE_SIZE = 8;
   const navigate = useNavigate();
   const { user, isManager } = useAuth();
@@ -183,7 +187,7 @@ export default function LibraryPage() {
               🔒 You can delete your own saved items. Managers and administrators can delete any item.
             </div>
           )}
-          <div style={{ marginTop: 14, background: GOLD, border: `2px solid ${TEAL}`, borderRadius: 8, padding: "14px 20px", fontSize: 17, fontWeight: 700, color: TEAL, display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ marginTop: 14, background: "rgba(29,92,74,0.08)", border: `2px solid ${TEAL}`, borderRadius: 8, padding: "14px 20px", fontSize: 17, fontWeight: 700, color: TEAL, display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 20 }}>⚠️</span> AI-generated content — always verify facts and claims before publishing.
           </div>
         </div>
