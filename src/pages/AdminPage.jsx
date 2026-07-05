@@ -666,7 +666,9 @@ export default function AdminPage() {
         narratives: n.narratives,
       }));
 
+      const idToken = await auth.currentUser.getIdToken();
       const payload = JSON.stringify({
+        idToken,
         notes: trimmedNotes,
         stats: cnParsed.stats,
         count: cnParsed.count,
