@@ -246,7 +246,7 @@ export default function CandidateQuery() {
   return (
     <div style={{ ...S.wrap, padding: '0 24px' }}>
       {/* ── AI disclaimer ── */}
-      <div style={{ background: B.gold, border: `2px solid ${B.teal}`, borderRadius: 8, padding: '14px 20px', fontSize: 17, fontWeight: 700, color: B.teal, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+      <div style={{ background: "rgba(29,92,74,0.08)", border: `2px solid ${B.teal}`, borderRadius: 8, padding: '14px 20px', fontSize: 17, fontWeight: 700, color: B.teal, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
         <span style={{ fontSize: 20 }}>⚠️</span> AI-generated content — always verify facts and claims before publishing.
       </div>
 
