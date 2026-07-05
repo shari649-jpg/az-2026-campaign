@@ -205,7 +205,7 @@ export default function QuickStartPage() {
         <div style={{ border: "2px solid var(--border)", borderRadius: 14, padding: "18px 22px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", background: "var(--bg)" }}>
           <div>
             <div style={{ fontFamily: "var(--font-display)", fontSize: 17, color: CHARCOAL, marginBottom: 4 }}>
-              Quick Start — Vertical Reel
+              Quick Start — Mobile Graphic
             </div>
             <div style={{ fontSize: 13, color: "var(--text-mute)", lineHeight: 1.5 }}>
               1080 × 1920 px PNG · Save to your phone or share with your team
