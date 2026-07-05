@@ -31,6 +31,7 @@ export default function RegisterPage() {
   const [resending, setResending]         = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resendError, setResendError]     = useState("");
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   // Validate invite token on mount via Netlify function
   useEffect(() => {
@@ -91,6 +92,9 @@ export default function RegisterPage() {
     if (!socials[0].platform || !socials[0].handle.trim()) {
       setError("Please enter your primary social media platform and handle."); return;
     }
+    if (!agreedToTerms) {
+      setError("You must agree to the Terms, Privacy Policy, and Ethical Use of AI Policy to create an account."); return;
+    }
 
     setLoading(true);
     try {
@@ -118,6 +122,7 @@ export default function RegisterPage() {
         primarySocial:   socialAccounts[0] || { platform: "", handle: "" },
         ...(socialAccounts[1] ? { secondarySocial: socialAccounts[1] } : {}),
         createdAt:       serverTimestamp(),
+        policyAcceptance: { version: "2026-07-04", acceptedAt: serverTimestamp() },
       });
 
       // Mark invite token as used via Netlify function
@@ -431,6 +436,22 @@ export default function RegisterPage() {
               </button>
             )}
           </div>
+
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13, color: "#666", lineHeight: 1.5, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={agreedToTerms}
+              onChange={e => setAgreedToTerms(e.target.checked)}
+              style={{ marginTop: 3, flexShrink: 0, width: 16, height: 16, accentColor: "#1D5C4A", cursor: "pointer" }}
+              required
+            />
+            <span>
+              I agree to the{" "}
+              <Link to="/terms" target="_blank" style={{ color: "#1D5C4A", fontWeight: 700 }}>Terms and Conditions</Link>,{" "}
+              <Link to="/privacy" target="_blank" style={{ color: "#1D5C4A", fontWeight: 700 }}>Privacy Policy</Link>, and{" "}
+              <Link to="/ai-policy" target="_blank" style={{ color: "#1D5C4A", fontWeight: 700 }}>Ethical Use of AI Policy</Link>. <Required />
+            </span>
+          </label>
 
           {error && <div style={errorStyle}>{error}</div>}
 
