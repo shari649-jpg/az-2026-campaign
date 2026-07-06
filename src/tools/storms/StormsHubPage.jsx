@@ -1,18 +1,26 @@
 // src/tools/storms/StormsHubPage.jsx
 //
-// Storm Chaser's Hub — ONE page for everyone. Members always see the
-// download-and-copy view (browse active storms, grab posts). Managers and
-// Administrators land on the management view (create/edit/review/archive
-// storms, manage each storm's posts) but can flip a toggle at the top to
-// preview exactly what a Member sees, without leaving the page.
+// Storm Chaser's Hub — ONE page for everyone.
+//
+// Managers/Admins land on Manager View: every storm, a "Manage Storm"
+// dropdown (Storm Card / Storm Posts), a Status dropdown (Draft / Pending
+// Review / Active / Archived), and a Delete button (Admin only). They can
+// flip to User View to preview exactly what a Member sees.
+//
+// Everyone (Members, and staff previewing) sees User View: active storms
+// to browse/download, PLUS a "My Storms" section for any storms they
+// personally created that aren't Active yet — with a "+ New Storm" button,
+// an Edit action, and a small Draft/Submit-for-Review status control. This
+// is the only place a plain Member can create or manage a storm, since
+// Members never see Manager View.
 
 import { useState, useEffect } from "react";
 import { zipSync } from "fflate";
 import { useAuth } from "../../context/AuthContext";
 import {
   loadAllStorms, loadActiveStorms, loadPosts, createStorm, updateStorm,
-  setStormStatus, deleteStorm, canReview, canArchive, canDelete, canEdit,
-  canManagePosts, alarmLabel, STORM_STATUS, SUBJECT_TYPES, MEDIA_TYPES, PLATFORMS,
+  setStormStatus, deleteStorm, canReview, canDelete,
+  alarmLabel, STORM_STATUS, SUBJECT_TYPES, MEDIA_TYPES, PLATFORMS,
 } from "../../lib/stormLibrary";
 import StormPostsPanel from "./StormPostsPanel";
 
@@ -63,15 +71,175 @@ function AlarmBadge({ level }) {
   );
 }
 
-function StatusBadge({ status }) {
-  const m = STATUS_META[status] || STATUS_META[STORM_STATUS.DRAFT];
+// ── Status dropdown — colored to match the current status, options vary
+// by role. Handles the confirm-before-unpublishing-from-Active case. ──
+function StatusControl({ storm, role, onChange }) {
+  const meta = STATUS_META[storm.status] || STATUS_META[STORM_STATUS.DRAFT];
+  const staffOptions = [STORM_STATUS.DRAFT, STORM_STATUS.PENDING_REVIEW, STORM_STATUS.ACTIVE, STORM_STATUS.ARCHIVED];
+  const memberOptions = [STORM_STATUS.DRAFT, STORM_STATUS.PENDING_REVIEW];
+  const options = canReview(role) ? staffOptions : memberOptions;
+
+  function handleChange(e) {
+    const next = e.target.value;
+    if (next === storm.status) return;
+    if (storm.status === STORM_STATUS.ACTIVE && next !== STORM_STATUS.ACTIVE) {
+      if (!window.confirm("This will remove the storm from the live Hub members are using. Continue?")) return;
+    }
+    onChange(next);
+  }
+
   return (
-    <span style={{
-      fontSize: 11, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase",
-      color: m.color, background: m.bg, borderRadius: 6, padding: "3px 9px",
+    <select value={storm.status} onChange={handleChange} style={{
+      fontSize: 12.5, fontWeight: 800, letterSpacing: "0.03em",
+      color: meta.color, background: meta.bg, border: `1.5px solid ${meta.color}`,
+      borderRadius: 999, padding: "5px 10px", cursor: "pointer",
     }}>
-      {m.label}
-    </span>
+      {options.map(s => (
+        <option key={s} value={s}>
+          {s === STORM_STATUS.PENDING_REVIEW ? (canReview(role) ? "Pending Review" : "Submit for Review") : STATUS_META[s].label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+// ── "Manage Storm" dropdown — Storm Card / Storm Posts, staff only. ──
+function ManageStormMenu({ onCard, onPosts }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position: "relative" }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px",
+        fontSize: 12.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+      }}>
+        Manage Storm ▾
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 10 }} />
+          <div style={{
+            position: "absolute", top: "110%", right: 0, background: "#fff", border: `1.5px solid ${BORDER}`,
+            borderRadius: 10, boxShadow: "0 4px 16px rgba(0,0,0,0.12)", zIndex: 11, minWidth: 160, overflow: "hidden",
+          }}>
+            <button onClick={() => { setOpen(false); onCard(); }} style={menuItemStyle}>📋 Storm Card</button>
+            <button onClick={() => { setOpen(false); onPosts(); }} style={menuItemStyle}>🖼️ Storm Posts</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+const menuItemStyle = {
+  display: "block", width: "100%", textAlign: "left", background: "none", border: "none",
+  padding: "10px 16px", fontSize: 13.5, fontWeight: 600, color: CHARCOAL, cursor: "pointer",
+};
+
+// ── Shared create/edit form, used by both Manager View and a Member's
+// "My Storms" section in User View. ──
+function StormFormModal({ storm, role, onClose, onSaved }) {
+  const isEdit = !!storm;
+  const [form, setForm] = useState(storm ? {
+    title: storm.title || "", summary: storm.summary || "", description: storm.description || "",
+    hashtag: storm.hashtag || "", subjectType: storm.subjectType || "Coalition-wide", subjectName: storm.subjectName || "",
+    alarmLevel: storm.alarmLevel || 1, startAt: storm.startAt || "", expiresAt: storm.expiresAt || "",
+  } : EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  function upd(k, v) { setForm(p => ({ ...p, [k]: v })); }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.title.trim()) { setError("A title is required."); return; }
+    if (form.startAt && form.expiresAt && new Date(form.expiresAt) <= new Date(form.startAt)) {
+      setError("Expiration must be after the start date/time."); return;
+    }
+    setSaving(true);
+    try {
+      if (isEdit) await updateStorm(storm.id, form);
+      else await createStorm(form, role);
+      onSaved();
+    } catch (e) {
+      setError("Save failed — please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <form onSubmit={handleSubmit} style={{ background: "#fff", borderRadius: 14, padding: 28, maxWidth: 560, width: "100%", display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ margin: 0, fontSize: 22, color: TEAL, fontFamily: "var(--font-display)" }}>{isEdit ? "Edit Storm" : "New Storm"}</h2>
+          <button type="button" onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#999" }}>✕</button>
+        </div>
+
+        {role === "user" && !isEdit && (
+          <div style={{ background: SURFACE_ALT, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#666" }}>
+            This will be created as a <strong>draft</strong>. A Manager or Administrator will review it before it goes live.
+          </div>
+        )}
+
+        <Field label="Title" required>
+          <input value={form.title} onChange={e => upd("title", e.target.value)} required style={inputStyle} placeholder="e.g. July 15 Water Rights Storm" />
+        </Field>
+        <Field label="Brief Summary" hint="Shown in the storm list — keep it to one sentence.">
+          <input value={form.summary} onChange={e => upd("summary", e.target.value)} style={inputStyle} maxLength={160} placeholder="One-line description for the list view" />
+        </Field>
+        <Field label="Longer Description" hint="Full context and instructions — shown when a storm is opened.">
+          <textarea value={form.description} onChange={e => upd("description", e.target.value)} rows={4} style={{ ...inputStyle, resize: "vertical" }} placeholder="Background, goals, talking points, anything members should know before posting…" />
+        </Field>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Field label="Subject Type" style={{ flex: 1 }}>
+            <select value={form.subjectType} onChange={e => upd("subjectType", e.target.value)} style={inputStyle}>
+              {SUBJECT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </Field>
+          {form.subjectType !== "Coalition-wide" && (
+            <Field label={`${form.subjectType} Name`} style={{ flex: 1 }}>
+              <input value={form.subjectName} onChange={e => upd("subjectName", e.target.value)} style={inputStyle} placeholder="e.g. Katie Hobbs" />
+            </Field>
+          )}
+        </div>
+        <Field label="Hashtag" hint="Optional. No # needed — appended automatically when a member copies a post.">
+          <input value={form.hashtag} onChange={e => upd("hashtag", e.target.value.replace(/^#/, ""))} style={inputStyle} placeholder="AZWaterRights" />
+        </Field>
+        <Field label="Urgency">
+          <div style={{ display: "flex", gap: 8 }}>
+            {[1, 2, 3].map(lvl => (
+              <button key={lvl} type="button" onClick={() => upd("alarmLevel", lvl)} style={{
+                flex: 1, padding: "10px 8px", borderRadius: 8, cursor: "pointer", fontWeight: 800, fontSize: 13,
+                border: `2px solid ${form.alarmLevel === lvl ? (lvl >= 3 ? TERRACOTTA : lvl === 2 ? "#c99a1f" : TEAL) : BORDER}`,
+                background: form.alarmLevel === lvl ? (lvl >= 3 ? "rgba(193,103,58,0.12)" : lvl === 2 ? "#fff8e0" : "rgba(62,207,178,0.15)") : "#fff",
+                color: form.alarmLevel === lvl ? (lvl >= 3 ? TERRACOTTA : lvl === 2 ? "#8a6d00" : TEAL) : "#888",
+              }}>
+                {"🔔".repeat(lvl)}<br />{alarmLabel(lvl)}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Field label="Start Date & Time" style={{ flex: 1 }}>
+            <input type="datetime-local" value={form.startAt} onChange={e => upd("startAt", e.target.value)} style={inputStyle} />
+          </Field>
+          <Field label="Expiration Date & Time" style={{ flex: 1 }}>
+            <input type="datetime-local" value={form.expiresAt} onChange={e => upd("expiresAt", e.target.value)} style={inputStyle} />
+          </Field>
+        </div>
+
+        {error && (
+          <div style={{ background: "#fee2e2", border: "1.5px solid #fca5a5", borderRadius: 8, padding: "10px 14px", color: "#991b1b", fontSize: 13.5 }}>{error}</div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
+          <button type="button" onClick={onClose} style={{ background: "none", border: `1.5px solid ${BORDER}`, borderRadius: 8, padding: "10px 18px", fontWeight: 700, cursor: "pointer", color: "#666" }}>Cancel</button>
+          <button type="submit" disabled={saving} style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "10px 22px", fontWeight: 800, cursor: saving ? "default" : "pointer", opacity: saving ? 0.7 : 1 }}>
+            {saving ? "Saving…" : isEdit ? "Save Changes" : "Create Storm"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -109,22 +277,21 @@ export default function StormsHubPage() {
         )}
       </div>
 
-      {viewMode === "manager" ? <ManagerView role={role} uid={uid} /> : <UserView />}
+      {viewMode === "manager" ? <ManagerView role={role} uid={uid} /> : <UserView role={role} uid={uid} />}
     </div>
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// Manager View — every storm, Manage Storm dropdown, Status dropdown, Delete
+// ══════════════════════════════════════════════════════════════════════
 function ManagerView({ role, uid }) {
   const [storms, setStorms]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
   const [notif, setNotif]     = useState(null);
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
-
+  const [formStorm, setFormStorm] = useState(undefined); // undefined = closed, null = new, object = editing
   const [postsStorm, setPostsStorm] = useState(null);
   const [filter, setFilter] = useState("all");
 
@@ -139,41 +306,13 @@ function ManagerView({ role, uid }) {
 
   function notify(msg, type = "ok") { setNotif({ msg, type }); setTimeout(() => setNotif(null), 3200); }
 
-  function openCreate() { setForm(EMPTY_FORM); setEditingId(null); setFormOpen(true); }
-  function openEdit(storm) {
-    setForm({
-      title: storm.title || "", summary: storm.summary || "", description: storm.description || "",
-      hashtag: storm.hashtag || "", subjectType: storm.subjectType || "Coalition-wide", subjectName: storm.subjectName || "",
-      alarmLevel: storm.alarmLevel || 1, startAt: storm.startAt || "", expiresAt: storm.expiresAt || "",
-    });
-    setEditingId(storm.id);
-    setFormOpen(true);
-  }
-  function upd(k, v) { setForm(p => ({ ...p, [k]: v })); }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!form.title.trim()) { notify("A title is required.", "error"); return; }
-    if (form.startAt && form.expiresAt && new Date(form.expiresAt) <= new Date(form.startAt)) {
-      notify("Expiration must be after the start date/time.", "error"); return;
-    }
-    setSaving(true);
-    try {
-      if (editingId) { await updateStorm(editingId, form); notify("Storm updated."); }
-      else { await createStorm(form, role); notify(role === "user" ? "Draft created — a Manager or Admin will review it." : "Storm created."); }
-      setFormOpen(false);
-      await load();
-    } catch (e) { notify("Save failed — please try again.", "error"); }
-    finally { setSaving(false); }
-  }
-
   async function handleStatusChange(storm, status) {
     try {
       await setStormStatus(storm.id, status, role);
       notify(
-        status === STORM_STATUS.ACTIVE ? "Storm approved and activated." :
+        status === STORM_STATUS.ACTIVE ? "Storm activated." :
         status === STORM_STATUS.ARCHIVED ? "Storm archived." :
-        status === STORM_STATUS.PENDING_REVIEW ? "Sent back for review." : "Status updated."
+        status === STORM_STATUS.PENDING_REVIEW ? "Moved to Pending Review." : "Moved to Draft."
       );
       await load();
     } catch (e) { notify(e.message || "Couldn't update status.", "error"); }
@@ -190,7 +329,7 @@ function ManagerView({ role, uid }) {
   return (
     <>
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-        <button onClick={openCreate} style={{
+        <button onClick={() => setFormStorm(null)} style={{
           background: TEAL, color: "#fff", border: "none", borderRadius: 10, padding: "12px 22px",
           fontWeight: 800, fontSize: 15, cursor: "pointer", whiteSpace: "nowrap",
         }}>
@@ -238,7 +377,6 @@ function ManagerView({ role, uid }) {
                 <div style={{ flex: 1, minWidth: 240 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
                     <h3 style={{ margin: 0, fontSize: 19, color: TEAL, fontFamily: "var(--font-display)" }}>{storm.title}</h3>
-                    <StatusBadge status={storm.status} />
                     <AlarmBadge level={storm.alarmLevel || 1} />
                   </div>
                   {storm.summary && <p style={{ margin: "0 0 8px", fontSize: 14.5, color: "#444", lineHeight: 1.5 }}>{storm.summary}</p>}
@@ -252,26 +390,9 @@ function ManagerView({ role, uid }) {
                   </div>
                 </div>
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
-                  {canManagePosts(role) && <ActionBtn onClick={() => setPostsStorm(storm)} label="Manage Posts" primary />}
-                  {canEdit(role, storm, uid) && <ActionBtn onClick={() => openEdit(storm)} label="Edit" />}
-                  {storm.status === STORM_STATUS.DRAFT && role === "user" && storm.createdBy?.uid === uid && (
-                    <ActionBtn onClick={() => handleStatusChange(storm, STORM_STATUS.PENDING_REVIEW)} label="Submit for Review" primary />
-                  )}
-                  {storm.status === STORM_STATUS.DRAFT && canReview(role) && (
-                    <>
-                      <ActionBtn onClick={() => handleStatusChange(storm, STORM_STATUS.ACTIVE)} label="Activate" primary />
-                      <ActionBtn onClick={() => handleStatusChange(storm, STORM_STATUS.PENDING_REVIEW)} label="Submit for Review" />
-                    </>
-                  )}
-                  {storm.status === STORM_STATUS.PENDING_REVIEW && canReview(role) && (
-                    <>
-                      <ActionBtn onClick={() => handleStatusChange(storm, STORM_STATUS.ACTIVE)} label="Approve & Activate" primary />
-                      <ActionBtn onClick={() => handleStatusChange(storm, STORM_STATUS.DRAFT)} label="Send Back" />
-                    </>
-                  )}
-                  {storm.status === STORM_STATUS.ACTIVE && canArchive(role) && <ActionBtn onClick={() => handleStatusChange(storm, STORM_STATUS.ARCHIVED)} label="Archive" />}
-                  {storm.status === STORM_STATUS.ARCHIVED && canReview(role) && <ActionBtn onClick={() => handleStatusChange(storm, STORM_STATUS.ACTIVE)} label="Reactivate" />}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <StatusControl storm={storm} role={role} onChange={(status) => handleStatusChange(storm, status)} />
+                  <ManageStormMenu onCard={() => setFormStorm(storm)} onPosts={() => setPostsStorm(storm)} />
                   {canDelete(role) && <ActionBtn onClick={() => handleDelete(storm)} label="Delete" danger />}
                 </div>
               </div>
@@ -280,103 +401,108 @@ function ManagerView({ role, uid }) {
         </div>
       )}
 
-      {formOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}
-          onClick={(e) => { if (e.target === e.currentTarget) setFormOpen(false); }}>
-          <form onSubmit={handleSubmit} style={{ background: "#fff", borderRadius: 14, padding: 28, maxWidth: 560, width: "100%", display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h2 style={{ margin: 0, fontSize: 22, color: TEAL, fontFamily: "var(--font-display)" }}>{editingId ? "Edit Storm" : "New Storm"}</h2>
-              <button type="button" onClick={() => setFormOpen(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#999" }}>✕</button>
-            </div>
-
-            {role === "user" && !editingId && (
-              <div style={{ background: SURFACE_ALT, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#666" }}>
-                This will be created as a <strong>draft</strong>. A Manager or Administrator will review it before it goes live.
-              </div>
-            )}
-
-            <Field label="Title" required>
-              <input value={form.title} onChange={e => upd("title", e.target.value)} required style={inputStyle} placeholder="e.g. July 15 Water Rights Storm" />
-            </Field>
-            <Field label="Brief Summary" hint="Shown in the storm list — keep it to one sentence.">
-              <input value={form.summary} onChange={e => upd("summary", e.target.value)} style={inputStyle} maxLength={160} placeholder="One-line description for the list view" />
-            </Field>
-            <Field label="Longer Description" hint="Full context and instructions — shown when a storm is opened.">
-              <textarea value={form.description} onChange={e => upd("description", e.target.value)} rows={4} style={{ ...inputStyle, resize: "vertical" }} placeholder="Background, goals, talking points, anything members should know before posting…" />
-            </Field>
-            <div style={{ display: "flex", gap: 12 }}>
-              <Field label="Subject Type" style={{ flex: 1 }}>
-                <select value={form.subjectType} onChange={e => upd("subjectType", e.target.value)} style={inputStyle}>
-                  {SUBJECT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </Field>
-              {form.subjectType !== "Coalition-wide" && (
-                <Field label={`${form.subjectType} Name`} style={{ flex: 1 }}>
-                  <input value={form.subjectName} onChange={e => upd("subjectName", e.target.value)} style={inputStyle} placeholder="e.g. Katie Hobbs" />
-                </Field>
-              )}
-            </div>
-            <Field label="Hashtag" hint="Optional. No # needed — appended automatically when a member copies a post.">
-              <input value={form.hashtag} onChange={e => upd("hashtag", e.target.value.replace(/^#/, ""))} style={inputStyle} placeholder="AZWaterRights" />
-            </Field>
-            <Field label="Urgency">
-              <div style={{ display: "flex", gap: 8 }}>
-                {[1, 2, 3].map(lvl => (
-                  <button key={lvl} type="button" onClick={() => upd("alarmLevel", lvl)} style={{
-                    flex: 1, padding: "10px 8px", borderRadius: 8, cursor: "pointer", fontWeight: 800, fontSize: 13,
-                    border: `2px solid ${form.alarmLevel === lvl ? (lvl >= 3 ? TERRACOTTA : lvl === 2 ? "#c99a1f" : TEAL) : BORDER}`,
-                    background: form.alarmLevel === lvl ? (lvl >= 3 ? "rgba(193,103,58,0.12)" : lvl === 2 ? "#fff8e0" : "rgba(62,207,178,0.15)") : "#fff",
-                    color: form.alarmLevel === lvl ? (lvl >= 3 ? TERRACOTTA : lvl === 2 ? "#8a6d00" : TEAL) : "#888",
-                  }}>
-                    {"🔔".repeat(lvl)}<br />{alarmLabel(lvl)}
-                  </button>
-                ))}
-              </div>
-            </Field>
-            <div style={{ display: "flex", gap: 12 }}>
-              <Field label="Start Date & Time" style={{ flex: 1 }}>
-                <input type="datetime-local" value={form.startAt} onChange={e => upd("startAt", e.target.value)} style={inputStyle} />
-              </Field>
-              <Field label="Expiration Date & Time" style={{ flex: 1 }}>
-                <input type="datetime-local" value={form.expiresAt} onChange={e => upd("expiresAt", e.target.value)} style={inputStyle} />
-              </Field>
-            </div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
-              <button type="button" onClick={() => setFormOpen(false)} style={{ background: "none", border: `1.5px solid ${BORDER}`, borderRadius: 8, padding: "10px 18px", fontWeight: 700, cursor: "pointer", color: "#666" }}>Cancel</button>
-              <button type="submit" disabled={saving} style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "10px 22px", fontWeight: 800, cursor: saving ? "default" : "pointer", opacity: saving ? 0.7 : 1 }}>
-                {saving ? "Saving…" : editingId ? "Save Changes" : "Create Storm"}
-              </button>
-            </div>
-          </form>
-        </div>
+      {formStorm !== undefined && (
+        <StormFormModal storm={formStorm} role={role} onClose={() => setFormStorm(undefined)} onSaved={() => { setFormStorm(undefined); load(); }} />
       )}
-
       {postsStorm && <StormPostsPanel storm={postsStorm} onClose={() => setPostsStorm(null)} />}
     </>
   );
 }
 
-function UserView() {
-  const [storms, setStorms] = useState([]);
+// ══════════════════════════════════════════════════════════════════════
+// User View — browse Active storms, download posts, copy platform texts,
+// PLUS "My Storms": the only place a plain Member can create/manage a draft.
+// ══════════════════════════════════════════════════════════════════════
+function UserView({ role, uid }) {
+  const [allStorms, setAllStorms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openStormId, setOpenStormId] = useState(null);
+  const [formStorm, setFormStorm] = useState(undefined);
+  const [notif, setNotif] = useState(null);
 
-  useEffect(() => {
-    (async () => {
-      try { setStorms(await loadActiveStorms()); }
-      finally { setLoading(false); }
-    })();
-  }, []);
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setLoading(true);
+    try { setAllStorms(await loadAllStorms()); }
+    finally { setLoading(false); }
+  }
+
+  function notify(msg, type = "ok") { setNotif({ msg, type }); setTimeout(() => setNotif(null), 3200); }
+
+  async function handleStatusChange(storm, status) {
+    try {
+      await setStormStatus(storm.id, status, role);
+      notify(status === STORM_STATUS.PENDING_REVIEW ? "Submitted for review." : "Moved to Draft.");
+      await load();
+    } catch (e) { notify(e.message || "Couldn't update status.", "error"); }
+  }
+
+  const activeStorms = allStorms.filter(s => s.status === STORM_STATUS.ACTIVE);
+  const myStorms = uid ? allStorms.filter(s => s.createdBy?.uid === uid && s.status !== STORM_STATUS.ACTIVE) : [];
 
   if (loading) return <p style={{ color: "#888", textAlign: "center", padding: "40px 0" }}>Loading storms…</p>;
-  if (storms.length === 0) return <div style={{ textAlign: "center", padding: "48px 0", color: "#999" }}><p style={{ fontSize: 16 }}>No active storms right now — check back soon.</p></div>;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {storms.map(storm => (
-        <UserStormCard key={storm.id} storm={storm} isOpen={openStormId === storm.id} onToggle={() => setOpenStormId(openStormId === storm.id ? null : storm.id)} />
-      ))}
-    </div>
+    <>
+      {notif && (
+        <div style={{
+          position: "fixed", top: 20, right: 20, zIndex: 100,
+          background: notif.type === "error" ? "#fee2e2" : "rgba(62,207,178,0.18)",
+          color: notif.type === "error" ? "#991b1b" : TEAL,
+          border: `1.5px solid ${notif.type === "error" ? "#fca5a5" : TURQUOISE}`,
+          borderRadius: 10, padding: "12px 18px", fontSize: 14, fontWeight: 700, maxWidth: 320,
+        }}>
+          {notif.msg}
+        </div>
+      )}
+
+      {/* My Storms — the only place a Member can create/manage their own drafts */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, color: TEAL, margin: 0 }}>My Storms</h2>
+        <button onClick={() => setFormStorm(null)} style={{
+          background: TEAL, color: "#fff", border: "none", borderRadius: 9, padding: "9px 16px",
+          fontWeight: 800, fontSize: 13.5, cursor: "pointer",
+        }}>
+          + New Storm
+        </button>
+      </div>
+
+      {myStorms.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28 }}>
+          {myStorms.map(storm => (
+            <div key={storm.id} style={{ background: SURFACE_ALT, border: `1.5px solid ${BORDER}`, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 700, color: CHARCOAL, fontSize: 15 }}>{storm.title}</div>
+                {storm.summary && <div style={{ fontSize: 13, color: "#666" }}>{storm.summary}</div>}
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                <StatusControl storm={storm} role={role} onChange={(status) => handleStatusChange(storm, status)} />
+                <ActionBtn onClick={() => setFormStorm(storm)} label="Edit" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, color: TEAL, marginBottom: 12 }}>Active Storms</h2>
+
+      {activeStorms.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "48px 0", color: "#999" }}>
+          <p style={{ fontSize: 16 }}>No active storms right now — check back soon.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {activeStorms.map(storm => (
+            <UserStormCard key={storm.id} storm={storm} isOpen={openStormId === storm.id} onToggle={() => setOpenStormId(openStormId === storm.id ? null : storm.id)} />
+          ))}
+        </div>
+      )}
+
+      {formStorm !== undefined && (
+        <StormFormModal storm={formStorm} role={role} onClose={() => setFormStorm(undefined)} onSaved={() => { setFormStorm(undefined); load(); }} />
+      )}
+    </>
   );
 }
 
