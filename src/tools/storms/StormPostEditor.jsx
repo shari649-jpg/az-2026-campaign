@@ -7,7 +7,7 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   uploadPostMedia, createPost, updatePost,
-  PLATFORMS, MEDIA_TYPES, MAX_VIDEO_MB, MAX_GRAPHIC_MB, MAX_GRAPHICS_PER_POST,
+  PLATFORMS, CHAR_LIMITS, MEDIA_TYPES, MAX_VIDEO_MB, MAX_GRAPHIC_MB, MAX_GRAPHICS_PER_POST,
 } from "../../lib/stormLibrary";
 
 const TEAL       = "#1D5C4A";
@@ -188,18 +188,33 @@ export default function StormPostEditor({ stormId, post, nextOrder, onClose, onS
 
         <Field label="Platform Texts" hint="Fill in whichever platforms apply — you don't need all six.">
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {PLATFORMS.map(p => (
-              <div key={p.key}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: CHARCOAL }}>{p.label}</label>
-                <textarea
-                  value={texts[p.key]}
-                  onChange={e => setTexts(prev => ({ ...prev, [p.key]: e.target.value }))}
-                  rows={2}
-                  style={{ ...inputStyle, resize: "vertical", marginTop: 4 }}
-                  placeholder={`${p.label} post text…`}
-                />
-              </div>
-            ))}
+            {PLATFORMS.map(p => {
+              const limit = CHAR_LIMITS[p.key];
+              const count = texts[p.key].length;
+              const remaining = limit - count;
+              const over = remaining < 0;
+              return (
+                <div key={p.key}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: CHARCOAL }}>{p.label}</label>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: over ? TERRACOTTA : "#999" }}>
+                      {over ? remaining : `${count} / ${limit}`}
+                    </span>
+                  </div>
+                  <textarea
+                    value={texts[p.key]}
+                    onChange={e => setTexts(prev => ({ ...prev, [p.key]: e.target.value }))}
+                    rows={2}
+                    style={{
+                      ...inputStyle, resize: "vertical", marginTop: 4,
+                      borderColor: over ? TERRACOTTA : BORDER,
+                      background: over ? "rgba(193,103,58,0.05)" : "#fff",
+                    }}
+                    placeholder={`${p.label} post text…`}
+                  />
+                </div>
+              );
+            })}
           </div>
         </Field>
 
