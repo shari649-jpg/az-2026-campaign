@@ -17,6 +17,7 @@ const MORE_ITEMS = [
   { path: "/resources",         short: "Resources" },
   { path: "/quick-start",       short: "Quick Start" },
   { path: "/misinfo-monitor",   short: "BS Monitor" },
+  { path: "/storms",             short: "Storm Chasers Hub" },
 ];
 
 // Scrolls the window to the top whenever the route changes, regardless of
@@ -586,10 +587,10 @@ export default function AppShell() {
 
             {/* Contact */}
             <div>
-              <a href="mailto:info@arizonacoalition.net" style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", textDecoration: "none", letterSpacing: "0.02em" }}
+              <a href="mailto:az.coalition.socials@gmail.com" style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", textDecoration: "none", letterSpacing: "0.02em" }}
                 onMouseEnter={e => e.currentTarget.style.color = "var(--gold)"}
                 onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.65)"}>
-                ✉ info@arizonacoalition.net
+                ✉ az.coalition.socials@gmail.com
               </a>
             </div>
           </div>
@@ -610,11 +611,6 @@ export default function AppShell() {
               { label: "AZ SOS Elections",    href: "https://azsos.gov/elections" },
               { label: "Ballotpedia AZ",      href: "https://ballotpedia.org/Arizona" },
               { label: "AZ Legislature",      href: "https://www.azleg.gov" },
-            ]} />
-            <FooterLinkGroup title="Legal" links={[
-              { label: "Terms and Conditions",  path: "/terms" },
-              { label: "Privacy Policy",        path: "/privacy" },
-              { label: "Ethical Use of AI Policy", path: "/ai-policy" },
             ]} />
           </div>
         </div>
