@@ -17,7 +17,7 @@ const MORE_ITEMS = [
   { path: "/resources",         short: "Resources" },
   { path: "/quick-start",       short: "Quick Start" },
   { path: "/misinfo-monitor",   short: "BS Monitor" },
-  { path: "/storms",             short: "Storm Chasers Hub" },
+  { path: "/storms",             short: "Storm Chaser's Hub" },
 ];
 
 // Scrolls the window to the top whenever the route changes, regardless of
