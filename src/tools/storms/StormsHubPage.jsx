@@ -19,7 +19,7 @@ import { zipSync } from "fflate";
 import { useAuth } from "../../context/AuthContext";
 import {
   loadAllStorms, loadActiveStorms, loadPosts, createStorm, updateStorm,
-  setStormStatus, deleteStorm, canReview, canDelete,
+  setStormStatus, deleteStorm, canReview, canDelete, canManagePosts, backfillPostCount,
   alarmLabel, STORM_STATUS, SUBJECT_TYPES, MEDIA_TYPES, PLATFORMS,
 } from "../../lib/stormLibrary";
 import StormPostsPanel from "./StormPostsPanel";
@@ -73,6 +73,21 @@ function AlarmBadge({ level }) {
 
 // ── Status dropdown — colored to match the current status, options vary
 // by role. Handles the confirm-before-unpublishing-from-Active case. ──
+// Shows the post count from the denormalized field when available; falls
+// back to a one-time fetch (which also backfills the field) for storms
+// created before postCount existed.
+function PostCountBadge({ storm }) {
+  const [count, setCount] = useState(storm.postCount);
+  useEffect(() => {
+    if (count === undefined) backfillPostCount(storm.id).then(setCount).catch(() => setCount(0));
+  }, []);
+  return (
+    <span style={{ fontSize: 12, fontWeight: 700, color: CHARCOAL, background: SURFACE_ALT, border: `1px solid ${BORDER}`, borderRadius: 999, padding: "3px 10px" }}>
+      {count === undefined ? "…" : count} post{count === 1 ? "" : "s"}
+    </span>
+  );
+}
+
 function StatusControl({ storm, role, onChange }) {
   const meta = STATUS_META[storm.status] || STATUS_META[STORM_STATUS.DRAFT];
   const staffOptions = [STORM_STATUS.DRAFT, STORM_STATUS.PENDING_REVIEW, STORM_STATUS.ACTIVE, STORM_STATUS.ARCHIVED];
@@ -156,9 +171,10 @@ function StormFormModal({ storm, role, onClose, onSaved }) {
     }
     setSaving(true);
     try {
+      let newId = null;
       if (isEdit) await updateStorm(storm.id, form);
-      else await createStorm(form, role);
-      onSaved();
+      else newId = await createStorm(form, role);
+      onSaved(newId);
     } catch (e) {
       setError("Save failed — please try again.");
     } finally {
@@ -391,6 +407,7 @@ function ManagerView({ role, uid }) {
                 </div>
 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <PostCountBadge storm={storm} />
                   <StatusControl storm={storm} role={role} onChange={(status) => handleStatusChange(storm, status)} />
                   <ManageStormMenu onCard={() => setFormStorm(storm)} onPosts={() => setPostsStorm(storm)} />
                   {canDelete(role) && <ActionBtn onClick={() => handleDelete(storm)} label="Delete" danger />}
@@ -402,7 +419,23 @@ function ManagerView({ role, uid }) {
       )}
 
       {formStorm !== undefined && (
-        <StormFormModal storm={formStorm} role={role} onClose={() => setFormStorm(undefined)} onSaved={() => { setFormStorm(undefined); load(); }} />
+        <StormFormModal
+          storm={formStorm}
+          role={role}
+          onClose={() => setFormStorm(undefined)}
+          onSaved={async (newStormId) => {
+            const wasNew = formStorm === null;
+            setFormStorm(undefined);
+            const fresh = await loadAllStorms();
+            setStorms(fresh);
+            // First save of a brand-new storm — jump straight into building
+            // its posts rather than leaving the admin to hunt for the button.
+            if (wasNew && newStormId) {
+              const created = fresh.find(s => s.id === newStormId);
+              if (created) setPostsStorm(created);
+            }
+          }}
+        />
       )}
       {postsStorm && <StormPostsPanel storm={postsStorm} onClose={() => setPostsStorm(null)} />}
     </>
@@ -418,6 +451,7 @@ function UserView({ role, uid }) {
   const [loading, setLoading] = useState(true);
   const [openStormId, setOpenStormId] = useState(null);
   const [formStorm, setFormStorm] = useState(undefined);
+  const [postsStorm, setPostsStorm] = useState(null);
   const [notif, setNotif] = useState(null);
 
   useEffect(() => { load(); }, []);
@@ -477,8 +511,9 @@ function UserView({ role, uid }) {
                 {storm.summary && <div style={{ fontSize: 13, color: "#666" }}>{storm.summary}</div>}
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                <PostCountBadge storm={storm} />
                 <StatusControl storm={storm} role={role} onChange={(status) => handleStatusChange(storm, status)} />
-                <ActionBtn onClick={() => setFormStorm(storm)} label="Edit" />
+                <ManageStormMenu onCard={() => setFormStorm(storm)} onPosts={() => setPostsStorm(storm)} />
               </div>
             </div>
           ))}
@@ -500,8 +535,23 @@ function UserView({ role, uid }) {
       )}
 
       {formStorm !== undefined && (
-        <StormFormModal storm={formStorm} role={role} onClose={() => setFormStorm(undefined)} onSaved={() => { setFormStorm(undefined); load(); }} />
+        <StormFormModal
+          storm={formStorm}
+          role={role}
+          onClose={() => setFormStorm(undefined)}
+          onSaved={async (newStormId) => {
+            const wasNew = formStorm === null;
+            setFormStorm(undefined);
+            const fresh = await loadAllStorms();
+            setAllStorms(fresh);
+            if (wasNew && newStormId) {
+              const created = fresh.find(s => s.id === newStormId);
+              if (created) setPostsStorm(created);
+            }
+          }}
+        />
       )}
+      {postsStorm && <StormPostsPanel storm={postsStorm} onClose={() => setPostsStorm(null)} />}
     </>
   );
 }
@@ -527,6 +577,7 @@ function UserStormCard({ storm, isOpen, onToggle }) {
             <span style={{ fontSize: 12, fontWeight: 800, color: alarmColor, background: storm.alarmLevel >= 3 ? "rgba(193,103,58,0.12)" : storm.alarmLevel === 2 ? "#fff8e0" : "rgba(62,207,178,0.15)", border: `1.5px solid ${alarmColor}`, borderRadius: 999, padding: "2px 9px" }}>
               {"🔔".repeat(storm.alarmLevel || 1)} {alarmLabel(storm.alarmLevel)}
             </span>
+            <PostCountBadge storm={storm} />
           </div>
           {storm.summary && <p style={{ margin: 0, fontSize: 14, color: "#555" }}>{storm.summary}</p>}
           {storm.expiresAt && fmtDateShort(storm.expiresAt) && <p style={{ margin: "4px 0 0", fontSize: 12, color: "#999" }}>Expires {fmtDateShort(storm.expiresAt)}</p>}
