@@ -258,6 +258,12 @@ function ManagerView({ role, uid }) {
                   {storm.status === STORM_STATUS.DRAFT && role === "user" && storm.createdBy?.uid === uid && (
                     <ActionBtn onClick={() => handleStatusChange(storm, STORM_STATUS.PENDING_REVIEW)} label="Submit for Review" primary />
                   )}
+                  {storm.status === STORM_STATUS.DRAFT && canReview(role) && (
+                    <>
+                      <ActionBtn onClick={() => handleStatusChange(storm, STORM_STATUS.ACTIVE)} label="Activate" primary />
+                      <ActionBtn onClick={() => handleStatusChange(storm, STORM_STATUS.PENDING_REVIEW)} label="Submit for Review" />
+                    </>
+                  )}
                   {storm.status === STORM_STATUS.PENDING_REVIEW && canReview(role) && (
                     <>
                       <ActionBtn onClick={() => handleStatusChange(storm, STORM_STATUS.ACTIVE)} label="Approve & Activate" primary />
