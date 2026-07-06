@@ -16,9 +16,7 @@ import LibraryPage from "./tools/library/LibraryPage";
 import MediaPage from "./tools/media/MediaPage";
 import QuickStartPage from "./tools/quick-start/QuickStartPage";
 import MisinfoMonitorPage from "./tools/misinfo-monitor/MisinfoMonitorPage";
-import TermsPage from "./pages/legal/TermsPage";
-import PrivacyPage from "./pages/legal/PrivacyPage";
-import AIPolicyPage from "./pages/legal/AIPolicyPage";
+import StormsHubPage from "./tools/storms/StormsHubPage";
 
 export default function App() {
   return (
@@ -29,9 +27,6 @@ export default function App() {
           <Route path="/login"    element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/waitlist" element={<WaitlistPage />} />
-          <Route path="/terms"     element={<TermsPage />} />
-          <Route path="/privacy"   element={<PrivacyPage />} />
-          <Route path="/ai-policy" element={<AIPolicyPage />} />
 
           {/* Protected routes */}
           <Route element={
@@ -50,6 +45,7 @@ export default function App() {
             <Route path="/admin"           element={<AdminPage />} />
             <Route path="/quick-start"     element={<QuickStartPage />} />
             <Route path="/misinfo-monitor" element={<MisinfoMonitorPage />} />
+            <Route path="/storms"          element={<StormsHubPage />} />
           </Route>
         </Routes>
       </AuthProvider>
