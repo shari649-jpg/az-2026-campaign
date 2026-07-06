@@ -1,24 +1,22 @@
 // src/lib/stormLibrary.js
 //
-// Data layer for Storm Chasers Hub — the container/workflow object for a
-// social storm campaign. This covers the STORM itself (title, dates, alarm
-// rating, status, permissions). Individual storm ENTRIES (one video + six
-// platform texts each) are a separate collection built in the next pass —
-// see BUILD_PLAN_Social_Storms.md — and will nest under storms/{id}/entries.
+// Data layer for Storm Chaser's Hub (the storm container) AND its posts
+// subcollection (the actual video/graphic + six platform texts members
+// download and post). Posts live at storms/{stormId}/posts/{postId};
+// their media files live in Storage at storms/{stormId}/{postId}/....
 
-import { db, auth } from "../firebase";
+import { db, auth, storage } from "../firebase";
 import {
   collection, addDoc, updateDoc, deleteDoc, doc, getDoc,
   getDocs, query, orderBy, serverTimestamp,
 } from "firebase/firestore";
+import {
+  ref, uploadBytesResumable, getDownloadURL, deleteObject,
+} from "firebase/storage";
 
 const COL = "storms";
 
 // ── Status lifecycle ────────────────────────────────────────────────────
-// draft            — being built by a Member; not visible to other members
-// pending_review   — Member submitted; waiting on a Manager/Admin
-// active           — live in the Storm Chaser's Vault for members to use
-// archived         — pulled from the Vault, kept for records
 export const STORM_STATUS = {
   DRAFT: "draft",
   PENDING_REVIEW: "pending_review",
@@ -28,11 +26,24 @@ export const STORM_STATUS = {
 
 export const SUBJECT_TYPES = ["Candidate", "Issue/Topic", "Race/District", "Coalition-wide"];
 
-// ── Permissions ──────────────────────────────────────────────────────────
-// administrator: create, edit, review/approve, archive, delete — anything
-// manager:       create, edit, review/approve, archive — no hard delete
-// user (member): create (lands in draft), edit only their own drafts —
-//                cannot self-approve, archive, or delete
+// The six platforms a storm post's text is written for. Kept as a single
+// source of truth here so the Hub's post editor and download/copy
+// buttons never drift out of sync with each other.
+export const PLATFORMS = [
+  { key: "facebook",  label: "Facebook" },
+  { key: "instagram", label: "Instagram" },
+  { key: "twitter",   label: "X / Twitter" },
+  { key: "threads",   label: "Threads" },
+  { key: "tiktok",    label: "TikTok" },
+  { key: "bluesky",   label: "Bluesky" },
+];
+
+export const MEDIA_TYPES = { VIDEO: "video", GRAPHIC: "graphic" };
+export const MAX_VIDEO_MB = 72;
+export const MAX_GRAPHIC_MB = 15;
+export const MAX_GRAPHICS_PER_POST = 10;
+
+// ── Permissions (storm container) ─────────────────────────────────────────
 export function canReview(role)  { return role === "administrator" || role === "manager"; }
 export function canArchive(role) { return role === "administrator" || role === "manager"; }
 export function canDelete(role)  { return role === "administrator"; }
@@ -41,14 +52,16 @@ export function canEdit(role, storm, uid) {
   return storm.createdBy?.uid === uid && storm.status === STORM_STATUS.DRAFT;
 }
 
+// Posts are staff-only end to end — a Member never authors a post's
+// media/text directly, only the storm container itself (as a draft).
+export function canManagePosts(role) { return role === "administrator" || role === "manager"; }
+
 function currentUserStamp() {
   const u = auth.currentUser;
   return u ? { uid: u.uid, displayName: u.displayName || null, email: u.email || null } : null;
 }
 
-// ── Create ───────────────────────────────────────────────────────────────
-// Members land in draft regardless of what they pass in; only a
-// manager/admin call may set an initial status of pending_review or active.
+// ── Storm container: create / read / update / delete ──────────────────────
 export async function createStorm(data, role) {
   const createdBy = currentUserStamp();
   const initialStatus =
@@ -64,8 +77,8 @@ export async function createStorm(data, role) {
     subjectType: data.subjectType || "Coalition-wide",
     subjectName: data.subjectType === "Coalition-wide" ? "" : (data.subjectName || ""),
     alarmLevel: [1, 2, 3].includes(data.alarmLevel) ? data.alarmLevel : 1,
-    startAt: data.startAt || null,       // ISO string from a datetime-local input
-    expiresAt: data.expiresAt || null,   // ISO string
+    startAt: data.startAt || null,
+    expiresAt: data.expiresAt || null,
     status: initialStatus,
     createdBy,
     createdAt: serverTimestamp(),
@@ -76,11 +89,18 @@ export async function createStorm(data, role) {
   return docRef.id;
 }
 
-// ── Read ─────────────────────────────────────────────────────────────────
 export async function loadAllStorms() {
   const q = query(collection(db, COL), orderBy("createdAt", "desc"));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function loadActiveStorms() {
+  // Filtered client-side rather than a where() clause so this stays a
+  // single simple index-free query; storm counts are small (~tens, not
+  // thousands), so this is cheap.
+  const all = await loadAllStorms();
+  return all.filter(s => s.status === STORM_STATUS.ACTIVE);
 }
 
 export async function loadStorm(id) {
@@ -88,12 +108,10 @@ export async function loadStorm(id) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
-// ── Update ───────────────────────────────────────────────────────────────
 export async function updateStorm(id, data) {
   await updateDoc(doc(db, COL, id), { ...data, updatedAt: serverTimestamp() });
 }
 
-// Manager/Admin only — enforced again in Firestore rules, not just the UI.
 export async function setStormStatus(id, status, role) {
   if (!canReview(role) && status !== STORM_STATUS.DRAFT) {
     throw new Error("Only Managers and Administrators can change a storm's review status.");
@@ -106,16 +124,105 @@ export async function setStormStatus(id, status, role) {
   await updateDoc(doc(db, COL, id), patch);
 }
 
-// ── Delete ───────────────────────────────────────────────────────────────
-// Admin-only. (Managers archive instead — see canDelete above.) Note: this
-// removes the storm document only. Once entries + Storage videos exist
-// (next build phase), deleting a storm must also delete its entries
-// subcollection and their Storage files, or they'll orphan and keep billing.
+// Deletes the storm doc, all of its posts, and all of their Storage
+// files. This is the only delete path that fully cleans up — deleting a
+// post individually (deletePost, below) also cleans its own files, but
+// this sweeps everything in one go for a full storm teardown.
 export async function deleteStorm(id) {
+  const posts = await loadPosts(id);
+  for (const post of posts) {
+    await deletePostFiles(post);
+    await deleteDoc(doc(db, COL, id, "posts", post.id));
+  }
   await deleteDoc(doc(db, COL, id));
 }
 
-// ── Alarm display helper ──────────────────────────────────────────────────
 export function alarmLabel(level) {
   return { 1: "1 Alarm", 2: "2 Alarm", 3: "3 Alarm — Urgent" }[level] || "1 Alarm";
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Posts: storms/{stormId}/posts/{postId}
+// ══════════════════════════════════════════════════════════════════════
+//
+// A post is EITHER:
+//   - one video (mediaType: "video", media: [{ url, path, sizeMB }])
+//   - one-or-more graphics (mediaType: "graphic", media: [{ url, path, sizeMB }, ...])
+// `media` is always an array for a uniform shape, even when it holds one item.
+
+function postsCol(stormId) {
+  return collection(db, COL, stormId, "posts");
+}
+
+export async function loadPosts(stormId) {
+  const q = query(postsCol(stormId), orderBy("order", "asc"));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// ── Media upload ──────────────────────────────────────────────────────────
+// onProgress(fraction 0-1) is optional, called repeatedly during upload.
+export async function uploadPostMedia(stormId, postId, file, onProgress) {
+  const safeName = file.name.replace(/[^\w.\-]/g, "_");
+  const path = `storms/${stormId}/${postId}/${Date.now()}_${safeName}`;
+  const storageRef = ref(storage, path);
+
+  return new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
+    task.on(
+      "state_changed",
+      (snap) => onProgress?.(snap.bytesTransferred / snap.totalBytes),
+      reject,
+      async () => {
+        const url = await getDownloadURL(storageRef);
+        resolve({ url, path, sizeMB: +(file.size / (1024 * 1024)).toFixed(1), name: file.name });
+      }
+    );
+  });
+}
+
+async function deletePostFiles(post) {
+  for (const m of post.media || []) {
+    try { await deleteObject(ref(storage, m.path)); }
+    catch (e) { /* file may already be gone — non-fatal, continue cleanup */ }
+  }
+}
+
+// ── Create ──────────────────────────────────────────────────────────────
+// `media` is the array already-uploaded via uploadPostMedia (call that
+// per-file from the UI first, collect the results, then create the post
+// doc with all of them at once).
+export async function createPost(stormId, data) {
+  const docRef = await addDoc(postsCol(stormId), {
+    title: data.title || "",
+    order: data.order ?? 0,
+    mediaType: data.mediaType, // "video" | "graphic"
+    media: data.media || [],  // [{ url, path, sizeMB, name }, ...]
+    texts: PLATFORMS.reduce((acc, p) => ({ ...acc, [p.key]: data.texts?.[p.key] || "" }), {}),
+    createdBy: currentUserStamp(),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function updatePost(stormId, postId, data) {
+  await updateDoc(doc(db, COL, stormId, "posts", postId), { ...data, updatedAt: serverTimestamp() });
+}
+
+// Deletes the post doc AND its Storage files (all media items).
+export async function deletePost(stormId, postId) {
+  const snap = await getDoc(doc(db, COL, stormId, "posts", postId));
+  if (snap.exists()) await deletePostFiles({ id: postId, ...snap.data() });
+  await deleteDoc(doc(db, COL, stormId, "posts", postId));
+}
+
+// Remove a single media item from a post (e.g. one graphic out of five)
+// without deleting the whole post.
+export async function removeMediaItem(stormId, postId, mediaItem) {
+  try { await deleteObject(ref(storage, mediaItem.path)); } catch (e) { /* already gone, fine */ }
+  const snap = await getDoc(doc(db, COL, stormId, "posts", postId));
+  const current = snap.exists() ? (snap.data().media || []) : [];
+  const next = current.filter(m => m.path !== mediaItem.path);
+  await updateDoc(doc(db, COL, stormId, "posts", postId), { media: next, updatedAt: serverTimestamp() });
 }
