@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react";
 import { saveCampaign as fbSave, loadAllCampaigns, deleteCampaign as fbDelete } from "../../lib/campaignLibrary";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
+import {
+  loadAllStorms, loadPosts as loadStormPosts, createPost as createStormPost,
+  MEDIA_TYPES as STORM_MEDIA_TYPES, STORM_STATUS, PUSH_TO_STORM_KEY,
+} from "../../lib/stormLibrary";
+import { useAuth } from "../../context/AuthContext";
 import { auth } from "../../firebase";
 
 const PLATFORMS = [
@@ -412,6 +417,8 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
 
 /* ── Main App ── */
 export default function App() {
+  const { role } = useAuth();
+  const canPushToStorm = role === "administrator" || role === "manager";
   const [view, setView]             = useState("form");
   const [msgMode, setMsgMode]       = useState("");   // "" (neutral, default) | "az" | "national"
   const [msgFrame, setMsgFrame]     = useState("");      // NATIONAL_FRAMES id or ""
@@ -429,6 +436,10 @@ export default function App() {
   const [campaigns, setCampaigns]   = useState([]);
   const [saveModal, setSaveModal]   = useState(false);
   const [campName, setCampName]     = useState("");
+  const [pushModal, setPushModal]   = useState(false);
+  const [pushStorms, setPushStorms] = useState([]);
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushError, setPushError]   = useState("");
   const [notif, setNotif]           = useState(null);
   const [genError, setGenError]     = useState(null); // persistent error panel for generation failures
   const [hashtags, setHashtags]     = useState(null);
@@ -859,6 +870,55 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
       setCampaigns(prev => [c, ...prev]);
       setSaveModal(false); setCampName(""); notify("Campaign saved!");
     } catch { notify("Save failed — please try again.", "err"); }
+  };
+
+  // ── Push to Storm (Handoff #15, decision #7) — Admin/Manager only ─────────
+  // Message Machine's platform ids (facebook/instagram/twitter/threads/tiktok/
+  // bluesky) already match Storm posts' texts keys 1:1, so `messages` can be
+  // handed straight to a Storm post's `texts` field with no remapping.
+  const derivedPostTitle = () => (formData.issue || "Untitled").trim().slice(0, 60);
+
+  const openPushModal = async () => {
+    setPushError(""); setPushModal(true); setPushLoading(true);
+    try {
+      const all = await loadAllStorms();
+      setPushStorms(all.filter(s => s.status !== STORM_STATUS.ARCHIVED));
+    } catch {
+      setPushError("Couldn't load storms — check your connection and try again.");
+    }
+    setPushLoading(false);
+  };
+
+  const pushToExistingStorm = async (storm) => {
+    setPushLoading(true); setPushError("");
+    try {
+      const existingPosts = await loadStormPosts(storm.id);
+      await createStormPost(storm.id, {
+        title: derivedPostTitle(),
+        mediaType: STORM_MEDIA_TYPES.VIDEO, // placeholder — no media at push time; staff adds it manually
+        media: [],
+        texts: { ...messages },
+        order: existingPosts.length,
+      });
+      setPushModal(false);
+      notify(`Pushed to "${storm.title}" — add media in Storm Posts to finish it.`);
+    } catch {
+      setPushError("Push failed — check your connection and try again.");
+    }
+    setPushLoading(false);
+  };
+
+  const pushToNewStorm = () => {
+    try {
+      localStorage.setItem(PUSH_TO_STORM_KEY, JSON.stringify({
+        texts: { ...messages },
+        title: derivedPostTitle(),
+        pushedAt: new Date().toISOString(),
+      }));
+      window.location.href = "/storms";
+    } catch {
+      setPushError("Browser storage is disabled — can't stage this push. Copy the posts manually instead.");
+    }
   };
 
   // County picker lives inside Pro Mode — open the panel when a loaded campaign
@@ -1556,6 +1616,11 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 <button onClick={startNewCampaign} style={{ ...S.btnSecondary, fontSize:15, padding:"9px 16px" }}>
                   + New
                 </button>
+                {canPushToStorm && (
+                  <button onClick={openPushModal} style={{ ...S.btnSecondary, fontSize:15, padding:"9px 16px", borderColor:"#3ECFB2", color:"#1D5C4A" }}>
+                    ⛈️ Push to Storm →
+                  </button>
+                )}
                 {/* Primary action — gold, right-aligned */}
                 <button onClick={()=>setSaveModal(true)} style={{ ...S.btnPrimary, fontSize:15, padding:"9px 18px", marginLeft:"auto" }}>
                   Save to Library
@@ -1713,6 +1778,61 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* PUSH TO STORM MODAL */}
+      {pushModal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}
+          onClick={e=>{ if(e.target===e.currentTarget && !pushLoading) setPushModal(false); }}>
+          <div style={{ background:T.surface, border:`3px solid ${T.borderStrong}`, borderRadius:16, padding:36, maxWidth:520, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,0.35)", maxHeight:"80vh", overflowY:"auto" }}>
+            <h3 style={{ fontSize:28, fontWeight:900, color:T.text, marginBottom:10 }}>⛈️ Push to Storm</h3>
+            <p style={{ color:T.textMid, fontSize:16, marginBottom:22 }}>
+              Sends these platform texts straight into a Storm post as a starting point. Media isn't included — add that afterward in Storm Posts.
+            </p>
+
+            {pushError && (
+              <div style={{ background:"#fff5f5", border:"2px solid #b91c1c", borderRadius:10, padding:"12px 16px", color:"#b91c1c", fontSize:14.5, marginBottom:18 }}>
+                {pushError}
+              </div>
+            )}
+
+            <button onClick={pushToNewStorm} disabled={pushLoading} style={{
+              ...S.btnPrimary, width:"100%", fontSize:17, padding:"14px", marginBottom:20,
+              opacity:pushLoading?0.6:1, cursor:pushLoading?"not-allowed":"pointer",
+            }}>
+              + Create New Storm With This
+            </button>
+
+            <p style={{ fontSize:13, fontWeight:800, color:T.textMid, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:10 }}>
+              Or add to an existing storm
+            </p>
+
+            {pushLoading && pushStorms.length === 0 ? (
+              <p style={{ color:T.textMute, fontSize:15, textAlign:"center", padding:"20px 0" }}>Loading storms…</p>
+            ) : pushStorms.length === 0 ? (
+              <p style={{ color:T.textMute, fontSize:15, textAlign:"center", padding:"10px 0" }}>No storms yet — create one above.</p>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:22 }}>
+                {pushStorms.map(storm => (
+                  <button key={storm.id} onClick={()=>pushToExistingStorm(storm)} disabled={pushLoading}
+                    style={{
+                      display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, textAlign:"left",
+                      background:T.pageBg, border:`2px solid ${T.borderStrong}`, borderRadius:10, padding:"12px 16px",
+                      cursor:pushLoading?"not-allowed":"pointer", opacity:pushLoading?0.6:1, fontFamily:"inherit",
+                    }}>
+                    <span style={{ fontWeight:700, color:T.text, fontSize:15 }}>{storm.title}</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:T.textMute, textTransform:"capitalize", flexShrink:0 }}>{(storm.status||"draft").replace("_"," ")}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button onClick={()=>{ if(!pushLoading){ setPushModal(false); setPushError(""); } }}
+              style={{ ...S.btnSecondary, width:"100%", fontSize:16, padding:"12px", justifyContent:"center" }}>
+              Cancel
+            </button>
           </div>
         </div>
       )}
