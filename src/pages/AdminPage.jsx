@@ -27,6 +27,29 @@ const WAITLIST_STATUS_COLORS = {
   rejected:   { bg: "#fdf2f2", color: RED,        border: "#f5c6c6" },
 };
 
+// Mirrors netlify/functions/rateLimitHelper.mjs's LIMITS table — kept in sync
+// by hand since one lives in the client bundle and the other in a Netlify
+// function. Only used here to decide whether to show the same-day override
+// control (Handoff #15, decision #9); the actual enforcement is server-side.
+const DAILY_LIMITS = { administrator: 200, manager: 100, user: 50 };
+
+function todayUTC() { return new Date().toISOString().slice(0, 10); }
+
+// A user's override only counts on the day it was granted — matches
+// rateLimitHelper.mjs treating dailyCalls/dailyCallsDate the same way, so
+// the bump doesn't silently carry over and quietly raise tomorrow's limit too.
+function overrideToday(u, today) {
+  return u.dailyLimitOverrideDate === today ? (u.dailyLimitOverride || 0) : 0;
+}
+function usedToday(u, today) {
+  return u.dailyCallsDate === today ? (u.dailyCalls || 0) : 0;
+}
+function isAtDailyLimit(u) {
+  const today = todayUTC();
+  const limit = (DAILY_LIMITS[u.role] ?? DAILY_LIMITS.user) + overrideToday(u, today);
+  return usedToday(u, today) >= limit;
+}
+
 export default function AdminPage() {
   const { isAdmin, user: currentUser } = useAuth();
   const navigate = useNavigate();
@@ -106,6 +129,22 @@ export default function AdminPage() {
       setUsers(prev => prev.map(u => u.id === uid ? { ...u, role: newRole } : u));
       notify("Role updated.");
     } catch { notify("Failed to update role.", "err"); }
+    setSaving(null);
+  };
+
+  // Same-day rate-limit override (Handoff #15, decision #9). Adds to today's
+  // override if one was already granted today, otherwise starts fresh —
+  // either way it's scoped to today's date so it can't quietly persist.
+  const handleAddOverride = async (uid, amount) => {
+    setSaving(uid);
+    try {
+      const today = todayUTC();
+      const u = users.find(x => x.id === uid);
+      const nextOverride = overrideToday(u, today) + amount;
+      await updateDoc(doc(db, "users", uid), { dailyLimitOverride: nextOverride, dailyLimitOverrideDate: today });
+      setUsers(prev => prev.map(x => x.id === uid ? { ...x, dailyLimitOverride: nextOverride, dailyLimitOverrideDate: today } : x));
+      notify(`+${amount} calls added for today.`);
+    } catch { notify("Failed to add override.", "err"); }
     setSaving(null);
   };
 
@@ -976,6 +1015,27 @@ export default function AdminPage() {
                             </select>
                             {saving === u.id && <span style={{ fontSize: 12, color: "#888" }}>Saving…</span>}
                           </div>
+
+                          {isAtDailyLimit(u) && (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff8f0", border: `1.5px solid ${TERRACOTTA}`, borderRadius: 8, padding: "6px 10px" }}>
+                              <span style={{ fontSize: 11.5, fontWeight: 700, color: TERRACOTTA, whiteSpace: "nowrap" }}>🚦 At limit today</span>
+                              {[10, 25].map(amount => (
+                                <button
+                                  key={amount}
+                                  onClick={() => handleAddOverride(u.id, amount)}
+                                  disabled={saving === u.id}
+                                  title={`Give ${u.fullName || u.email} ${amount} extra AI calls for the rest of today`}
+                                  style={{
+                                    background: "#fff", border: `1.5px solid ${TERRACOTTA}`, color: TERRACOTTA,
+                                    borderRadius: 6, padding: "4px 9px", fontSize: 12, fontWeight: 700,
+                                    fontFamily: "inherit", cursor: saving === u.id ? "not-allowed" : "pointer",
+                                  }}
+                                >
+                                  +{amount} today
+                                </button>
+                              ))}
+                            </div>
+                          )}
 
                           {!isMe && (
                             <div style={{ display: "flex", gap: 8 }}>
