@@ -54,6 +54,22 @@ export const MAX_VIDEO_MB = 72;
 export const MAX_GRAPHIC_MB = 15;
 export const MAX_GRAPHICS_PER_POST = 10;
 
+// ── Push-to-Storm bridge (Handoff #15, decision #7) ────────────────────────
+// Message Machine (Admin/Manager only) can push its generated platform texts
+// straight into a Storm post. Two paths:
+//   - Existing storm: writes the post directly via createPost() below — no
+//     bridge needed, it's a normal write.
+//   - Brand-new storm: Message Machine can't create a storm itself (that
+//     needs the full Storm form — title, summary, dates, etc.), so it stages
+//     the texts here and sends the user to /storms to create the storm
+//     normally. Once that new storm is saved, the Hub's existing
+//     "jump straight into building its posts" behavior opens the Posts
+//     panel automatically — which is the one moment this key gets read and
+//     cleared. A short TTL keeps a stale, abandoned push from silently
+//     attaching itself to some unrelated storm created later in the day.
+export const PUSH_TO_STORM_KEY = "mm_push_to_storm";
+export const PUSH_TO_STORM_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
 // ── Permissions (storm container) ─────────────────────────────────────────
 export function canReview(role)  { return role === "administrator" || role === "manager"; }
 export function canArchive(role) { return role === "administrator" || role === "manager"; }
