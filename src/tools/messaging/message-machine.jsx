@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { saveCampaign as fbSave, loadAllCampaigns, deleteCampaign as fbDelete } from "../../lib/campaignLibrary";
+import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
 import { auth } from "../../firebase";
 
 const PLATFORMS = [
@@ -549,14 +550,7 @@ export default function App() {
 
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
 
-FACTUAL ACCURACY — NON-NEGOTIABLE:
-- NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date. If you do not have a verified figure from the content provided, do not include one.
-- NEVER fabricate or paraphrase quotes from real people. Only use quotes explicitly provided in the input.
-- NEVER name a specific person, organization, study, bill, court case, or law unless it was explicitly provided in the input content.
-- NEVER assert a specific factual claim you cannot verify from the input provided.
-- If the input does not contain a specific fact, write around it using general, non-falsifiable framing: "experts have documented," "public records show," "studies have found" — never invent what those experts, records, or studies say.
-- Posts must persuade through framing, values, and momentum — not through invented facts.
-- Violating this rule damages the credibility of a real political campaign. Treat factual accuracy as an absolute constraint, not a preference.
+${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
@@ -592,14 +586,7 @@ This is a professional political communications tool. Content will reference pub
 ARIZONA CONTEXT — GROUND ALL MESSAGING HERE:
 Ground all messaging in the Arizona context. Reference communities, landscapes, and values familiar to Arizona voters — urban centers like Phoenix and Tucson, rural and tribal communities, the border, the desert. Reflect issues as they affect Arizonans specifically. When referencing costs, use Arizona examples where possible (utility bills, housing, healthcare, water, education). Write for an Arizona audience, not a generic national one.
 ${countyBlock}
-FACTUAL ACCURACY — NON-NEGOTIABLE:
-- NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date. If you do not have a verified figure from the content provided, do not include one.
-- NEVER fabricate or paraphrase quotes from real people. Only use quotes explicitly provided in the input.
-- NEVER name a specific person, organization, study, bill, court case, or law unless it was explicitly provided in the input content.
-- NEVER assert a specific factual claim you cannot verify from the input provided.
-- If the input does not contain a specific fact, write around it using general, non-falsifiable framing: "experts have documented," "public records show," "studies have found" — never invent what those experts, records, or studies say.
-- Posts must persuade through framing, values, and momentum — not through invented facts.
-- Violating this rule damages the credibility of a real political campaign. Treat factual accuracy as an absolute constraint, not a preference.
+${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
@@ -651,14 +638,7 @@ SPECIFICITY RULE — Every abstract claim needs a concrete anchor: a price, a pl
 
 FORBIDDEN PHRASES — Never use: "We must," "Now is the time," "History will judge," "a lot of us feel," "most people I know," "out here," "systemic inequities," "corporate accountability mechanisms," "electoral integrity." Replace with specific, grounded alternatives.
 
-FACTUAL ACCURACY — NON-NEGOTIABLE:
-- NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date. If you do not have a verified figure from the content provided, do not include one.
-- NEVER fabricate or paraphrase quotes from real people. Only use quotes explicitly provided in the input.
-- NEVER name a specific person, organization, study, bill, court case, or law unless it was explicitly provided in the input content.
-- NEVER assert a specific factual claim you cannot verify from the input provided.
-- If the input does not contain a specific fact, write around it using general, non-falsifiable framing: "experts have documented," "public records show," "studies have found" — never invent what those experts, records, or studies say.
-- Posts must persuade through framing, values, and momentum — not through invented facts.
-- Violating this rule damages the credibility of a real political campaign. Treat factual accuracy as an absolute constraint, not a preference.
+${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
@@ -725,11 +705,7 @@ function detectArrivalSource() {
 
     return `You are an expert political messaging strategist for a legitimate ${modeLabel}.
 
-FACTUAL ACCURACY — NON-NEGOTIABLE:
-- NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date.
-- NEVER fabricate quotes from real people or name specific studies, bills, or organizations not present in the original message.
-- NEVER add factual claims that were not in the original message. Only rewrite — do not embellish with invented facts.
-- Treat factual accuracy as an absolute constraint, not a preference.
+${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
 Your task is to rewrite the following existing ${platform?.name} post.
 
@@ -1179,7 +1155,10 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   You've used all your AI calls for today. Your limit resets at midnight UTC.
                 </p>
                 <p style={{ fontSize:15, color:T.textMid, lineHeight:1.6 }}>
-                  Need more access? Contact your coalition administrator.
+                  Need more access?{" "}
+                  <a href="mailto:info@arizonacoalition.net?subject=Daily%20AI%20limit%20reached" style={{ color:"#7c3aed", fontWeight:700, textDecoration:"none" }}>
+                    Contact your coalition administrator
+                  </a>.
                 </p>
               </div>
             )}
