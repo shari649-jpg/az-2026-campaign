@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { saveCampaign, loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
+import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
 import { auth } from "../../firebase";
 
 // ── 9 activist profile choices ────────────────────────────────────────────
@@ -80,14 +81,7 @@ FIRST COMMENT: [1 punchy sentence under 280 chars]
 POST: Hook line / Beat 1 / Beat 2 / Beat 3 / CTA line
 FIRST COMMENT: [1 punchy sentence]
 
-FACTUAL ACCURACY — NON-NEGOTIABLE:
-- NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date. If you do not have a verified figure from the content provided, do not include one.
-- NEVER fabricate or paraphrase quotes from real people. Only use quotes explicitly provided in the input.
-- NEVER name a specific person, organization, study, bill, court case, or law unless it was explicitly provided in the input content.
-- NEVER assert a specific factual claim you cannot verify from the input provided.
-- If the input does not contain a specific fact, write around it using general, non-falsifiable framing: "experts have documented," "public records show," "studies have found" — never invent what those experts, records, or studies say.
-- Posts must persuade through framing, values, and momentum — not through invented facts.
-- Violating this rule damages the credibility of a real political campaign. Treat factual accuracy as an absolute constraint, not a preference.
+${FACTUAL_ACCURACY_GUARDRAIL}
 
 RULES:
 - Write ALL posts and first comments in the third person. Never use "I" or "my". Write as if observing and reporting — "Communities are being silenced," not "I am outraged."
