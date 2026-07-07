@@ -21,6 +21,7 @@ import {
   loadAllStorms, loadActiveStorms, loadPosts, createStorm, updateStorm,
   setStormStatus, deleteStorm, canReview, canDelete, canManagePosts, backfillPostCount,
   alarmLabel, STORM_STATUS, SUBJECT_TYPES, MEDIA_TYPES, PLATFORMS,
+  PUSH_TO_STORM_KEY, PUSH_TO_STORM_TTL_MS,
 } from "../../lib/stormLibrary";
 import StormPostsPanel from "./StormPostsPanel";
 
@@ -56,6 +57,23 @@ function fmtDateShort(v) {
   const d = v?.toDate ? v.toDate() : new Date(v);
   if (isNaN(d)) return null;
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Peek-only check for a pending Message Machine push — does NOT consume the
+// key. Consumption happens exactly once, later, in StormPostsPanel right
+// after the new storm this form creates triggers the auto-jump-to-Posts.
+// This just decides whether to open the New Storm form automatically instead
+// of leaving the person to notice and click "+ New Storm" themselves.
+function hasPendingStormPush() {
+  try {
+    const raw = localStorage.getItem(PUSH_TO_STORM_KEY);
+    if (!raw) return false;
+    const payload = JSON.parse(raw);
+    const age = Date.now() - new Date(payload.pushedAt).getTime();
+    return age >= 0 && age <= PUSH_TO_STORM_TTL_MS;
+  } catch {
+    return false;
+  }
 }
 
 function AlarmBadge({ level }) {
@@ -314,6 +332,18 @@ function ManagerView({ role, uid }) {
 
   useEffect(() => { load(); }, []);
 
+  // Arrived here via Push-to-Storm's "Create New Storm" path — open the New
+  // Storm form immediately instead of leaving the person to click it
+  // themselves. The staged content stays untouched in localStorage; it's
+  // only consumed later, once, by StormPostsPanel after this form's save
+  // triggers the auto-jump-to-Posts.
+  useEffect(() => {
+    if (hasPendingStormPush()) {
+      setFormStorm(null);
+      notify("Picking up your pushed content — fill in the storm details below to continue.");
+    }
+  }, []);
+
   async function load() {
     setLoading(true); setError("");
     try { setStorms(await loadAllStorms()); }
@@ -457,6 +487,15 @@ function UserView({ role, uid }) {
   const [notif, setNotif] = useState(null);
 
   useEffect(() => { load(); }, []);
+
+  // Same Push-to-Storm pickup as ManagerView, for staff who happen to be in
+  // User View (or a Member's own storm, in principle) when the redirect lands.
+  useEffect(() => {
+    if (hasPendingStormPush()) {
+      setFormStorm(null);
+      notify("Picking up your pushed content — fill in the storm details below to continue.");
+    }
+  }, []);
 
   async function load() {
     setLoading(true);
