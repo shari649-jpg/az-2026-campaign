@@ -587,10 +587,10 @@ export default function AppShell() {
 
             {/* Contact */}
             <div>
-              <a href="mailto:az.coalition.socials@gmail.com" style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", textDecoration: "none", letterSpacing: "0.02em" }}
+              <a href="mailto:info@arizonacoalition.net" style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", textDecoration: "none", letterSpacing: "0.02em" }}
                 onMouseEnter={e => e.currentTarget.style.color = "var(--gold)"}
                 onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.65)"}>
-                ✉ az.coalition.socials@gmail.com
+                ✉ info@arizonacoalition.net
               </a>
             </div>
           </div>
