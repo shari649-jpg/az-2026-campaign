@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { loadPosts, deletePost, MEDIA_TYPES } from "../../lib/stormLibrary";
+import { useAuth } from "../../context/AuthContext";
 import StormPostEditor from "./StormPostEditor";
 
 const TEAL       = "#1D5C4A";
@@ -14,6 +15,7 @@ const BORDER     = "#C8C4BC";
 const SURFACE_ALT = "#F3F4F0";
 
 export default function StormPostsPanel({ storm, onClose }) {
+  const { role } = useAuth();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -116,6 +118,8 @@ export default function StormPostsPanel({ storm, onClose }) {
       {editorOpen && (
         <StormPostEditor
           stormId={storm.id}
+          storm={storm}
+          role={role}
           post={editingPost}
           nextOrder={posts.length}
           onClose={() => setEditorOpen(false)}
