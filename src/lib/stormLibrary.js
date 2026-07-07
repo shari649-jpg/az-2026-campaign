@@ -72,6 +72,13 @@ export function canManagePosts(role, storm, uid) {
   return !!(storm && uid && storm.createdBy?.uid === uid);
 }
 
+// Per-platform text lock (Handoff #15, decision #7) — Admin/Manager only,
+// regardless of who created the storm. A storm's own creator can manage
+// posts (above) but cannot lock a field against their own future edits.
+export function canLockFields(role) {
+  return role === "administrator" || role === "manager";
+}
+
 function currentUserStamp() {
   const u = auth.currentUser;
   return u ? { uid: u.uid, displayName: u.displayName || null, email: u.email || null } : null;
@@ -215,6 +222,10 @@ export async function createPost(stormId, data) {
     mediaType: data.mediaType, // "video" | "graphic"
     media: data.media || [],  // [{ url, path, sizeMB, name }, ...]
     texts: PLATFORMS.reduce((acc, p) => ({ ...acc, [p.key]: data.texts?.[p.key] || "" }), {}),
+    // Per-platform lock (Admin/Manager only, set from StormPostEditor). A
+    // locked field hides its Rephrase button and shows a "Locked by staff"
+    // tag to everyone else. Defaults to unlocked for every platform.
+    lockedFields: PLATFORMS.reduce((acc, p) => ({ ...acc, [p.key]: !!data.lockedFields?.[p.key] }), {}),
     createdBy: currentUserStamp(),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
