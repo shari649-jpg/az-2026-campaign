@@ -9,6 +9,15 @@
 // Warning is surfaced at 75% of the limit.
 // Counter resets at UTC midnight (date comparison).
 // Fields written to users/{uid}: dailyCalls (number), dailyCallsDate (YYYY-MM-DD string)
+//
+// Same-day override (Handoff #15, decision #9): an Administrator can grant a
+// user extra calls for just today via AdminPage's "+N today" control, which
+// writes dailyLimitOverride (number) and dailyLimitOverrideDate (YYYY-MM-DD)
+// on the same user doc. It's added to the base limit only when
+// dailyLimitOverrideDate matches today; once the date rolls over, the stale
+// override is actively cleared below rather than just ignored, so it can't
+// accidentally come back to life if a rollover-detection edge case ever
+// misfires.
 
 import admin from "firebase-admin";
 
@@ -32,7 +41,7 @@ function todayUTC() {
  * @returns {object} result
  *   result.blocked        - true if the user has hit their limit (caller should return 429)
  *   result.used           - calls used today (after increment)
- *   result.limit          - this user's daily limit
+ *   result.limit          - this user's effective daily limit (base + today's override, if any)
  *   result.remaining      - calls remaining
  *   result.warning        - true if >= 75% used (caller should include usageWarning in response)
  *   result.blockedPayload - ready-made 429 response body if blocked
@@ -47,12 +56,22 @@ export async function checkAndIncrementRateLimit(app, uid) {
   const data = snap.exists ? snap.data() : {};
 
   const role        = data.role || "user";
-  const limit       = LIMITS[role] ?? LIMITS.user;
+  const baseLimit   = LIMITS[role] ?? LIMITS.user;
   const storedDate  = data.dailyCallsDate || "";
   const storedCalls = storedDate === today ? (data.dailyCalls || 0) : 0;
 
+  // Same-day override only counts if it was granted today; otherwise it's
+  // stale from a previous day and gets wiped out in the update below.
+  const hasFreshOverride = data.dailyLimitOverrideDate === today;
+  const override = hasFreshOverride ? (data.dailyLimitOverride || 0) : 0;
+  const limit = baseLimit + override;
+  const staleOverrideFields = (!hasFreshOverride && (data.dailyLimitOverride || data.dailyLimitOverrideDate))
+    ? { dailyLimitOverride: 0, dailyLimitOverrideDate: "" }
+    : {};
+
   // Check BEFORE incrementing — block if already at or over limit
   if (storedCalls >= limit) {
+    if (Object.keys(staleOverrideFields).length) await ref.update(staleOverrideFields).catch(() => {});
     return {
       blocked: true,
       used:    storedCalls,
@@ -71,9 +90,12 @@ export async function checkAndIncrementRateLimit(app, uid) {
 
   // Increment
   const newCount = storedCalls + 1;
-  const updateData = storedDate === today
-    ? { dailyCalls: admin.firestore.FieldValue.increment(1) }
-    : { dailyCalls: 1, dailyCallsDate: today };
+  const updateData = {
+    ...staleOverrideFields,
+    ...(storedDate === today
+      ? { dailyCalls: admin.firestore.FieldValue.increment(1) }
+      : { dailyCalls: 1, dailyCallsDate: today }),
+  };
 
   await ref.update(updateData);
 
