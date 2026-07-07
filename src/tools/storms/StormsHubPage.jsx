@@ -309,6 +309,7 @@ function ManagerView({ role, uid }) {
 
   const [formStorm, setFormStorm] = useState(undefined); // undefined = closed, null = new, object = editing
   const [postsStorm, setPostsStorm] = useState(null);
+  const [postsJustCreated, setPostsJustCreated] = useState(false);
   const [filter, setFilter] = useState("all");
 
   useEffect(() => { load(); }, []);
@@ -409,7 +410,7 @@ function ManagerView({ role, uid }) {
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <PostCountBadge storm={storm} />
                   <StatusControl storm={storm} role={role} onChange={(status) => handleStatusChange(storm, status)} />
-                  <ManageStormMenu onCard={() => setFormStorm(storm)} onPosts={() => setPostsStorm(storm)} />
+                  <ManageStormMenu onCard={() => setFormStorm(storm)} onPosts={() => { setPostsJustCreated(false); setPostsStorm(storm); }} />
                   {canDelete(role) && <ActionBtn onClick={() => handleDelete(storm)} label="Delete" danger />}
                 </div>
               </div>
@@ -432,12 +433,12 @@ function ManagerView({ role, uid }) {
             // its posts rather than leaving the admin to hunt for the button.
             if (wasNew && newStormId) {
               const created = fresh.find(s => s.id === newStormId);
-              if (created) setPostsStorm(created);
+              if (created) { setPostsJustCreated(true); setPostsStorm(created); }
             }
           }}
         />
       )}
-      {postsStorm && <StormPostsPanel storm={postsStorm} onClose={() => setPostsStorm(null)} />}
+      {postsStorm && <StormPostsPanel storm={postsStorm} justCreated={postsJustCreated} onClose={() => { setPostsStorm(null); setPostsJustCreated(false); }} />}
     </>
   );
 }
@@ -452,6 +453,7 @@ function UserView({ role, uid }) {
   const [openStormId, setOpenStormId] = useState(null);
   const [formStorm, setFormStorm] = useState(undefined);
   const [postsStorm, setPostsStorm] = useState(null);
+  const [postsJustCreated, setPostsJustCreated] = useState(false);
   const [notif, setNotif] = useState(null);
 
   useEffect(() => { load(); }, []);
@@ -513,7 +515,7 @@ function UserView({ role, uid }) {
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
                 <PostCountBadge storm={storm} />
                 <StatusControl storm={storm} role={role} onChange={(status) => handleStatusChange(storm, status)} />
-                <ManageStormMenu onCard={() => setFormStorm(storm)} onPosts={() => setPostsStorm(storm)} />
+                <ManageStormMenu onCard={() => setFormStorm(storm)} onPosts={() => { setPostsJustCreated(false); setPostsStorm(storm); }} />
               </div>
             </div>
           ))}
@@ -546,12 +548,12 @@ function UserView({ role, uid }) {
             setAllStorms(fresh);
             if (wasNew && newStormId) {
               const created = fresh.find(s => s.id === newStormId);
-              if (created) setPostsStorm(created);
+              if (created) { setPostsJustCreated(true); setPostsStorm(created); }
             }
           }}
         />
       )}
-      {postsStorm && <StormPostsPanel storm={postsStorm} onClose={() => setPostsStorm(null)} />}
+      {postsStorm && <StormPostsPanel storm={postsStorm} justCreated={postsJustCreated} onClose={() => { setPostsStorm(null); setPostsJustCreated(false); }} />}
     </>
   );
 }
