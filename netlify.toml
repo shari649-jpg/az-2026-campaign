@@ -14,6 +14,9 @@
 [functions."generate-rebuttal"]
   timeout = 26
 
+[functions."generate-storm-text"]
+  timeout = 26
+
 [functions."rapid-response"]
   timeout = 26
 
