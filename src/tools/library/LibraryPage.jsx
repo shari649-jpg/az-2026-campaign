@@ -26,6 +26,14 @@ const TOOL_META = {
   "rapid-response":  { label: "Rapid Response",     color: TEAL,   emoji: "📡", path: "/rapid-response" },
 };
 
+// Message Machine's own PLATFORMS array (with abbr/colors) isn't exported for
+// reuse, so this is just a lightweight label map for the preview modal —
+// good enough to label a read-only text block, not worth a shared import for.
+const PLATFORM_LABELS = {
+  facebook: "Facebook", instagram: "Instagram", threads: "Threads",
+  bluesky: "BlueSky", twitter: "Twitter / X", tiktok: "TikTok",
+};
+
 export default function LibraryPage() {
   const [campaigns,  setCampaigns]  = useState([]);
   const [rrArticles, setRrArticles] = useState([]);
@@ -34,6 +42,7 @@ export default function LibraryPage() {
   const [notif,      setNotif]      = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [page,       setPage]       = useState(1);
+  const [previewCampaign, setPreviewCampaign] = useState(null);
 
   // Return to top whenever the pagination page changes (the inline smooth-scroll
   // on the buttons could be interrupted by the re-render; this is authoritative).
@@ -269,6 +278,7 @@ export default function LibraryPage() {
                       )}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+                      <button onClick={() => setPreviewCampaign(c)} style={btnStyle(TEAL, "#fff")}>Preview</button>
                       <button onClick={() => loadCampaign(c)} style={btnStyle("#fff", TEAL)}>Load →</button>
                       {deletable
                         ? <button onClick={() => handleDeleteCampaign(c.id, c)} style={btnStyle(RED)}>Delete</button>
@@ -350,6 +360,77 @@ export default function LibraryPage() {
         )}
 
       </div>
+
+      {/* PREVIEW MODAL */}
+      {previewCampaign && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={e => { if (e.target === e.currentTarget) setPreviewCampaign(null); }}>
+          <div style={{ background: BG, borderRadius: 14, padding: 30, maxWidth: 620, width: "100%", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: (TOOL_META[previewCampaign.tool] || {}).color || CHARCOAL, marginBottom: 4 }}>
+                  {(TOOL_META[previewCampaign.tool] || {}).emoji} {(TOOL_META[previewCampaign.tool] || {}).label || previewCampaign.tool}
+                </div>
+                <h3 style={{ fontSize: 21, fontWeight: 800, color: CHARCOAL, margin: 0 }}>{previewCampaign.name || "Untitled Campaign"}</h3>
+              </div>
+              <button onClick={() => setPreviewCampaign(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#999", flexShrink: 0 }}>✕</button>
+            </div>
+
+            {previewCampaign.tool === "message-machine" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {previewCampaign.formData?.issue && (
+                  <div>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>Issue / Content</div>
+                    <p style={{ fontSize: 14.5, color: CHARCOAL, whiteSpace: "pre-wrap", margin: 0 }}>{previewCampaign.formData.issue}</p>
+                  </div>
+                )}
+                {previewCampaign.formData?.focalPoint && (
+                  <div>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>Focal Point</div>
+                    <p style={{ fontSize: 14.5, color: CHARCOAL, whiteSpace: "pre-wrap", margin: 0 }}>{previewCampaign.formData.focalPoint}</p>
+                  </div>
+                )}
+                {Object.entries(previewCampaign.messages || {}).map(([pid, text]) => (
+                  <div key={pid}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: TURQUOISE, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>
+                      {PLATFORM_LABELS[pid] || pid}
+                    </div>
+                    <p style={{ fontSize: 14.5, color: CHARCOAL, whiteSpace: "pre-wrap", margin: 0, background: "#f7f7f5", borderRadius: 8, padding: "10px 14px" }}>{text}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {previewCampaign.tool === "rebuttal" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {previewCampaign.narrative && (
+                  <div>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>False Narrative</div>
+                    <p style={{ fontSize: 14.5, color: CHARCOAL, whiteSpace: "pre-wrap", margin: 0 }}>{previewCampaign.narrative}</p>
+                  </div>
+                )}
+                {(previewCampaign.profile || previewCampaign.tone) && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {previewCampaign.profile && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{previewCampaign.profile}</span>}
+                    {previewCampaign.tone && <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", background: "#eee", borderRadius: 12 }}>{previewCampaign.tone}</span>}
+                  </div>
+                )}
+                {previewCampaign.output && (
+                  <div>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>Generated Campaign</div>
+                    <p style={{ fontSize: 13.5, color: CHARCOAL, whiteSpace: "pre-wrap", margin: 0, background: "#f7f7f5", borderRadius: 8, padding: "12px 16px", lineHeight: 1.6 }}>{previewCampaign.output}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
+              <button onClick={() => { loadCampaign(previewCampaign); setPreviewCampaign(null); }} style={{ ...btnStyle("#fff", TEAL), flex: 1 }}>Load →</button>
+              <button onClick={() => setPreviewCampaign(null)} style={{ ...btnStyle(TEAL, "#fff"), flex: 1 }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
