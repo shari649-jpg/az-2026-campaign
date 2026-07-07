@@ -827,7 +827,11 @@ export default function RapidResponseReader() {
                   🚦 Daily limit reached
                 </p>
                 <p style={{ fontSize: 14, color: B.textMute }}>
-                  You've used all your AI calls for today. Your limit resets at midnight UTC. Contact your coalition administrator if you need more access.
+                  You've used all your AI calls for today. Your limit resets at midnight UTC.{" "}
+                  <a href="mailto:info@arizonacoalition.net?subject=Daily%20AI%20limit%20reached" style={{ color: B.text, fontWeight: 700, textDecoration: "underline" }}>
+                    Contact your coalition administrator
+                  </a>{" "}
+                  if you need more access.
                 </p>
               </div>
             )}
