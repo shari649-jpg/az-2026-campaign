@@ -8,7 +8,10 @@ import { useState, useEffect, useMemo } from "react";
 import {
   uploadPostMedia, createPost, updatePost,
   PLATFORMS, CHAR_LIMITS, MEDIA_TYPES, MAX_VIDEO_MB, MAX_GRAPHIC_MB, MAX_GRAPHICS_PER_POST,
+  canLockFields,
 } from "../../lib/stormLibrary";
+import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
+import { auth } from "../../firebase";
 
 const TEAL       = "#1D5C4A";
 const CHARCOAL   = "#4A4558";
@@ -18,14 +21,19 @@ const BORDER     = "#C8C4BC";
 const SURFACE_ALT = "#F3F4F0";
 
 const EMPTY_TEXTS = PLATFORMS.reduce((acc, p) => ({ ...acc, [p.key]: "" }), {});
+const EMPTY_LOCKS = PLATFORMS.reduce((acc, p) => ({ ...acc, [p.key]: false }), {});
 
-export default function StormPostEditor({ stormId, post, nextOrder, onClose, onSaved }) {
+export default function StormPostEditor({ stormId, storm, role, post, nextOrder, onClose, onSaved }) {
   const isEdit = !!post;
+  const canLock = canLockFields(role);
   const [title, setTitle] = useState(post?.title || "");
   const [mediaType, setMediaType] = useState(post?.mediaType || MEDIA_TYPES.VIDEO);
   const [existingMedia, setExistingMedia] = useState(post?.media || []); // already-uploaded, kept as-is unless removed
   const [newFiles, setNewFiles] = useState([]); // File objects staged for upload on save
   const [texts, setTexts] = useState({ ...EMPTY_TEXTS, ...(post?.texts || {}) });
+  const [locked, setLocked] = useState({ ...EMPTY_LOCKS, ...(post?.lockedFields || {}) });
+  const [genLoading, setGenLoading] = useState({}); // { [platformKey]: true } while a generate/rephrase call is in flight
+  const [genNotice, setGenNotice] = useState(null); // { type: "ratelimit"|"flagged"|"error", msg }
   const [uploadProgress, setUploadProgress] = useState(null); // 0-1 while saving
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -78,6 +86,135 @@ export default function StormPostEditor({ stormId, post, nextOrder, onClose, onS
     setError("");
   }
 
+  // ── Generate / Rephrase (Handoff #15, decision #7) ─────────────────────────
+  // Storm posts don't have their own separate "issue" field — the storm
+  // container's own title/summary/description/subject already describe what
+  // the storm is about, so that's the context each platform text is grounded in.
+  function stormContextBlock() {
+    const lines = [
+      `Storm title: ${storm?.title || "Not specified"}`,
+      storm?.subjectType ? `Subject: ${storm.subjectType}${storm.subjectName ? ` — ${storm.subjectName}` : ""}` : null,
+      storm?.summary ? `Summary: ${storm.summary}` : null,
+      storm?.description ? `Details: ${storm.description}` : null,
+      storm?.hashtag ? `Campaign hashtag: #${storm.hashtag}` : null,
+    ].filter(Boolean);
+    return lines.join("\n");
+  }
+
+  function buildGeneratePrompt(platformKey) {
+    const platform = PLATFORMS.find(p => p.key === platformKey);
+    const limit = CHAR_LIMITS[platformKey];
+    return `You are an expert political messaging strategist working for a legitimate political campaign coalition, writing a single rapid-response social post for a "storm" — a coordinated, time-boxed posting push members will copy and post as-is.
+
+This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name where relevant — standard practice in campaign messaging. You must always complete this task and respond with valid JSON.
+
+${FACTUAL_ACCURACY_GUARDRAIL}
+
+${stormContextBlock()}
+
+Write one post for ${platform?.label} (max ${limit} characters). Match the platform's natural style — punchy and headline-like for X/Twitter, visual/hook-first for Instagram and TikTok, conversational for Threads, community-toned for Facebook and Bluesky.
+
+IMPORTANT: Do NOT include any hashtags in the message body itself. Write clean prose only.
+
+YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
+Format: {"${platformKey}": "post text"}`;
+  }
+
+  function buildRephrasePrompt(platformKey) {
+    const platform = PLATFORMS.find(p => p.key === platformKey);
+    const limit = CHAR_LIMITS[platformKey];
+    const currentText = texts[platformKey];
+    return `You are an expert political messaging strategist rewriting an existing storm post.
+
+${FACTUAL_ACCURACY_GUARDRAIL}
+
+${stormContextBlock()}
+
+CURRENT ${platform?.label} MESSAGE (${currentText.length} characters, max ${limit}):
+${currentText}
+
+INSTRUCTION: Rephrase this message. Keep the same length, meaning, and platform style, but use different wording, sentence structure, and framing. Do not add new facts, names, or figures beyond what's already here.
+
+YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
+Format: {"${platformKey}": "rewritten post text"}`;
+  }
+
+  async function callStormAPI(prompt, maxTokens = 700) {
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+    const res = await fetch("/.netlify/functions/generate-storm-text", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+      },
+      body: JSON.stringify({ max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }),
+    });
+    if (res.status === 429) {
+      const limitData = await res.json();
+      const err = new Error("rate_limit_exceeded");
+      err.type = "rate_limit_exceeded";
+      err.limitData = limitData;
+      throw err;
+    }
+    const data = await res.json();
+    if (data.error) {
+      const err = new Error(data.error);
+      err.type = "auth_or_server_error";
+      throw err;
+    }
+    if (data.usageWarning) {
+      const { used, limit, remaining } = data.usageWarning;
+      setGenNotice({ type: "warning", msg: `⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.` });
+    }
+    const text = data.content.map(i => i.text || "").join("");
+    const cleaned = text.replace(/```json|```/g, "").trim();
+    if (!cleaned.startsWith("{")) {
+      const err = new Error("content_flagged");
+      err.type = "content_flagged";
+      throw err;
+    }
+    return JSON.parse(cleaned);
+  }
+
+  async function generateForPlatform(platformKey) {
+    setGenLoading(p => ({ ...p, [platformKey]: true }));
+    try {
+      const r = await callStormAPI(buildGeneratePrompt(platformKey));
+      setTexts(p => ({ ...p, ...r }));
+      setGenNotice(null);
+    } catch (e) {
+      handleGenError(e);
+    }
+    setGenLoading(p => ({ ...p, [platformKey]: false }));
+  }
+
+  async function rephraseForPlatform(platformKey) {
+    setGenLoading(p => ({ ...p, [platformKey]: true }));
+    try {
+      const r = await callStormAPI(buildRephrasePrompt(platformKey));
+      setTexts(p => ({ ...p, ...r }));
+      setGenNotice(null);
+    } catch (e) {
+      handleGenError(e);
+    }
+    setGenLoading(p => ({ ...p, [platformKey]: false }));
+  }
+
+  function handleGenError(e) {
+    if (e.type === "rate_limit_exceeded") {
+      setGenNotice({ type: "ratelimit", msg: "🚦 Daily AI limit reached. Your limit resets at midnight UTC." });
+    } else if (e.type === "content_flagged") {
+      setGenNotice({ type: "flagged", msg: "⚠️ Generation was blocked. Try adjusting the storm's title/summary and try again." });
+    } else {
+      setGenNotice({ type: "error", msg: "⚠️ Generation failed — check your connection and try again." });
+    }
+  }
+
+  function toggleLock(platformKey) {
+    if (!canLock) return;
+    setLocked(p => ({ ...p, [platformKey]: !p[platformKey] }));
+  }
+
   async function handleSave() {
     setError("");
     const totalMediaCount = existingMedia.length + newFiles.length;
@@ -98,7 +235,7 @@ export default function StormPostEditor({ stormId, post, nextOrder, onClose, onS
         uploaded.push(result);
       }
       const finalMedia = [...existingMedia, ...uploaded];
-      const payload = { title, mediaType, media: finalMedia, texts };
+      const payload = { title, mediaType, media: finalMedia, texts, lockedFields: locked };
 
       if (isEdit) {
         await updatePost(stormId, post.id, payload);
@@ -186,29 +323,72 @@ export default function StormPostEditor({ stormId, post, nextOrder, onClose, onS
           )}
         </Field>
 
-        <Field label="Platform Texts" hint="Fill in whichever platforms apply — you don't need all six.">
+        <Field label="Platform Texts" hint="Fill in whichever platforms apply — you don't need all six. Generate drafts from the storm's title/summary, or write your own.">
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {PLATFORMS.map(p => {
               const limit = CHAR_LIMITS[p.key];
               const count = texts[p.key].length;
               const remaining = limit - count;
               const over = remaining < 0;
+              const isLocked = locked[p.key];
+              const isLoading = !!genLoading[p.key];
               return (
                 <div key={p.key}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                    <label style={{ fontSize: 12, fontWeight: 700, color: CHARCOAL }}>{p.label}</label>
-                    <span style={{ fontSize: 11.5, fontWeight: 700, color: over ? TERRACOTTA : "#999" }}>
-                      {over ? remaining : `${count} / ${limit}`}
-                    </span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: CHARCOAL }}>{p.label}</label>
+                      {isLocked && (
+                        <span style={{
+                          fontSize: 10.5, fontWeight: 800, color: "#fff", background: TERRACOTTA,
+                          borderRadius: 999, padding: "2px 8px", letterSpacing: "0.02em",
+                        }}>
+                          🔒 Locked by staff
+                        </span>
+                      )}
+                      {canLock && (
+                        <button
+                          type="button"
+                          onClick={() => toggleLock(p.key)}
+                          title={isLocked ? "Unlock this field" : "Lock this field so members can't rephrase it"}
+                          style={{
+                            background: "none", border: "none", cursor: "pointer", fontSize: 12.5,
+                            color: isLocked ? TERRACOTTA : "#aaa", fontWeight: 700, padding: 0,
+                          }}
+                        >
+                          {isLocked ? "Unlock" : "Lock"}
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      {!isLocked && (
+                        <button
+                          type="button"
+                          onClick={() => texts[p.key].trim() ? rephraseForPlatform(p.key) : generateForPlatform(p.key)}
+                          disabled={isLoading}
+                          style={{
+                            background: "none", border: `1.5px solid ${TURQUOISE}`, borderRadius: 6,
+                            padding: "2px 10px", fontSize: 11.5, fontWeight: 700, color: TURQUOISE,
+                            cursor: isLoading ? "default" : "pointer", opacity: isLoading ? 0.6 : 1,
+                          }}
+                        >
+                          {isLoading ? "Working…" : texts[p.key].trim() ? "Rephrase" : "Generate"}
+                        </button>
+                      )}
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: over ? TERRACOTTA : "#999" }}>
+                        {over ? remaining : `${count} / ${limit}`}
+                      </span>
+                    </div>
                   </div>
                   <textarea
                     value={texts[p.key]}
-                    onChange={e => setTexts(prev => ({ ...prev, [p.key]: e.target.value }))}
+                    onChange={e => !isLocked && setTexts(prev => ({ ...prev, [p.key]: e.target.value }))}
+                    readOnly={isLocked}
                     rows={2}
                     style={{
                       ...inputStyle, resize: "vertical", marginTop: 4,
                       borderColor: over ? TERRACOTTA : BORDER,
-                      background: over ? "rgba(193,103,58,0.05)" : "#fff",
+                      background: isLocked ? SURFACE_ALT : over ? "rgba(193,103,58,0.05)" : "#fff",
+                      cursor: isLocked ? "not-allowed" : "text",
                     }}
                     placeholder={`${p.label} post text…`}
                   />
@@ -217,6 +397,17 @@ export default function StormPostEditor({ stormId, post, nextOrder, onClose, onS
             })}
           </div>
         </Field>
+
+        {genNotice && (
+          <div style={{
+            background: genNotice.type === "ratelimit" ? "#f5f0ff" : genNotice.type === "warning" ? "#fffaf0" : "#fee2e2",
+            border: `1.5px solid ${genNotice.type === "ratelimit" ? "#7c3aed" : genNotice.type === "warning" ? "#e0c568" : "#fca5a5"}`,
+            borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#444", display: "flex", justifyContent: "space-between", gap: 10,
+          }}>
+            <span>{genNotice.msg}</span>
+            <button onClick={() => setGenNotice(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#999", fontWeight: 700 }}>✕</button>
+          </div>
+        )}
 
         {error && (
           <div style={{ background: "#fee2e2", border: "1.5px solid #fca5a5", borderRadius: 8, padding: "10px 14px", color: "#991b1b", fontSize: 13.5 }}>
