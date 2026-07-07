@@ -4,7 +4,7 @@
 // Opened from a storm card in StormsHubPage.
 
 import { useState, useEffect } from "react";
-import { loadPosts, deletePost, MEDIA_TYPES } from "../../lib/stormLibrary";
+import { loadPosts, deletePost, MEDIA_TYPES, PUSH_TO_STORM_KEY, PUSH_TO_STORM_TTL_MS } from "../../lib/stormLibrary";
 import { useAuth } from "../../context/AuthContext";
 import StormPostEditor from "./StormPostEditor";
 
@@ -14,14 +14,35 @@ const TERRACOTTA = "#C1673A";
 const BORDER     = "#C8C4BC";
 const SURFACE_ALT = "#F3F4F0";
 
-export default function StormPostsPanel({ storm, onClose }) {
+export default function StormPostsPanel({ storm, justCreated, onClose }) {
   const { role } = useAuth();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
+  const [pendingPush, setPendingPush] = useState(null); // { texts, title } staged from Message Machine
 
   useEffect(() => { load(); }, []);
+
+  // Consume a Push-to-Storm payload — but only right after THIS storm was
+  // just created (the auto-jump-to-Posts moment), never on an ordinary open
+  // of an existing storm's Posts panel. That's what keeps a pending push
+  // from silently attaching itself to some unrelated storm someone opens
+  // later in the day.
+  useEffect(() => {
+    if (!justCreated) return;
+    try {
+      const raw = localStorage.getItem(PUSH_TO_STORM_KEY);
+      if (!raw) return;
+      localStorage.removeItem(PUSH_TO_STORM_KEY); // consumed once, win or lose
+      const payload = JSON.parse(raw);
+      const age = Date.now() - new Date(payload.pushedAt).getTime();
+      if (!(age >= 0 && age <= PUSH_TO_STORM_TTL_MS)) return; // stale — drop it silently
+      setPendingPush(payload);
+      setEditingPost(null);
+      setEditorOpen(true);
+    } catch { /* malformed payload — ignore */ }
+  }, [justCreated]);
 
   async function load() {
     setLoading(true);
@@ -29,8 +50,8 @@ export default function StormPostsPanel({ storm, onClose }) {
     finally { setLoading(false); }
   }
 
-  function openNew() { setEditingPost(null); setEditorOpen(true); }
-  function openEdit(post) { setEditingPost(post); setEditorOpen(true); }
+  function openNew() { setEditingPost(null); setPendingPush(null); setEditorOpen(true); }
+  function openEdit(post) { setEditingPost(post); setPendingPush(null); setEditorOpen(true); }
 
   async function handleDelete(post) {
     if (!window.confirm(`Delete post "${post.title || "Untitled"}"? This removes its media permanently.`)) return;
@@ -40,6 +61,7 @@ export default function StormPostsPanel({ storm, onClose }) {
 
   async function handleSaved() {
     setEditorOpen(false);
+    setPendingPush(null);
     await load();
   }
 
@@ -122,7 +144,9 @@ export default function StormPostsPanel({ storm, onClose }) {
           role={role}
           post={editingPost}
           nextOrder={posts.length}
-          onClose={() => setEditorOpen(false)}
+          initialTexts={pendingPush?.texts}
+          initialTitle={pendingPush?.title}
+          onClose={() => { setEditorOpen(false); setPendingPush(null); }}
           onSaved={handleSaved}
         />
       )}
