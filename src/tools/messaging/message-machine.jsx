@@ -565,6 +565,7 @@ ${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
+${formData.focalPoint ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.` : ""}
 Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
 Style: ${styleLabel}
@@ -601,6 +602,7 @@ ${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
+${formData.focalPoint ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.` : ""}
 Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
 ${formData.county ? `County Voice: ${formData.county === RURAL_MULTI_COUNTY ? RURAL_MULTI_COUNTY_LABEL : `${formData.county} County`}\n` : ""}Style: ${styleLabel}
@@ -653,6 +655,7 @@ ${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
+${formData.focalPoint ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.` : ""}
 Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
 Style: ${styleLabel}
@@ -732,6 +735,7 @@ Context:
 ${modifierLine}
 ${perspLine}
 - Original issue: ${formData.issue}
+${formData.focalPoint ? `- Focal Point (mandatory — do not let ${regenOpt === "shorten" ? "shortening" : regenOpt === "expand" ? "expanding" : "rephrasing"} drop or dilute this): ${formData.focalPoint}` : ""}
 
 IMPORTANT: Do NOT include hashtags. Write clean prose only.
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation.
