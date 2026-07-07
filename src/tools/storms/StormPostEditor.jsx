@@ -23,14 +23,14 @@ const SURFACE_ALT = "#F3F4F0";
 const EMPTY_TEXTS = PLATFORMS.reduce((acc, p) => ({ ...acc, [p.key]: "" }), {});
 const EMPTY_LOCKS = PLATFORMS.reduce((acc, p) => ({ ...acc, [p.key]: false }), {});
 
-export default function StormPostEditor({ stormId, storm, role, post, nextOrder, onClose, onSaved }) {
+export default function StormPostEditor({ stormId, storm, role, post, nextOrder, initialTexts, initialTitle, onClose, onSaved }) {
   const isEdit = !!post;
   const canLock = canLockFields(role);
-  const [title, setTitle] = useState(post?.title || "");
+  const [title, setTitle] = useState(post?.title || initialTitle || "");
   const [mediaType, setMediaType] = useState(post?.mediaType || MEDIA_TYPES.VIDEO);
   const [existingMedia, setExistingMedia] = useState(post?.media || []); // already-uploaded, kept as-is unless removed
   const [newFiles, setNewFiles] = useState([]); // File objects staged for upload on save
-  const [texts, setTexts] = useState({ ...EMPTY_TEXTS, ...(post?.texts || {}) });
+  const [texts, setTexts] = useState({ ...EMPTY_TEXTS, ...(post?.texts || initialTexts || {}) });
   const [locked, setLocked] = useState({ ...EMPTY_LOCKS, ...(post?.lockedFields || {}) });
   const [genLoading, setGenLoading] = useState({}); // { [platformKey]: true } while a generate/rephrase call is in flight
   const [genNotice, setGenNotice] = useState(null); // { type: "ratelimit"|"flagged"|"error", msg }
@@ -264,6 +264,12 @@ Format: {"${platformKey}": "rewritten post text"}`;
           </h2>
           <button onClick={() => !saving && onClose()} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#999" }}>✕</button>
         </div>
+
+        {!isEdit && initialTexts && (
+          <div style={{ background: "rgba(62,207,178,0.12)", border: `1.5px solid ${TURQUOISE}`, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: TEAL }}>
+            ⛈️ Platform texts pre-filled from Message Machine — add media to finish this post.
+          </div>
+        )}
 
         <Field label="Post Title" hint="Internal label only — not shown to members.">
           <input value={title} onChange={e => setTitle(e.target.value)} style={inputStyle} placeholder="e.g. Clip 1 — Town hall walkout" />
