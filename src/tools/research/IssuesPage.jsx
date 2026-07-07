@@ -90,7 +90,10 @@ export default function IssuesPage() {
       sourcePublication: 'AZ 2026 Issues Research',
       issueText,
       county: null, // Issues are not reliably tied to a single county — "affected" is free text
-      focalPoint: '',
+      // Was hardcoded blank — messaging_angle already appears inside issueText's
+      // general blob, but never got surfaced as its own Focal Point, so Message
+      // Machine's prompt never gave it the distinct emphasis that field is for.
+      focalPoint: issue.messaging_angle || '',
       pushedAt: new Date().toISOString(),
     };
     const ok = localStorageSafe('rr_pending_article', payload);
