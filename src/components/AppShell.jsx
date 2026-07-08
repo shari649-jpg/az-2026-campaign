@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import ConversationCoach from "./ConversationCoach";
+import { loadActiveAnnouncement } from "../lib/announcementLibrary";
 
 const NAV_ITEMS = [
   { path: "/",               short: "Home" },
@@ -82,8 +83,26 @@ export default function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const { user, profile, logout, isAdmin } = useAuth();
+  const { user, profile, logout, isAdmin, isManager } = useAuth();
   const navigate = useNavigate();
+
+  // ── Scheduled header announcement (start/end date-time banner) ──
+  // Polled rather than realtime (onSnapshot) — consistent with the rest of
+  // the app's manual-fetch style — so a scheduled message can start/stop
+  // showing without anyone reloading the page, just up to a minute late.
+  const [activeAnnouncement, setActiveAnnouncement] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const a = await loadActiveAnnouncement();
+        if (!cancelled) setActiveAnnouncement(a);
+      } catch {}
+    };
+    check();
+    const interval = setInterval(check, 60000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   const displayName = profile?.fullName || user?.displayName || user?.email || "User";
   const initials = displayName
@@ -139,6 +158,16 @@ export default function AppShell() {
         }
         .mobile-nav-link:hover { background: var(--teal-light); color: var(--teal); text-decoration: none; }
         .mobile-nav-link.active { color: var(--teal); background: var(--teal-light); }
+        @keyframes tickerScroll {
+          from { transform: translateX(0); }
+          to   { transform: translateX(-100%); }
+        }
+        .ticker-track {
+          display: inline-block;
+          padding-left: 100%;
+          animation: tickerScroll 22s linear infinite;
+          white-space: nowrap;
+        }
         .hamburger {
           display: none;
           flex-direction: column;
@@ -366,6 +395,18 @@ export default function AppShell() {
                         {profile?.role ?? "user"}
                       </div>
                     </div>
+                    {/* Announcements link (Admin + Manager) */}
+                    {isManager && (
+                      <NavLink
+                        to="/announcements"
+                        onClick={() => setUserMenuOpen(false)}
+                        style={{ display: "block", padding: "12px 16px", fontSize: 14, fontWeight: 700, color: "var(--teal)", textDecoration: "none", borderBottom: "1px solid var(--surface-alt)", background: "none" }}
+                        onMouseEnter={e => e.currentTarget.style.background = "var(--teal-light)"}
+                        onMouseLeave={e => e.currentTarget.style.background = "none"}
+                      >
+                        📢 Announcements
+                      </NavLink>
+                    )}
                     {/* Admin link */}
                     {isAdmin && (
                       <NavLink
@@ -378,7 +419,7 @@ export default function AppShell() {
                         ⚙️ Admin
                       </NavLink>
                     )}
-                  {/* Profile link */}
+                    {/* Profile link */}
                     <NavLink
                       to="/profile"
                       onClick={() => setUserMenuOpen(false)}
@@ -426,6 +467,27 @@ export default function AppShell() {
             </button>
           </div>
         </div>
+
+        {/* Scheduled announcement ticker — only rendered while one is active */}
+        {activeAnnouncement && (
+          <div style={{
+            background: "var(--gold)",
+            borderTop: "1px solid rgba(0,0,0,0.08)",
+            overflow: "hidden",
+            height: 30,
+            display: "flex",
+            alignItems: "center",
+          }}>
+            <div className="ticker-track" style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: "var(--teal)",
+              letterSpacing: "0.02em",
+            }}>
+              📢 {activeAnnouncement.text}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Mobile menu */}
@@ -463,6 +525,16 @@ export default function AppShell() {
           </NavLink>
         ))}
 
+        {/* Mobile announcements link (Admin + Manager) */}
+        {isManager && (
+          <NavLink
+            to="/announcements"
+            onClick={() => setMenuOpen(false)}
+            className={({ isActive }) => "mobile-nav-link" + (isActive ? " active" : "")}
+          >
+            📢 Announcements
+          </NavLink>
+        )}
         {/* Mobile admin link */}
         {isAdmin && (
           <NavLink
