@@ -8,6 +8,7 @@ import RegisterPage from "./pages/RegisterPage";
 import WaitlistPage from "./pages/WaitlistPage";
 import AdminPage from "./pages/AdminPage";
 import ProfilePage from "./pages/ProfilePage";
+import AnnouncementsPage from "./pages/AnnouncementsPage";
 import ResearchPage from "./tools/research/ResearchPage";
 import MessagingPage from "./tools/messaging/MessagingPage";
 import RebuttalPage from "./tools/rebuttal/RebuttalPage";
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="/media"           element={<MediaPage />} />
             <Route path="/admin"           element={<AdminPage />} />
             <Route path="/profile"         element={<ProfilePage />} />
+            <Route path="/announcements"   element={<AnnouncementsPage />} />
             <Route path="/quick-start"     element={<QuickStartPage />} />
             <Route path="/misinfo-monitor" element={<MisinfoMonitorPage />} />
             <Route path="/storms"          element={<StormsHubPage />} />
