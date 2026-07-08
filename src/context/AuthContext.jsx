@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
@@ -64,12 +64,28 @@ export function AuthProvider({ children }) {
 
   const logout = () => signOut(auth);
 
+  // Re-pulls the Firestore user doc for whoever is currently signed in.
+  // Added for the Profile page (Handoff #16 punch list): editing your own
+  // name/handles/org there writes straight to Firestore, but this context's
+  // `profile` was otherwise only ever populated once, at sign-in, via
+  // onAuthStateChanged above — without this, a saved edit wouldn't show up
+  // in the nav bar's avatar/initials/display name until the next full
+  // sign-in. Exposed so any component can call it after a Firestore write
+  // to its own user doc.
+  const refreshProfile = useCallback(async () => {
+    if (!auth.currentUser) return;
+    try {
+      const snap = await getDoc(doc(db, "users", auth.currentUser.uid));
+      setProfile(snap.exists() ? snap.data() : null);
+    } catch {}
+  }, []);
+
   const role = profile?.role ?? "user";
   const isManager = role === "manager" || role === "administrator";
   const isAdmin = role === "administrator";
 
   return (
-    <AuthContext.Provider value={{ user, profile, role, isManager, isAdmin, loading, logout }}>
+    <AuthContext.Provider value={{ user, profile, role, isManager, isAdmin, loading, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
