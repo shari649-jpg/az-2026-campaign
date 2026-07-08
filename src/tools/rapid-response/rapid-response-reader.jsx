@@ -489,6 +489,12 @@ export default function RapidResponseReader() {
   const [pushed, setPushed]         = useState(false);
   const [notif, setNotif]           = useState(null);
 
+  // ── Search tab (Handoff #16 punch list) ──
+  const [searchQuery, setSearchQuery]     = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError]     = useState(null); // null | "auth" | "ratelimit" | "failed"
+  const [searchResults, setSearchResults] = useState(null); // null (not yet searched) | array
+
   useEffect(() => {
     loadAll();
     // Check if Library pushed a saved article to load
@@ -622,6 +628,50 @@ export default function RapidResponseReader() {
     }
   };
 
+  // ── Search the web for an article, then hand the pick to fetchAndAnalyze ──
+  const runSearch = async (q) => {
+    if (!q.trim()) return;
+    setSearchLoading(true);
+    setSearchError(null);
+    setSearchResults(null);
+    try {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+      const res = await fetch("/.netlify/functions/rapid-response", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({ action: "search", query: q.trim() }),
+      });
+
+      if (res.status === 401 || res.status === 403) { setSearchLoading(false); setSearchError("auth"); return; }
+      if (res.status === 429) { setSearchLoading(false); setSearchError("ratelimit"); return; }
+      if (!res.ok) { setSearchLoading(false); setSearchError("failed"); return; }
+
+      const data = await res.json();
+      if (data.usageWarning) {
+        const { used, limit, remaining } = data.usageWarning;
+        notify(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.`, "warn");
+      }
+      setSearchResults(Array.isArray(data.results) ? data.results : []);
+    } catch {
+      setSearchError("failed");
+    }
+    setSearchLoading(false);
+  };
+
+  // Selecting a result hands its URL to the existing fetch_and_analyze
+  // pipeline unchanged — Search is just a second way to arrive at a URL,
+  // not a second analysis path.
+  const pickSearchResult = (result) => {
+    if (!result?.url) return;
+    setSearchResults(null);
+    setSearchQuery("");
+    setView("reader");
+    fetchAndAnalyze(result.url);
+  };
+
   // ── Save to library ─────────────────────────────────────────────────────────
   const saveToLibrary = async () => {
     if (!article) return;
@@ -711,6 +761,9 @@ export default function RapidResponseReader() {
             {article && (
               <button onClick={reset} style={{ ...S.btnSmall, marginRight: 8 }}>+ New Article</button>
             )}
+            <button onClick={() => setView("search")} style={tabStyle(view === "search")}>
+              🔎 Search
+            </button>
             <button onClick={() => setView("library")} style={tabStyle(view === "library")}>
               Library ({library.length})
             </button>
@@ -865,6 +918,125 @@ export default function RapidResponseReader() {
                 saved={saved}
                 pushed={pushed}
               />
+            )}
+          </div>
+        )}
+
+        {/* ══════ SEARCH VIEW ══════ */}
+        {view === "search" && (
+          <div style={{ maxWidth: 740, margin: "0 auto" }}>
+            <div style={{ marginBottom: 32 }}>
+              <h2 style={{ fontSize: 34, fontWeight: 700, fontFamily: "'DM Serif Display', Georgia, serif", color: B.teal, marginBottom: 10 }}>
+                Search for an Article
+              </h2>
+              <p style={{ fontSize: 18, color: B.textMid, lineHeight: 1.6 }}>
+                Don't have a link yet? Search the web for recent coverage, then pick a result to analyze.
+              </p>
+            </div>
+
+            <div style={{ ...S.card, marginBottom: 20 }}>
+              <label htmlFor="search-input" style={S.label}>What are you looking for?</label>
+              <div style={{ display: "flex", gap: 10 }}>
+                <input
+                  id="search-input"
+                  type="text"
+                  style={{ ...S.input, flex: 1 }}
+                  placeholder="e.g. Arizona water rights legislation 2026"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && searchQuery.trim() && runSearch(searchQuery)}
+                />
+                <button
+                  onClick={() => runSearch(searchQuery)}
+                  disabled={searchLoading || !searchQuery.trim()}
+                  style={{
+                    ...S.btnPrimary,
+                    opacity: searchLoading || !searchQuery.trim() ? 0.5 : 1,
+                    cursor: searchLoading || !searchQuery.trim() ? "not-allowed" : "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  {searchLoading
+                    ? <><span className="spin" style={S.spinner} /> Searching…</>
+                    : "Search →"
+                  }
+                </button>
+              </div>
+              <p style={{ fontSize: 13, color: B.textMute, marginTop: 10 }}>
+                Picking a result runs it through the same analyzer as pasting a URL directly.
+              </p>
+            </div>
+
+            {searchError === "auth" && (
+              <div style={{ ...S.card, padding: "24px", textAlign: "center" }}>
+                <p style={{ fontSize: 15, fontWeight: 700, color: B.text, marginBottom: 6 }}>
+                  Please sign in to use this tool.
+                </p>
+                <p style={{ fontSize: 14, color: B.textMute }}>
+                  Your session may have expired. Try signing out and back in.
+                </p>
+              </div>
+            )}
+
+            {searchError === "ratelimit" && (
+              <div style={{ ...S.card, padding: "24px", textAlign: "center" }}>
+                <p style={{ fontSize: 15, fontWeight: 700, color: B.text, marginBottom: 6 }}>
+                  🚦 Daily limit reached
+                </p>
+                <p style={{ fontSize: 14, color: B.textMute }}>
+                  You've used all your AI calls for today. Your limit resets at midnight UTC.{" "}
+                  <a href="mailto:info@arizonacoalition.net?subject=Daily%20AI%20limit%20reached" style={{ color: B.text, fontWeight: 700, textDecoration: "underline" }}>
+                    Contact your coalition administrator
+                  </a>{" "}
+                  if you need more access.
+                </p>
+              </div>
+            )}
+
+            {searchError === "failed" && (
+              <div style={{ ...S.card, padding: "24px", textAlign: "center" }}>
+                <p style={{ fontSize: 15, fontWeight: 700, color: B.text, marginBottom: 6 }}>
+                  Couldn't complete that search.
+                </p>
+                <p style={{ fontSize: 14, color: B.textMute }}>Please try again, or try a more specific query.</p>
+              </div>
+            )}
+
+            {searchLoading && (
+              <div style={{ ...S.card, display: "flex", alignItems: "center", gap: 16, padding: "40px 24px" }}>
+                <div style={{ width: 40, height: 40, border: `3px solid ${B.surfaceAlt}`, borderTopColor: B.teal, borderRadius: "50%", flexShrink: 0 }} className="spin" />
+                <div>
+                  <p style={{ fontSize: 17, fontWeight: 700, color: B.text }}>Searching the web…</p>
+                  <p style={{ fontSize: 14, color: B.textMute, marginTop: 4 }}>This usually takes 10–20 seconds</p>
+                </div>
+              </div>
+            )}
+
+            {searchResults && !searchLoading && (
+              searchResults.length === 0 ? (
+                <div style={{ ...S.card, padding: "24px", textAlign: "center" }}>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: B.text }}>No results found.</p>
+                  <p style={{ fontSize: 14, color: B.textMute, marginTop: 4 }}>Try a different or more specific search.</p>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {searchResults.map((r, i) => (
+                    <button
+                      key={i}
+                      onClick={() => pickSearchResult(r)}
+                      style={{ ...S.card, textAlign: "left", cursor: "pointer", display: "block", width: "100%" }}
+                    >
+                      <div style={{ fontSize: 17, fontWeight: 700, color: B.teal, marginBottom: 4 }}>{r.title || "Untitled"}</div>
+                      <div style={{ fontSize: 13, color: B.textMute, marginBottom: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {r.publication && <span>{r.publication}</span>}
+                        {r.date && <span>· {r.date}</span>}
+                      </div>
+                      {r.snippet && <p style={{ fontSize: 15, color: B.textMid, lineHeight: 1.5 }}>{r.snippet}</p>}
+                      <div style={{ fontSize: 12, color: B.textMute, marginTop: 8, wordBreak: "break-all" }}>{r.url}</div>
+                    </button>
+                  ))}
+                </div>
+              )
             )}
           </div>
         )}
