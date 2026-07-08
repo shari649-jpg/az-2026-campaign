@@ -378,6 +378,16 @@ export default function AppShell() {
                         ⚙️ Admin
                       </NavLink>
                     )}
+                  {/* Profile link */}
+                    <NavLink
+                      to="/profile"
+                      onClick={() => setUserMenuOpen(false)}
+                      style={{ display: "block", padding: "12px 16px", fontSize: 14, fontWeight: 700, color: "var(--charcoal)", textDecoration: "none", borderBottom: "1px solid var(--surface-alt)", background: "none" }}
+                      onMouseEnter={e => e.currentTarget.style.background = "var(--teal-light)"}
+                      onMouseLeave={e => e.currentTarget.style.background = "none"}
+                    >
+                      👤 Profile
+                    </NavLink>
                     {/* Sign out */}
                     <button
                       onClick={handleLogout}
@@ -463,6 +473,14 @@ export default function AppShell() {
             ⚙️ Admin
           </NavLink>
         )}
+        {/* Mobile profile link */}
+        <NavLink
+          to="/profile"
+          onClick={() => setMenuOpen(false)}
+          className={({ isActive }) => "mobile-nav-link" + (isActive ? " active" : "")}
+        >
+          👤 Profile
+        </NavLink>
         {/* Mobile user section */}
         <div style={{ borderTop: "2px solid var(--gold)", margin: "4px 0" }} />
         <div style={{ padding: "14px 24px 10px", display: "flex", alignItems: "center", gap: 12 }}>
