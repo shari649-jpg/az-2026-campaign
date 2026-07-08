@@ -45,6 +45,7 @@ function todayUTC() {
  *   result.remaining      - calls remaining
  *   result.warning        - true if >= 75% used (caller should include usageWarning in response)
  *   result.blockedPayload - ready-made 429 response body if blocked
+ *   result.role           - the user's role ("user" | "manager" | "administrator"), for callers that need it without a second Firestore read
  */
 export async function checkAndIncrementRateLimit(app, uid) {
   const db     = admin.firestore(app);
@@ -78,6 +79,7 @@ export async function checkAndIncrementRateLimit(app, uid) {
       limit,
       remaining: 0,
       warning: false,
+      role,
       blockedPayload: {
         error:     "rate_limit_exceeded",
         used:      storedCalls,
@@ -108,6 +110,7 @@ export async function checkAndIncrementRateLimit(app, uid) {
     limit,
     remaining,
     warning,
+    role,
     blockedPayload: null,
   };
 }
