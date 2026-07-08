@@ -445,6 +445,17 @@ export default function App() {
   const [hashtags, setHashtags]     = useState(null);
   const [hashLoading, setHashLoading] = useState(false);
 
+  // ── URL-aware ingestion (Handoff #16 punch list) ──
+  // Lets someone paste a news URL directly into Message Machine instead of
+  // detouring through Rapid Response and pushing back over. Reuses Rapid
+  // Response's own fetch_and_analyze action on the shared rapid-response.mjs
+  // Netlify function — same scrape + SSRF guard + analysis pipeline, same
+  // per-user daily AI-call limit, zero new retrieval code.
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [urlInput, setUrlInput]       = useState("");
+  const [urlFetching, setUrlFetching] = useState(false);
+  const [urlError, setUrlError]       = useState("");
+
   useEffect(() => {
     loadCampaigns();
     // Detect arrival source BEFORE consuming keys
@@ -779,6 +790,66 @@ Format: {"${platformId}": "rewritten message text"}`;
       throw err;
     }
     return JSON.parse(cleaned);
+  };
+
+  // ── URL-aware ingestion: pull an article straight into Issue/Content ──
+  const fetchArticleFromUrl = async (targetUrl) => {
+    if (!targetUrl) return;
+    setUrlError("");
+    setUrlFetching(true);
+    try {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+      const res = await fetch("/.netlify/functions/rapid-response", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({ action: "fetch_and_analyze", url: targetUrl }),
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setUrlError("Please sign in again to fetch articles.");
+        setUrlFetching(false);
+        return;
+      }
+      if (res.status === 429) {
+        setUrlError("Daily AI call limit reached. Resets at midnight UTC.");
+        setUrlFetching(false);
+        return;
+      }
+      if (res.status === 400) {
+        setUrlError("That URL isn't allowed. Double-check it and try again.");
+        setUrlFetching(false);
+        return;
+      }
+      if (res.status === 422) {
+        setUrlError("Couldn't read that page — try pasting the article text into Issue/Content directly instead.");
+        setUrlFetching(false);
+        return;
+      }
+
+      const data = await res.json();
+      if (data.usageWarning) {
+        const { used, limit, remaining } = data.usageWarning;
+        notify(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.`, "warn");
+      }
+      const raw = data.result?.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
+      const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+
+      // Same issueText shape Rapid Response's own "Push to Message Machine"
+      // button builds — keeps the two entry points producing identical output.
+      const issueText = `${parsed.title}\n\n${parsed.summary}\n\nKey Points:\n${(parsed.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join("\n")}\n\nSource: ${targetUrl}`;
+      setFormData(f => ({ ...f, issue: issueText, focalPoint: "" }));
+      setFromResearch(true); // reuses the existing gold "add your focal point" hint
+      setUrlInput("");
+      setShowUrlInput(false);
+      if (genError) setGenError(null);
+      notify("Article loaded into Issue/Content — add a focal point below.");
+    } catch {
+      setUrlError("Couldn't read that page — try pasting the article text into Issue/Content directly instead.");
+    }
+    setUrlFetching(false);
   };
 
   const validate = () => {
@@ -1267,8 +1338,42 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               <section style={S.card}>
                 <label htmlFor="issue" style={S.label}>Issue / Content <span style={{color:T.red}} aria-label="required">*</span></label>
                 <textarea id="issue" rows={6} style={{...S.textarea,resize:"vertical"}}
-                  placeholder="Describe the issue using as little or as much detail as you wish or paste in text. If you'd like to create messaging based on a news article (or anything with a URL), use Rapid Response."
+                  placeholder="Describe the issue using as little or as much detail as you wish, or paste in text. Have a news article instead? Paste its URL below."
                   value={formData.issue} onChange={e=>{ upd("issue",e.target.value); if(genError) setGenError(null); }} />
+
+                <div style={{ marginTop:16, paddingTop:16, borderTop:`1px solid ${T.border}` }}>
+                  {!showUrlInput ? (
+                    <button type="button" onClick={()=>setShowUrlInput(true)}
+                      style={{ background:"none", border:"none", color:T.teal, fontWeight:700, fontSize:15, cursor:"pointer", padding:0, fontFamily:"inherit", textDecoration:"underline" }}>
+                      🔗 Or paste a URL to fetch an article
+                    </button>
+                  ) : (
+                    <div>
+                      <label htmlFor="article-url" style={{...S.label, fontSize:13, marginBottom:8}}>Article URL</label>
+                      <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+                        <input id="article-url" type="url" style={{...S.input, flex:1, minWidth:220}}
+                          placeholder="https://example.com/article"
+                          value={urlInput}
+                          onChange={e=>{ setUrlInput(e.target.value); if(urlError) setUrlError(""); }}
+                          disabled={urlFetching}
+                          onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); fetchArticleFromUrl(urlInput.trim()); } }}
+                        />
+                        <button type="button" onClick={()=>fetchArticleFromUrl(urlInput.trim())}
+                          disabled={urlFetching || !urlInput.trim()}
+                          style={{...S.btnDark, opacity:(urlFetching || !urlInput.trim())?0.6:1, cursor:(urlFetching || !urlInput.trim())?"not-allowed":"pointer"}}>
+                          {urlFetching ? "Fetching…" : "Fetch Article"}
+                        </button>
+                        <button type="button" onClick={()=>{ setShowUrlInput(false); setUrlInput(""); setUrlError(""); }}
+                          style={{ background:"none", border:"none", color:T.textMute, fontSize:14, cursor:"pointer", fontFamily:"inherit" }}>
+                          Cancel
+                        </button>
+                      </div>
+                      {urlError
+                        ? <p style={{...S.hint, color:T.red}}>{urlError}</p>
+                        : <p style={S.hint}>Pulls the article's summary and key points into Issue/Content above — same engine as Rapid Response.</p>}
+                    </div>
+                  )}
+                </div>
               </section>
 
               {/* Focal Point */}
