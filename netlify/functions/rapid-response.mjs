@@ -87,6 +87,29 @@ Format:
   "issueArea": "one of: education/vouchers, utility rates, housing, water, elections, healthcare, economy/jobs, immigration, other"
 }`;
 
+// Search tab (Handoff #16 punch list): a web_search-backed picklist so staff
+// without a URL in hand yet can still find something to analyze, without
+// leaving Rapid Response. Reuses this same function/action-dispatch pattern
+// (fetch_and_analyze / analyze_text already live here) rather than standing
+// up a separate endpoint. Claude both runs the search AND writes the
+// structured picklist itself in one call — Anthropic's web_search tool only
+// returns url/title/page_age/encrypted_content, no snippet or publication
+// name, so those two fields are Claude's own summary of what it found.
+const SEARCH_PROMPT = (query) => `You are a research assistant helping a political campaign staffer find recent news coverage.
+
+Search the web for: ${query}
+
+Identify up to 5 of the most relevant, most recent news articles or reports you find. For each one, note the outlet/publication name, its publication date if you can determine one, and write a one-sentence snippet describing what it covers.
+
+RESPOND ONLY WITH VALID JSON once you are done searching. No markdown, no backticks, no explanation outside the JSON.
+Format:
+{
+  "results": [
+    {"title": "article headline", "url": "https://...", "publication": "outlet name", "date": "date or \"Unknown\"", "snippet": "one sentence describing what the article covers"}
+  ]
+}
+If you find fewer than 5 relevant results, return however many you found. If you find none, return {"results": []}.`;
+
 export default async function (req) {
   if (req.method === "OPTIONS") return new Response("", { status: 200, headers: optionsHeaders(req) });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
@@ -170,6 +193,52 @@ export default async function (req) {
       const analysisData = await analysisRes.json();
       if (usage.warning) analysisData.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
       return new Response(JSON.stringify({ result: analysisData }), { status: 200, headers: corsHeaders(req) });
+    }
+
+    // ── search ──────────────────────────────────────────────────────────────
+    if (action === "search") {
+      const query = (body.query || "").trim();
+      if (!query) {
+        return new Response(JSON.stringify({ error: "missing_query" }), { status: 400, headers: corsHeaders(req) });
+      }
+
+      // Member vs Admin/Manager search depth — how many web searches Claude
+      // may run for this one request, not a separate daily budget (that's
+      // still the shared per-user dailyCalls limit from rateLimitHelper,
+      // already checked above via `usage`).
+      const isPrivileged = usage.role === "administrator" || usage.role === "manager";
+      const maxSearchUses = isPrivileged ? 5 : 3;
+
+      const searchRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-5",
+          max_tokens: 1500,
+          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearchUses }],
+          messages: [{ role: "user", content: SEARCH_PROMPT(query) }],
+        }),
+      });
+
+      const searchData = await searchRes.json();
+      if (searchData.error) {
+        return new Response(JSON.stringify({ error: "search_failed" }), { status: 502, headers: corsHeaders(req) });
+      }
+
+      const rawText = (searchData.content || []).filter(b => b.type === "text").map(b => b.text || "").join("");
+      const cleaned = rawText.replace(/```json|```/g, "").trim();
+
+      let results = [];
+      try {
+        const parsed = JSON.parse(cleaned);
+        results = Array.isArray(parsed.results) ? parsed.results.slice(0, 5) : [];
+      } catch {
+        return new Response(JSON.stringify({ error: "search_failed" }), { status: 502, headers: corsHeaders(req) });
+      }
+
+      const payload = { results };
+      if (usage.warning) payload.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
+      return new Response(JSON.stringify(payload), { status: 200, headers: corsHeaders(req) });
     }
 
     // ── analyze_text ────────────────────────────────────────────────────────
