@@ -1,7 +1,9 @@
 // netlify/functions/manage-user.mjs
-// Admin-only user management: disable, enable, or permanently delete a user.
-// Requires the Firebase Admin SDK, since none of these actions can be
-// performed from client-side JavaScript (Firebase blocks them deliberately).
+// Admin-only user management: disable, enable, delete, or change the email
+// address of a user. Requires the Firebase Admin SDK, since none of these
+// actions can be performed from client-side JavaScript (Firebase blocks
+// them deliberately — a signed-in client can only ever change ITS OWN
+// email, never another account's).
 //
 // Setup required before this function will work:
 //   1. Firebase Console → Project Settings → Service Accounts → Generate new private key
@@ -54,7 +56,8 @@ function getAdminApp() {
 
 // Verify the caller's ID token and confirm they hold the administrator role
 // in Firestore before allowing any action. This is the only thing standing
-// between this endpoint and "anyone can disable or delete any account."
+// between this endpoint and "anyone can disable, delete, or change the email
+// address of any account."
 async function requireAdmin(app, idToken) {
   if (!idToken) throw new Error("unauthenticated");
   const decoded = await admin.auth(app).verifyIdToken(idToken);
@@ -63,6 +66,8 @@ async function requireAdmin(app, idToken) {
   if (role !== "administrator") throw new Error("forbidden");
   return decoded.uid;
 }
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default async function (req) {
   if (req.method === "OPTIONS") return new Response("", { status: 200, headers: corsHeaders(req) });
@@ -79,7 +84,7 @@ export default async function (req) {
   }
 
   try {
-    const { idToken, action, targetUid } = await req.json();
+    const { idToken, action, targetUid, newEmail } = await req.json();
 
     if (!action || !targetUid) {
       return new Response(JSON.stringify({ error: "Missing action or targetUid." }), {
@@ -97,8 +102,11 @@ export default async function (req) {
       });
     }
 
-    // Prevent an administrator from disabling or deleting their own account
-    // through this tool — avoids accidental lockout with no one left to fix it.
+    // Prevent an administrator from disabling, deleting, or changing the
+    // email of their own account through this tool — avoids accidental
+    // lockout with no one left to fix it. (AdminPage.jsx's UI already
+    // hides these actions for the signed-in admin's own row; this is the
+    // server-side backstop.)
     if (callerUid === targetUid) {
       return new Response(JSON.stringify({ error: "You can't perform this action on your own account." }), {
         status: 400, headers: corsHeaders(req),
@@ -123,6 +131,40 @@ export default async function (req) {
       await auth.deleteUser(targetUid);
       await db.doc(`users/${targetUid}`).delete();
       return new Response(JSON.stringify({ success: true, action }), { status: 200, headers: corsHeaders(req) });
+    }
+
+    // Change a user's email address. This has to go through the Admin SDK —
+    // Firebase's client SDK will only ever let a signed-in user change
+    // THEIR OWN email (with reauthentication), never another account's, so
+    // there was previously no way to fix a typo'd or outdated email without
+    // deleting and recreating the account. The new address is set as
+    // unverified: an admin typing in a new email isn't the same as that
+    // person proving they control the inbox, so the existing
+    // "Unverified · Resend" flow in AdminPage.jsx (backed by
+    // resend-verification.mjs) is what gets it re-verified, same as any
+    // other unverified account.
+    if (action === "update_email") {
+      const emailLower = (newEmail || "").trim().toLowerCase();
+      if (!emailLower || !EMAIL_RE.test(emailLower)) {
+        return new Response(JSON.stringify({ error: "Please enter a valid email address." }), {
+          status: 400, headers: corsHeaders(req),
+        });
+      }
+      try {
+        await auth.updateUser(targetUid, { email: emailLower, emailVerified: false });
+      } catch (err) {
+        if (err.code === "auth/email-already-exists") {
+          return new Response(JSON.stringify({ error: "That email is already in use by another account." }), {
+            status: 409, headers: corsHeaders(req),
+          });
+        }
+        throw err;
+      }
+      await db.doc(`users/${targetUid}`).update({
+        email: emailLower,
+        emailVerified: false,
+      });
+      return new Response(JSON.stringify({ success: true, action, email: emailLower }), { status: 200, headers: corsHeaders(req) });
     }
 
     return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
