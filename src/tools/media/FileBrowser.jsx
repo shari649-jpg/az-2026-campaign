@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { auth } from "../../firebase";
 
 const B = {
   teal:       "#1D5C4A",
@@ -240,15 +241,20 @@ export default function FileBrowser() {
     setTypeFilter("all");
 
     try {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+      const authHeaders = {
+        "Content-Type": "application/json",
+        ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+      };
       const [foldersRes, filesRes] = await Promise.all([
         fetch("/.netlify/functions/browse-drive", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders,
           body: JSON.stringify({ mode: "folders", folderId }),
         }),
         fetch("/.netlify/functions/browse-drive", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders,
           body: JSON.stringify({ mode: "files", folderId }),
         }),
       ]);
