@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { collection, addDoc, serverTimestamp, query, where, limit, getDocs } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { Link } from "react-router-dom";
 
@@ -40,11 +40,19 @@ export default function WaitlistPage() {
 
     setLoading(true);
     try {
-      // Check for duplicate email
-      const existing = await getDocs(
-        query(collection(db, "waitlist"), where("email", "==", form.email.toLowerCase().trim()), limit(1))
-      );
-      if (!existing.empty) {
+      // Check for duplicate email — routed through a server-side function
+      // (check-waitlist-email.mjs) instead of a direct client-side
+      // Firestore `list` query. A `limit(1)` list query is enumerable via
+      // repeated cursored requests, so firestore.rules now locks the
+      // waitlist collection's get/list down to admin-only. Fixed July
+      // 2026 security pass.
+      const dupRes = await fetch('/.netlify/functions/check-waitlist-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: form.email.toLowerCase().trim() }),
+      });
+      const dupData = await dupRes.json();
+      if (dupData.exists) {
         setError("This email is already on the waitlist. We'll be in touch soon!");
         setLoading(false);
         return;
