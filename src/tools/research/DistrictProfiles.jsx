@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { auth } from '../../firebase';
 
 const B = {
   teal:      '#1D5C4A',
@@ -65,9 +66,13 @@ export default function GeographicProfiles() {
     setLoading(true);
     setError(null);
     try {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch('/.netlify/functions/query-candidates', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({ mode: 'districts' }),
       });
       const data = await res.json();
