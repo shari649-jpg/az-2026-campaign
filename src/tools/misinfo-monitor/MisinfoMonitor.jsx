@@ -356,8 +356,10 @@ export default function MisinfoMonitor() {
       try {
         // fetch-community-notes now accepts ?source=cache to read Firestore
         // instead of hitting X directly — instant load from yesterday's data
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
         const res = await fetch("/.netlify/functions/fetch-community-notes?source=cache", {
           signal: AbortSignal.timeout(10000),
+          headers: idToken ? { "Authorization": `Bearer ${idToken}` } : {},
         });
         const data = await res.json();
         if (res.ok && data.notes?.length) {
