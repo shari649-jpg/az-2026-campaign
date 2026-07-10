@@ -19,12 +19,36 @@
 // That file is written automatically at build time by scripts/inject-secrets.mjs
 // — see that file for why (AWS Lambda's 4KB env-var cap per function).
 //
+// AUTH: requires a valid Firebase ID token (any signed-in user). Previously
+// this endpoint had NO auth check at all — anyone who found the URL could
+// pull the full candidate / opposition-research dataset without ever
+// signing in. Fixed July 2026 security pass — same requireSignedIn pattern
+// already used in rapid-response.mjs / generate-message.mjs.
+//
 // Modern Netlify Functions runtime (ESM)
 
 import { google } from "googleapis";
 import { readFileSync } from "node:fs";
+import admin from "firebase-admin";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
+
+function getAdminApp() {
+  if (admin.apps.length) return admin.app();
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(readFileSync(new URL("./firebase-service-account.json", import.meta.url), "utf8"));
+  } catch {
+    throw new Error("firebase-service-account.json not found — run `npm run build` to regenerate via scripts/inject-secrets.mjs.");
+  }
+  return admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+}
+
+async function requireSignedIn(app, idToken) {
+  if (!idToken) throw new Error("unauthenticated");
+  const decoded = await admin.auth(app).verifyIdToken(idToken);
+  return decoded.uid;
+}
 
 function getAuthClient() {
   let credentials;
@@ -199,8 +223,32 @@ export default async function (req) {
     });
   }
 
+  // ── Auth (added — this endpoint previously had no check at all) ──────────
+  let adminApp;
+  try {
+    adminApp = getAdminApp();
+  } catch (err) {
+    console.error("[query-candidates] admin init error:", err.message);
+    return new Response(JSON.stringify({ success: false, error: "Server configuration error." }), {
+      status: 500, headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const authHeader = req.headers.get("authorization") || "";
+  const headerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+
   try {
     const body = await req.json();
+    const idToken = headerToken || body.idToken;
+
+    try {
+      await requireSignedIn(adminApp, idToken);
+    } catch {
+      return new Response(JSON.stringify({ success: false, error: "You must be signed in to use this tool." }), {
+        status: 401, headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const { query, filterType, mode } = body;
 
     const auth = getAuthClient();
