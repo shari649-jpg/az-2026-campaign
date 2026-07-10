@@ -18,7 +18,8 @@
     "googleapis": "^118.0.0",
     "@anthropic-ai/sdk": "^0.20.0",
     "@netlify/blobs": "^8.0.0",
-    "fflate": "^0.8.2"
+    "fflate": "^0.8.2",
+    "node-html-parser": "^6.1.13"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
