@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { signInWithEmailAndPassword, sendPasswordResetEmail, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, limit, getDocs, updateDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { useNavigate, Link } from "react-router-dom";
 import { auth, db } from "../firebase";
 
@@ -49,16 +49,26 @@ export default function LoginPage() {
       // First-time Google sign-in: only allow if their email matches an
       // approved (invited) waitlist entry. This prevents anyone with a
       // Google account from skipping the waitlist entirely.
-      const emailLower = (user.email || "").toLowerCase().trim();
-      const waitlistQ = query(
-        collection(db, "waitlist"),
-        where("email", "==", emailLower),
-        where("status", "==", "invited"),
-        limit(1)
-      );
-      const waitlistSnap = await getDocs(waitlistQ);
+      //
+      // This check is routed through a server-side function
+      // (check-waitlist-invite.mjs) instead of a direct client-side
+      // Firestore `list` query. A `limit(1)` list query is enumerable via
+      // repeated cursored requests, so firestore.rules now locks the
+      // waitlist collection's get/list down to admin-only. The function
+      // reads the caller's email from their own verified ID token, not
+      // from anything the client sends. Fixed July 2026 security pass.
+      const idToken = await user.getIdToken();
+      const inviteRes = await fetch('/.netlify/functions/check-waitlist-invite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({}),
+      });
+      const inviteData = await inviteRes.json();
 
-      if (waitlistSnap.empty) {
+      if (!inviteRes.ok || !inviteData.invited) {
         // Not an approved member — sign them back out and send to waitlist.
         await signOut(auth);
         setError("This Google account hasn't been approved yet. Please request access below — our team will review your application.");
@@ -66,26 +76,23 @@ export default function LoginPage() {
         return;
       }
 
-      const waitlistDoc = waitlistSnap.docs[0];
-      const waitlistData = waitlistDoc.data();
-
       // Create the Firestore user doc now that approval is confirmed.
       // Carry forward everything the person already gave us at waitlist time —
       // social handle, platform, and organization — instead of starting blank.
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
-        fullName: user.displayName || waitlistData.fullName || "",
+        fullName: user.displayName || inviteData.fullName || "",
         email: user.email,
         role: "user",
-        primarySocial: waitlistData.primarySocial || { platform: "", handle: "" },
-        organization: waitlistData.organization || "",
+        primarySocial: inviteData.primarySocial || { platform: "", handle: "" },
+        organization: inviteData.organization || "",
         createdAt: serverTimestamp(),
         googleSignIn: true,
       });
 
       // Mark the waitlist entry as registered so it isn't reused.
       try {
-        await updateDoc(doc(db, "waitlist", waitlistDoc.id), { status: "registered", registeredAt: new Date() });
+        await updateDoc(doc(db, "waitlist", inviteData.waitlistId), { status: "registered", registeredAt: new Date() });
       } catch {}
 
       navigate("/");
