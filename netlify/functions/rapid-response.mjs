@@ -7,6 +7,7 @@
 
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
+import { parse as parseHtml } from "node-html-parser";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 
 // Transition period: both the new custom domain and the legacy Netlify
@@ -66,6 +67,37 @@ function isUrlAllowed(rawUrl) {
   }
   if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return false;
   return true;
+}
+
+// Strips a fetched page down to its readable text before it gets sent to
+// Claude as "article text." This used to be a chain of regexes
+// (.replace(/<script...>.../gi, " ") etc.) — CodeQL flagged that as
+// js/bad-tag-filter: a regex can't reliably parse HTML, so a page with
+// nested, malformed, or adversarially-crafted markup (e.g. a <script> tag
+// commented-out or split across what the regex expects as one match)
+// could leave script/style content sitting in pageText, which then goes
+// straight into the analysis prompt as if it were article body text.
+// This now uses a real HTML parser (node-html-parser) to walk the actual
+// DOM tree and remove non-content elements by node, which is not
+// foolable by clever markup the way a regex match is.
+// Fixed July 2026 security pass.
+function extractReadableText(html) {
+  const root = parseHtml(html, {
+    lowerCaseTagName: true,
+    comment: false,
+  });
+  root.querySelectorAll("script, style, nav, header, footer").forEach(el => el.remove());
+  return root.textContent
+    // Decode &amp; LAST. If this ran first, a double-encoded sequence like
+    // "&amp;lt;" would resolve to a literal "<" — reintroducing something
+    // tag-shaped after the parser has already produced plain text, with no
+    // second pass to catch it. Decoding &amp; last keeps a double-escaped
+    // input safely at "&lt;" instead of "<". (CodeQL: js/double-escaping)
+    // Kept from the original implementation — this part was not the flagged
+    // issue and stays unchanged.
+    .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&")
+    .replace(/\s{3,}/g, "\n\n")
+    .trim();
 }
 
 const ANALYSIS_PROMPT = (text) => `You are a political research analyst. Analyze this article and extract structured information.
@@ -162,22 +194,7 @@ export default async function (req) {
         });
         if (pageRes.ok) {
           const html = await pageRes.text();
-          pageText = html
-            .replace(/<script[^>]*>[\s\S]*?<\/script\s*>/gi, " ")
-            .replace(/<style[^>]*>[\s\S]*?<\/style\s*>/gi, " ")
-            .replace(/<nav[^>]*>[\s\S]*?<\/nav\s*>/gi, " ")
-            .replace(/<header[^>]*>[\s\S]*?<\/header\s*>/gi, " ")
-            .replace(/<footer[^>]*>[\s\S]*?<\/footer\s*>/gi, " ")
-            .replace(/<[^>]+>/g, " ")
-            .replace(/\s{3,}/g, "\n\n")
-            // Decode &amp; LAST. If this ran first (as it did before), a
-            // double-encoded sequence like "&amp;lt;" would resolve to a
-            // literal "<" — reintroducing something tag-shaped *after* the
-            // tag-stripping passes above already ran, with no second pass
-            // to catch it. Decoding &amp; last keeps a double-escaped input
-            // safely at "&lt;" instead of "<". (CodeQL: js/double-escaping)
-            .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&")
-            .trim();
+          pageText = extractReadableText(html);
           if (pageText.length > 300) fetchOk = true;
         }
       } catch { fetchOk = false; }
