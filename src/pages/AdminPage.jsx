@@ -64,7 +64,7 @@ export default function AdminPage() {
   const [inviting, setInviting]     = useState(null); // waitlistId being invited
   const [showRegistered, setShowRegistered] = useState(false); // hide completed registrations by default
   const [editingUid, setEditingUid] = useState(null); // uid currently in edit mode
-  const [editForm, setEditForm]     = useState({ fullName: "", socials: [{ platform: "", handle: "" }] });
+  const [editForm, setEditForm]     = useState({ fullName: "", email: "", socials: [{ platform: "", handle: "" }] });
   const [detailsUid, setDetailsUid] = useState(null); // uid currently shown in the read-only details modal
   const [actionUid, setActionUid]   = useState(null); // uid currently mid disable/enable/delete call
   const [actionError, setActionError] = useState(null); // { uid, message }
@@ -155,11 +155,12 @@ export default function AdminPage() {
       .filter(s => s && (s.platform || s.handle));
     setEditForm({
       fullName: u.fullName || "",
+      email: u.email || "",
       socials: existing.length ? existing.map(s => ({ platform: s.platform || "", handle: s.handle || "" })) : [{ platform: "", handle: "" }],
     });
   };
 
-  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", socials: [{ platform: "", handle: "" }] }); };
+  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", email: "", socials: [{ platform: "", handle: "" }] }); };
 
   const updateSocialField = (i, field, value) => {
     setEditForm(f => ({ ...f, socials: f.socials.map((s, idx) => idx === i ? { ...s, [field]: value } : s) }));
@@ -187,10 +188,34 @@ export default function AdminPage() {
       // Keep legacy secondarySocial in sync for any older display code that still reads it.
       if (socialAccounts[1]) payload.secondarySocial = socialAccounts[1];
       await updateDoc(doc(db, "users", uid), payload);
+
+      // Email lives in Firebase Auth, not just Firestore — changing it
+      // requires the Admin SDK (a signed-in client can only ever change
+      // ITS OWN email, never another account's), so this goes through
+      // manage-user.mjs rather than a direct Firestore write. Only fires
+      // if the email field was actually changed in this edit. Added
+      // July 2026, Priority 5 cleanup.
+      const originalUser = users.find(u => u.id === uid);
+      const newEmail = editForm.email.trim().toLowerCase();
+      let emailUpdated = false;
+      if (newEmail && originalUser && newEmail !== (originalUser.email || "").toLowerCase()) {
+        const idToken = await auth.currentUser.getIdToken();
+        const res = await fetch("/.netlify/functions/manage-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken, action: "update_email", targetUid: uid, newEmail }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || "Failed to update email.");
+        payload.email = newEmail;
+        payload.emailVerified = false;
+        emailUpdated = true;
+      }
+
       setUsers(prev => prev.map(u => u.id === uid ? { ...u, ...payload } : u));
-      notify("Profile updated.");
+      notify(emailUpdated ? "Profile updated — new email will need to be re-verified." : "Profile updated.");
       cancelEdit();
-    } catch { notify("Failed to save changes.", "err"); }
+    } catch (err) { notify(err.message || "Failed to save changes.", "err"); }
     setSaving(null);
   };
 
@@ -911,6 +936,12 @@ export default function AdminPage() {
                               type="text" value={editForm.fullName}
                               onChange={e => setEditForm(f => ({ ...f, fullName: e.target.value }))}
                               placeholder="Full name"
+                              style={{ padding: "8px 12px", fontSize: 15, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL }}
+                            />
+                            <input
+                              type="email" value={editForm.email}
+                              onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                              placeholder="Email address"
                               style={{ padding: "8px 12px", fontSize: 15, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL }}
                             />
                             {editForm.socials.map((s, i) => (
