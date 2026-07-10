@@ -4,10 +4,19 @@
 //   GET ?source=cache  — reads from Netlify Blobs (instant, used on page load)
 //   GET (no param)     — fetches live from X directly (manual refresh button)
 //
-// No Firebase needed. Uses Netlify Blobs — built into Netlify Pro, zero extra credentials.
+// AUTH: requires a valid Firebase ID token (any signed-in user). Previously
+// this endpoint had no auth check. Risk here is lower than the other four
+// endpoints fixed alongside this one — it only serves public X Community
+// Notes data — but it's still gated for consistency with "every tool
+// requires login" and to avoid this becoming a free, unmetered proxy for
+// hitting X's data feed. Fixed July 2026 security pass.
+//
+// Uses Netlify Blobs — built into Netlify Pro, zero extra credentials.
 // Modern Netlify Functions runtime (ESM)
 
 import { getStore } from "@netlify/blobs";
+import admin from "firebase-admin";
+import { readFileSync } from "node:fs";
 
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
@@ -23,6 +32,23 @@ function corsHeaders(req) {
   const origin = req.headers.get("origin");
   const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return { "Access-Control-Allow-Origin": allowOrigin, "Content-Type": "application/json" };
+}
+
+function getAdminApp() {
+  if (admin.apps.length) return admin.app();
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(readFileSync(new URL("./firebase-service-account.json", import.meta.url), "utf8"));
+  } catch {
+    throw new Error("firebase-service-account.json not found — run `npm run build` to regenerate via scripts/inject-secrets.mjs.");
+  }
+  return admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+}
+
+async function requireSignedIn(app, idToken) {
+  if (!idToken) throw new Error("unauthenticated");
+  const decoded = await admin.auth(app).verifyIdToken(idToken);
+  return decoded.uid;
 }
 
 // ── Classifiers ───────────────────────────────────────────────────────────
@@ -124,6 +150,28 @@ function buildStats(notes) {
 export default async function (req) {
   if (req.method === "OPTIONS") {
     return new Response("", { status: 200, headers: corsHeaders(req) });
+  }
+
+  // ── Auth (added — this endpoint previously had no check at all) ──────────
+  let app;
+  try {
+    app = getAdminApp();
+  } catch (err) {
+    console.error("[fetch-community-notes] admin init error:", err.message);
+    return new Response(JSON.stringify({ error: "Server configuration error." }), {
+      status: 500, headers: corsHeaders(req),
+    });
+  }
+
+  const authHeader = req.headers.get("authorization") || "";
+  const headerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+
+  try {
+    await requireSignedIn(app, headerToken);
+  } catch {
+    return new Response(JSON.stringify({ error: "You must be signed in to use this tool." }), {
+      status: 401, headers: corsHeaders(req),
+    });
   }
 
   const url = new URL(req.url);
