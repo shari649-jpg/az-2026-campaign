@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { auth } from '../../firebase';
 
 function localStorageSafe(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); return true; }
@@ -127,9 +128,13 @@ export default function CandidateQuery() {
     setSelectedFacts({});
     setPushed(false);
     try {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch('/.netlify/functions/query-candidates', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({ query: searchQuery.trim(), filterType: filterType !== 'all' ? filterType : null }),
       });
       const data = await res.json();
