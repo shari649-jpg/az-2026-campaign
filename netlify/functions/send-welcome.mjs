@@ -1,5 +1,16 @@
 // netlify/functions/send-welcome.mjs
 // Sends welcome email after successful registration via Resend.
+//
+// AUTH: requires a valid Firebase ID token (any signed-in user — this is
+// called right after a brand-new account signs in for the first time, so
+// the caller is always freshly authenticated at that point). Previously
+// this endpoint had NO auth check and interpolated fullName into the email
+// HTML with no escaping — anyone with the URL could send an
+// Arizona-Coalition-branded email to any address, with attacker-controlled
+// HTML in the body. Fixed July 2026 security pass: added auth + escaping.
+
+import admin from "firebase-admin";
+import { readFileSync } from "node:fs";
 
 // Used for the "Open the Comms Hub" link in the welcome email — always the
 // current canonical domain, since this URL is what the recipient clicks.
@@ -22,6 +33,36 @@ function corsHeaders(req) {
   const origin = req.headers.get("origin");
   const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return { "Access-Control-Allow-Origin": allowOrigin, "Content-Type": "application/json" };
+}
+
+function getAdminApp() {
+  if (admin.apps.length) return admin.app();
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(readFileSync(new URL("./firebase-service-account.json", import.meta.url), "utf8"));
+  } catch {
+    throw new Error("firebase-service-account.json not found — run `npm run build` to regenerate via scripts/inject-secrets.mjs.");
+  }
+  return admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+}
+
+async function requireSignedIn(app, idToken) {
+  if (!idToken) throw new Error("unauthenticated");
+  const decoded = await admin.auth(app).verifyIdToken(idToken);
+  return decoded.uid;
+}
+
+// Minimal HTML-escaping for the one user-supplied value (fullName) that
+// gets interpolated into the email template below. Prevents someone from
+// putting markup/script-looking text in their display name and having it
+// render unescaped inside the sent email.
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 async function sendEmail({ to, subject, html }) {
@@ -47,6 +88,7 @@ async function sendEmail({ to, subject, html }) {
 }
 
 function welcomeEmailHtml({ fullName }) {
+  const safeName = escapeHtml(fullName);
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>Welcome to the AZ Coalition Comms Hub</title></head>
@@ -62,7 +104,7 @@ function welcomeEmailHtml({ fullName }) {
         </tr>
         <tr>
           <td style="padding:36px 40px;">
-            <p style="margin:0 0 20px;font-size:16px;color:#4A4558;line-height:1.7;">Hi <strong>${fullName}</strong> — you're in! Here's how to hit the ground running:</p>
+            <p style="margin:0 0 20px;font-size:16px;color:#4A4558;line-height:1.7;">Hi <strong>${safeName}</strong> — you're in! Here's how to hit the ground running:</p>
             <table cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:28px;">
               <tr>
                 <td style="padding:12px 0;border-bottom:1px solid #f0f0ec;vertical-align:top;width:36px;">
@@ -134,8 +176,34 @@ export default async function (req) {
   if (req.method === "OPTIONS") return new Response("", { status: 200, headers: corsHeaders(req) });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
+  let app;
   try {
-    const { email, fullName } = await req.json();
+    app = getAdminApp();
+  } catch (err) {
+    console.error("[send-welcome] admin init error:", err.message);
+    // Non-fatal by design elsewhere in this file, but auth setup failing is
+    // a real server problem — surface it rather than silently no-op.
+    return new Response(JSON.stringify({ success: false, error: "Server configuration error." }), {
+      status: 500, headers: corsHeaders(req),
+    });
+  }
+
+  const authHeader = req.headers.get("authorization") || "";
+  const headerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+
+  try {
+    const { email, fullName, idToken: bodyToken } = await req.json();
+    const idToken = headerToken || bodyToken;
+
+    // ── Auth ──────────────────────────────────────────────────────────────
+    try {
+      await requireSignedIn(app, idToken);
+    } catch {
+      return new Response(JSON.stringify({ success: false, error: "You must be signed in to use this tool." }), {
+        status: 401, headers: corsHeaders(req),
+      });
+    }
+
     if (!email || !fullName) {
       return new Response(JSON.stringify({ error: "Missing email or fullName." }), {
         status: 400, headers: corsHeaders(req),
