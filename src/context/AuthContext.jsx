@@ -40,9 +40,13 @@ export function AuthProvider({ children }) {
               setProfile(p => p ? { ...p, emailVerified: true } : p);
             } catch {}
             try {
+              const idToken = await firebaseUser.getIdToken();
               await fetch("/.netlify/functions/send-welcome", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${idToken}`,
+                },
                 body: JSON.stringify({
                   email: firebaseUser.email,
                   fullName: profileData.fullName || firebaseUser.displayName || "",
