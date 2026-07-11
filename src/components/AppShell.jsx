@@ -204,7 +204,7 @@ export default function AppShell() {
         zIndex: 100,
         background: "var(--bg)",
         borderBottom: "3px solid var(--gold)",
-        height: "var(--nav-height)",
+        minheight: "var(--nav-height)",
         boxShadow: "0 2px 12px rgba(74,69,88,0.08)",
       }}>
         <div style={{
@@ -493,7 +493,7 @@ export default function AppShell() {
       {/* Mobile menu */}
       <div className="mobile-menu" style={{
         position: "fixed",
-        top: "var(--nav-height)",
+        top: activeAnnouncement ? "calc(var(--nav-height) + 30px)" : "var(--nav-height)",
         left: 0,
         right: 0,
         background: "var(--bg)",
