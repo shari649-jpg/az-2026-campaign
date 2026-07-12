@@ -20,7 +20,7 @@ import { useAuth } from "../../context/AuthContext";
 import {
   loadAllStorms, loadActiveStorms, loadPosts, createStorm, updateStorm,
   setStormStatus, deleteStorm, canReview, canDelete, canManagePosts, backfillPostCount,
-  alarmLabel, STORM_STATUS, SUBJECT_TYPES, MEDIA_TYPES, PLATFORMS,
+  alarmLabel, isStormExpired, STORM_STATUS, SUBJECT_TYPES, MEDIA_TYPES, PLATFORMS,
   PUSH_TO_STORM_KEY, PUSH_TO_STORM_TTL_MS,
 } from "../../lib/stormLibrary";
 import StormPostsPanel from "./StormPostsPanel";
@@ -516,7 +516,10 @@ function UserView({ role, uid }) {
     } catch (e) { notify(e.message || "Couldn't update status.", "error"); }
   }
 
-  const activeStorms = allStorms.filter(s => s.status === STORM_STATUS.ACTIVE);
+  // Defensive check alongside the hourly scheduled-archive-storms.mjs sweep:
+  // without this, a storm sitting past its expiresAt would still show as
+  // Active to members for up to an hour until the next cron run catches it.
+  const activeStorms = allStorms.filter(s => s.status === STORM_STATUS.ACTIVE && !isStormExpired(s.expiresAt));
   const myStorms = uid ? allStorms.filter(s => s.createdBy?.uid === uid && s.status !== STORM_STATUS.ACTIVE) : [];
 
   if (loading) return <p style={{ color: "#888", textAlign: "center", padding: "40px 0" }}>Loading storms…</p>;
