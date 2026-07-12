@@ -32,6 +32,9 @@
 [functions."scheduled-archive-storms"]
   timeout = 10
 
+[functions."public-storm"]
+  timeout = 10
+
 [functions."send-invite"]
   timeout = 26
 
