@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Inflate } from "fflate";
-import { collection, getDocs, doc, updateDoc, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -62,6 +62,8 @@ export default function AdminPage() {
   const [search, setSearch]         = useState("");
   const [saving, setSaving]         = useState(null);
   const [inviting, setInviting]     = useState(null); // waitlistId being invited
+  const [confirmRemoveWaitlistId, setConfirmRemoveWaitlistId] = useState(null); // waitlistId pending remove confirmation
+  const [removingWaitlistId, setRemovingWaitlistId] = useState(null); // waitlistId currently mid delete call
   const [showRegistered, setShowRegistered] = useState(false); // hide completed registrations by default
   const [editingUid, setEditingUid] = useState(null); // uid currently in edit mode
   const [editForm, setEditForm]     = useState({ fullName: "", email: "", socials: [{ platform: "", handle: "" }] });
@@ -383,6 +385,25 @@ export default function AdminPage() {
       }
     } catch { notify("Failed to send invite. Try again.", "err"); }
     setInviting(null);
+  };
+
+  // Removes a waitlist entry entirely — e.g. a test signup, or someone who
+  // asked to withdraw their request. Client-side deleteDoc, same trust model
+  // as the updateDoc call in handleSendInvite above (Firestore rules already
+  // gate waitlist writes to admins). If this ever comes back with a
+  // permission-denied error, the waitlist rule needs an explicit delete grant
+  // alongside its existing update grant.
+  const handleRemoveWaitlistEntry = async (entry) => {
+    setRemovingWaitlistId(entry.id);
+    try {
+      await deleteDoc(doc(db, "waitlist", entry.id));
+      setWaitlist(prev => prev.filter(w => w.id !== entry.id));
+      notify(`Removed ${entry.email} from the waitlist.`);
+    } catch (err) {
+      notify(err.message || "Failed to remove entry. Try again.", "err");
+    }
+    setRemovingWaitlistId(null);
+    setConfirmRemoveWaitlistId(null);
   };
 
   const filteredUsers = users.filter(u => {
@@ -1350,6 +1371,38 @@ export default function AdminPage() {
                           <span style={{ fontSize: 13, color: "#aaa", fontStyle: "italic" }}>
                             {entry.status === "registered" ? "✓ Account created" : "—"}
                           </span>
+                        )}
+
+                        {confirmRemoveWaitlistId === entry.id ? (
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <span style={{ fontSize: 12, color: RED, fontWeight: 700 }}>Remove permanently?</span>
+                            <button
+                              onClick={() => handleRemoveWaitlistEntry(entry)}
+                              disabled={removingWaitlistId === entry.id}
+                              style={{ background: RED, color: "#fff", border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: removingWaitlistId === entry.id ? "not-allowed" : "pointer" }}
+                            >
+                              {removingWaitlistId === entry.id ? "Removing…" : "Yes, remove"}
+                            </button>
+                            <button
+                              onClick={() => setConfirmRemoveWaitlistId(null)}
+                              disabled={removingWaitlistId === entry.id}
+                              style={{ background: "none", border: "2px solid #ccc", color: "#888", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: removingWaitlistId === entry.id ? "not-allowed" : "pointer" }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmRemoveWaitlistId(entry.id)}
+                            title="Permanently remove this waitlist entry"
+                            style={{
+                              background: "none", border: "2px solid #ddd", color: "#aaa",
+                              borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700,
+                              fontFamily: "inherit", cursor: "pointer",
+                            }}
+                          >
+                            Remove
+                          </button>
                         )}
                       </div>
                     </div>
