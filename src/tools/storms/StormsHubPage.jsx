@@ -201,7 +201,10 @@ function StormFormModal({ storm, role, onClose, onSaved }) {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}
+    // z-index bumped from 90 to 1000 (July 2026) — see StormPostsPanel.jsx
+    // for why: the AppShell header (zIndex:100, including the announcement
+    // ticker when active) was rendering on top of this modal's close button.
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <form onSubmit={handleSubmit} style={{ background: "#fff", borderRadius: 14, padding: 28, maxWidth: 560, width: "100%", display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
