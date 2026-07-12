@@ -650,11 +650,55 @@ function UserStormCard({ storm, isOpen, onToggle }) {
   );
 }
 
+// Real brand icons for the platform toggle row, added July 2026. Files live
+// in /public (same convention as azc-logo.png) and are downloaded once from
+// simpleicons.org (CC0-licensed, so no attribution/trademark concern) rather
+// than bundled as an npm dependency — see the PLATFORMS.badge comment in
+// stormLibrary.js for why no icon library is used here.
+//
+// Keyed by PLATFORMS' `key` (not always the same as the filename — the
+// "twitter" key maps to the "x" icon file, matching the platform's current
+// name/branding).
+const SOCIAL_ICON_PATHS = {
+  facebook:  "/social-facebook.svg",
+  instagram: "/social-instagram.svg",
+  twitter:   "/social-x.svg",
+  threads:   "/social-threads.svg",
+  tiktok:    "/social-tiktok.svg",
+  bluesky:   "/social-bluesky.svg",
+};
+
+// Renders the real icon file if it loads; if it's missing, misnamed, or
+// hasn't been added to /public yet, falls back to the plain text badge
+// (PLATFORMS' `badge` field) instead of a broken image — so this is safe
+// to deploy at any point, before or after the icon files actually exist.
+function PlatformIcon({ platformKey, badge }) {
+  const [failed, setFailed] = useState(false);
+  const src = SOCIAL_ICON_PATHS[platformKey];
+  if (failed || !src) {
+    return <span style={{ fontSize: 11, fontWeight: 800, color: TEAL, letterSpacing: "0.01em" }}>{badge}</span>;
+  }
+  return (
+    <img
+      src={src}
+      alt={badge}
+      onError={() => setFailed(true)}
+      style={{ width: 22, height: 22, display: "block" }}
+    />
+  );
+}
+
 function UserPostCard({ post, hashtag }) {
   const isGraphicSet = post.mediaType === MEDIA_TYPES.GRAPHIC && (post.media?.length || 0) > 1;
   const [selected, setSelected] = useState(() => new Set((post.media || []).map((_, i) => i)));
   const [downloading, setDownloading] = useState(false);
   const [copiedKey, setCopiedKey] = useState(null);
+  // Which platform's text is currently expanded, if any — only one open at
+  // a time (July 2026 redesign). Replaces the old layout where every
+  // platform's full text rendered stacked open simultaneously, which made
+  // a storm with several posts an enormous scroll, especially on mobile,
+  // even for someone who only cares about one platform.
+  const [openPlatform, setOpenPlatform] = useState(null);
 
   function toggle(i) { setSelected(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next; }); }
   function selectAll() { setSelected(new Set((post.media || []).map((_, i) => i))); }
@@ -699,6 +743,14 @@ function UserPostCard({ post, hashtag }) {
     setCopiedKey(platformKey);
     setTimeout(() => setCopiedKey(null), 1800);
   }
+  function togglePlatform(key) {
+    setOpenPlatform(prev => prev === key ? null : key);
+  }
+
+  // Only platforms with actual text get an icon at all — an empty
+  // platform never appears, same rule as before.
+  const activePlatforms = PLATFORMS.filter(p => post.texts?.[p.key]?.trim());
+  const openPlatformData = activePlatforms.find(p => p.key === openPlatform) || null;
 
   const selectedCount = selected.size;
   const downloadLabel = downloading ? "Preparing…" : selectedCount === 0 ? "Select media to download" : selectedCount === 1 ? "⬇ Download" : `⬇ Download ${selectedCount} as .zip`;
@@ -735,22 +787,55 @@ function UserPostCard({ post, hashtag }) {
         {downloadLabel}
       </button>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {PLATFORMS.filter(p => post.texts?.[p.key]?.trim()).map(p => (
-          <div key={p.key} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, background: SURFACE_ALT, borderRadius: 8, padding: "8px 12px" }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: TEAL, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 3 }}>{p.label}</div>
-              <div style={{ fontSize: 13.5, color: "#333", whiteSpace: "pre-wrap" }}>{post.texts[p.key]}</div>
-            </div>
-            <button onClick={() => handleCopy(p.key, post.texts[p.key])} style={{
-              flexShrink: 0, background: copiedKey === p.key ? TURQUOISE : "#fff", color: copiedKey === p.key ? "#fff" : TEAL,
-              border: `1.5px solid ${TEAL}`, borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer",
-            }}>
-              {copiedKey === p.key ? "Copied ✓" : "Copy"}
-            </button>
+      {/* Platform icons — tap one to expand just that platform's text below.
+          Tap the same one again (or a different one) to switch/close.
+          Only one open at a time, so this never piles back up into the
+          old wall-of-text layout. */}
+      {activePlatforms.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+          {activePlatforms.map(p => {
+            const isOpen = openPlatform === p.key;
+            return (
+              <button
+                key={p.key}
+                onClick={() => togglePlatform(p.key)}
+                title={p.label}
+                aria-label={p.label}
+                aria-pressed={isOpen}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  width: 44, height: 44, borderRadius: "50%", flexShrink: 0,
+                  border: `2px solid ${isOpen ? TEAL : BORDER}`,
+                  // Background stays white regardless of open/closed state —
+                  // a real brand-colored logo (unlike the old plain-text
+                  // badge) shouldn't have to fight a colored circle behind
+                  // it. Open state is shown with a soft ring instead.
+                  background: "#fff",
+                  boxShadow: isOpen ? `0 0 0 3px ${TEAL}33` : "none",
+                  padding: 0, cursor: "pointer", transition: "all 0.15s",
+                }}
+              >
+                <PlatformIcon platformKey={p.key} badge={p.badge} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {openPlatformData && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, background: SURFACE_ALT, borderRadius: 8, padding: "10px 12px", marginTop: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: TEAL, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 3 }}>{openPlatformData.label}</div>
+            <div style={{ fontSize: 13.5, color: "#333", whiteSpace: "pre-wrap" }}>{post.texts[openPlatformData.key]}</div>
           </div>
-        ))}
-      </div>
+          <button onClick={() => handleCopy(openPlatformData.key, post.texts[openPlatformData.key])} style={{
+            flexShrink: 0, background: copiedKey === openPlatformData.key ? TURQUOISE : "#fff", color: copiedKey === openPlatformData.key ? "#fff" : TEAL,
+            border: `1.5px solid ${TEAL}`, borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+          }}>
+            {copiedKey === openPlatformData.key ? "Copied ✓" : "Copy"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
