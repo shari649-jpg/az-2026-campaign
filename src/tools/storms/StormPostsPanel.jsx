@@ -67,7 +67,12 @@ export default function StormPostsPanel({ storm, justCreated, onClose }) {
 
   return (
     <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 92,
+      // z-index bumped from 92 to 1000 (July 2026) — the AppShell header
+      // (including the announcement ticker, when active) sits at zIndex:100,
+      // so anything below that renders underneath it, hiding this modal's
+      // close button. 1000 matches the convention already used elsewhere
+      // (AdminPage's details modal, FileBrowser, rebuttal-campaign-generator).
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000,
       display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto",
     }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{ background: "#fff", borderRadius: 14, padding: 28, maxWidth: 680, width: "100%" }}>
