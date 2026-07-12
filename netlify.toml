@@ -51,3 +51,6 @@
 
 [functions."resend-verification"]
   timeout = 26
+
+  [functions."notify-waitlist-signup"]
+  timeout = 10
