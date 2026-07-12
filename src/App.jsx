@@ -6,6 +6,7 @@ import HomePage from "./components/HomePage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import WaitlistPage from "./pages/WaitlistPage";
+import PublicStormPage from "./pages/PublicStormPage";
 import AdminPage from "./pages/AdminPage";
 import ProfilePage from "./pages/ProfilePage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
@@ -26,9 +27,10 @@ export default function App() {
       <AuthProvider>
         <Routes>
           {/* Public routes */}
-          <Route path="/login"    element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/waitlist" element={<WaitlistPage />} />
+          <Route path="/login"        element={<LoginPage />} />
+          <Route path="/register"     element={<RegisterPage />} />
+          <Route path="/waitlist"     element={<WaitlistPage />} />
+          <Route path="/storm/:token" element={<PublicStormPage />} />
 
           {/* Protected routes */}
           <Route element={
