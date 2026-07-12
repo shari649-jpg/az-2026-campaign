@@ -11,7 +11,7 @@ import {
   getDocs, query, orderBy, serverTimestamp, increment,
 } from "firebase/firestore";
 import {
-  ref, uploadBytesResumable, getDownloadURL, deleteObject,
+  ref, uploadBytesResumable, uploadBytes, getDownloadURL, deleteObject,
 } from "firebase/storage";
 
 const COL = "storms";
@@ -56,6 +56,12 @@ export const CHAR_LIMITS = {
 };
 
 export const MEDIA_TYPES = { VIDEO: "video", GRAPHIC: "graphic" };
+
+// Base URL for a storm's public page (item 5 builds the actual /storm/:token
+// route this points at) — kept here as the single source of truth so the
+// link displayed/copied in StormPostsPanel.jsx and whatever the eventual
+// public-fetch function needs to know about itself never drift apart.
+export const PUBLIC_STORM_BASE_URL = "https://arizonacoalition.net/storm";
 export const MAX_VIDEO_MB = 72;
 export const MAX_GRAPHIC_MB = 15;
 export const MAX_GRAPHICS_PER_POST = 10;
@@ -186,6 +192,56 @@ export async function setStormStatus(id, status, role) {
     patch.reviewedAt = serverTimestamp();
   }
   await updateDoc(doc(db, COL, id), patch);
+}
+
+// ── Public storm page (July 2026) ──────────────────────────────────────
+// Manager/Admin only, and only meaningful while the storm is Active — the
+// UI in StormPostsPanel.jsx enforces the Active check by simply not
+// rendering these controls otherwise, same pattern as everywhere else in
+// this file trusts the client's own role field for admin-gated writes.
+//
+// The token is generated once, the first time a storm goes public, and
+// then left alone on every later toggle — so switching public access off
+// and back on again reuses the same link rather than silently breaking
+// something someone already shared or bookmarked.
+export async function setStormPublic(id, isPublic, currentToken, role) {
+  if (!canReview(role)) {
+    throw new Error("Only Managers and Administrators can change a storm's public access.");
+  }
+  const patch = { isPublic, updatedAt: serverTimestamp() };
+  if (isPublic && !currentToken) {
+    patch.publicToken = crypto.randomUUID();
+  }
+  await updateDoc(doc(db, COL, id), patch);
+  return patch.publicToken || currentToken || null;
+}
+
+// image is either { url, path, name, source: "post" } (referencing an
+// already-uploaded post graphic — no re-upload, just copy the reference)
+// or the result of uploadPublicCardImage below with source: "upload".
+export async function setStormPublicCardImage(id, image, role) {
+  if (!canReview(role)) {
+    throw new Error("Only Managers and Administrators can change a storm's public card image.");
+  }
+  await updateDoc(doc(db, COL, id), { publicCardImage: image, updatedAt: serverTimestamp() });
+}
+
+// Uploads a dedicated image for the public card — separate from any post's
+// own media, since a storm's public card image is independent of which
+// (if any) post graphics exist. Mirrors uploadPostMedia's shape below, but
+// non-resumable (a single small card image doesn't need progress tracking)
+// and stored under its own Storage path so it's never confused with, or
+// accidentally cleaned up by, a specific post's own media lifecycle.
+export async function uploadPublicCardImage(stormId, file) {
+  if (file.size > MAX_GRAPHIC_MB * 1024 * 1024) {
+    throw new Error(`Image must be ${MAX_GRAPHIC_MB}MB or smaller.`);
+  }
+  const safeName = file.name.replace(/[^\w.\-]/g, "_");
+  const path = `storms/${stormId}/public-card/${Date.now()}_${safeName}`;
+  const storageRef = ref(storage, path);
+  await uploadBytes(storageRef, file, { contentType: file.type });
+  const url = await getDownloadURL(storageRef);
+  return { url, path, name: file.name };
 }
 
 // Deletes the storm doc, all of its posts, and all of their Storage
