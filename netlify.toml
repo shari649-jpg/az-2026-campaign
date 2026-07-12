@@ -29,6 +29,9 @@
 [functions."scheduled-community-notes"]
   timeout = 26
 
+[functions."scheduled-archive-storms"]
+  timeout = 10
+
 [functions."send-invite"]
   timeout = 26
 
@@ -51,6 +54,3 @@
 
 [functions."resend-verification"]
   timeout = 26
-
-  [functions."notify-waitlist-signup"]
-  timeout = 10
