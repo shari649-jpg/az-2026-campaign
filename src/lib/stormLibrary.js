@@ -29,13 +29,19 @@ export const SUBJECT_TYPES = ["Candidate", "Issue/Topic", "Race/District", "Coal
 // The six platforms a storm post's text is written for. Kept as a single
 // source of truth here so the Hub's post editor and download/copy
 // buttons never drift out of sync with each other.
+// `badge` is a short abbreviation shown on the icon-style toggle button in
+// the redesigned post display (StormsHubPage.jsx's UserPostCard, and the
+// future public storm page reusing the same component) — added July 2026
+// alongside that redesign. No icon library or brand logos are used here on
+// purpose; a plain colored badge avoids reproducing any platform's actual
+// trademarked logo.
 export const PLATFORMS = [
-  { key: "facebook",  label: "Facebook" },
-  { key: "instagram", label: "Instagram" },
-  { key: "twitter",   label: "X / Twitter" },
-  { key: "threads",   label: "Threads" },
-  { key: "tiktok",    label: "TikTok" },
-  { key: "bluesky",   label: "Bluesky" },
+  { key: "facebook",  label: "Facebook",    badge: "FB" },
+  { key: "instagram", label: "Instagram",   badge: "IG" },
+  { key: "twitter",   label: "X / Twitter", badge: "X" },
+  { key: "threads",   label: "Threads",     badge: "TH" },
+  { key: "tiktok",    label: "TikTok",      badge: "TT" },
+  { key: "bluesky",   label: "Bluesky",     badge: "BS" },
 ];
 
 // Per-platform character limits, used for the live counter in the post
