@@ -67,6 +67,24 @@ export default function WaitlistPage() {
         status:          "pending",
         submittedAt:     serverTimestamp(),
       });
+
+      // Notify staff of the new signup — best-effort, doesn't block the
+      // confirmation screen if the email fails to send.
+      try {
+        await fetch('/.netlify/functions/notify-waitlist-signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fullName:        form.fullName.trim(),
+            email:           form.email.toLowerCase().trim(),
+            organization:    form.organization.trim(),
+            reason:          form.reason.trim(),
+            primaryPlatform: form.primaryPlatform,
+            primaryHandle:   form.primaryHandle.trim(),
+          }),
+        });
+      } catch {}
+
       setSubmitted(true);
     } catch (err) {
       setError("Something went wrong. Please try again.");
