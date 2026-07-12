@@ -134,12 +134,31 @@ export async function loadAllStorms() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// Client-side check for whether a storm's end date has passed, used both
+// by loadActiveStorms below and directly by StormsHubPage.jsx's UserView
+// (which filters its own local storms list rather than re-fetching).
+// The authoritative fix lives server-side in the hourly
+// scheduled-archive-storms.mjs cron, which actually flips status to
+// "archived" in Firestore — this is the defensive read-time check that
+// covers the gap between an expiration passing and the next cron run.
+//
+// Uses the browser's own local time, same as every other expiresAt display
+// in this app (StormsHubPage.jsx's fmtDateTime/fmtDateShort) — correct as
+// long as the person viewing is in Arizona time, the existing assumption
+// everywhere expiresAt is shown today. expiresAt itself is stored exactly
+// as the raw <input type="datetime-local"> value, with no timezone info.
+export function isStormExpired(expiresAt) {
+  if (!expiresAt) return false; // no end date set — never auto-expires
+  const t = new Date(expiresAt).getTime();
+  return !isNaN(t) && t <= Date.now();
+}
+
 export async function loadActiveStorms() {
   // Filtered client-side rather than a where() clause so this stays a
   // single simple index-free query; storm counts are small (~tens, not
   // thousands), so this is cheap.
   const all = await loadAllStorms();
-  return all.filter(s => s.status === STORM_STATUS.ACTIVE);
+  return all.filter(s => s.status === STORM_STATUS.ACTIVE && !isStormExpired(s.expiresAt));
 }
 
 export async function loadStorm(id) {
