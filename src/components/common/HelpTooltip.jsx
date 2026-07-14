@@ -1,4 +1,9 @@
-import { useState, useRef, useEffect, useId } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useId } from "react";
+import { createPortal } from "react-dom";
+
+const PANEL_WIDTH = 280;
+const GAP = 8;
+const EDGE_MARGIN = 8;
 
 /**
  * HelpTooltip — the 🕵️‍♂️ help pop-up used throughout the Comms Hub.
@@ -7,8 +12,17 @@ import { useState, useRef, useEffect, useId } from "react";
  * Click outside, press Escape, or hit the × to close. Works the same on
  * touch and desktop (no hover-only behavior, so it holds up on mobile).
  *
+ * The panel renders in a portal (document.body) with fixed positioning
+ * calculated from the trigger's on-screen location — not as an absolutely
+ * positioned child of the trigger. This matters because several cards in
+ * the app (e.g. PlatformCard) use `overflow: hidden` for rounded corners;
+ * a normal absolutely-positioned popover would get clipped the moment it
+ * tried to extend past that container's edge. Portaling to <body> sidesteps
+ * that entirely, and it also guarantees the panel always renders above
+ * everything else regardless of local z-index/stacking contexts.
+ *
  * Usage:
- *   import HelpTooltip from "../common/HelpTooltip";
+ *   import HelpTooltip from "../../components/common/HelpTooltip";
  *   import { HELP } from "../../lib/helpContent";
  *
  *   <label>
@@ -22,21 +36,64 @@ import { useState, useRef, useEffect, useId } from "react";
  *             Defaults to "Help" — worth overriding on pages with several
  *             tooltips so screen-reader users can tell them apart.
  *   placement "top" | "bottom" (default "bottom") — which side the panel opens on.
- *   align     "start" | "center" | "end" (default "start") — horizontal anchor.
- *             Use "end" for triggers sitting near the right edge of the page
- *             (e.g. in a header) so the panel doesn't run off-screen.
+ *   align     "start" | "center" | "end" (default "start") — horizontal anchor,
+ *             relative to the trigger icon itself. Use "end" for triggers
+ *             sitting near the right edge of the page (e.g. in a header) so
+ *             the panel doesn't run off-screen. The panel also clamps itself
+ *             to stay fully on-screen regardless of this setting.
  */
 export default function HelpTooltip({ text, label = "Help", placement = "bottom", align = "start" }) {
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef(null);
+  const [coords, setCoords] = useState(null);
   const btnRef = useRef(null);
+  const panelRef = useRef(null);
   const panelId = useId();
+
+  const updatePosition = () => {
+    const btn = btnRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const width = Math.min(PANEL_WIDTH, vw - EDGE_MARGIN * 2);
+
+    let left =
+      align === "end" ? rect.right - width :
+      align === "center" ? rect.left + rect.width / 2 - width / 2 :
+      rect.left;
+    left = Math.max(EDGE_MARGIN, Math.min(left, vw - width - EDGE_MARGIN));
+
+    const growUp = placement === "top";
+    const top = growUp ? rect.top - GAP : rect.bottom + GAP;
+
+    setCoords({ top, left, width, growUp });
+  };
+
+  // Recalculate whenever it opens, and keep it glued to the trigger while
+  // open (page scroll, window resize, a modal above it scrolling, etc).
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+    const onScroll = () => updatePosition();
+    const onResize = () => updatePosition();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, align, placement]);
 
   useEffect(() => {
     if (!open) return;
 
     function handleOutside(e) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+      if (
+        btnRef.current && !btnRef.current.contains(e.target) &&
+        panelRef.current && !panelRef.current.contains(e.target)
+      ) {
+        setOpen(false);
+      }
     }
     function handleKey(e) {
       if (e.key === "Escape") {
@@ -55,16 +112,8 @@ export default function HelpTooltip({ text, label = "Help", placement = "bottom"
     };
   }, [open]);
 
-  const vertical =
-    placement === "top" ? { bottom: "calc(100% + 8px)" } : { top: "calc(100% + 8px)" };
-
-  const horizontal =
-    align === "end" ? { right: 0 } :
-    align === "center" ? { left: "50%", transform: "translateX(-50%)" } :
-    { left: 0 };
-
   return (
-    <span ref={wrapRef} style={{ position: "relative", display: "inline-flex", verticalAlign: "middle" }}>
+    <span style={{ display: "inline-flex", verticalAlign: "middle" }}>
       <button
         ref={btnRef}
         type="button"
@@ -93,17 +142,19 @@ export default function HelpTooltip({ text, label = "Help", placement = "bottom"
         <span aria-hidden="true">🕵️‍♂️</span>
       </button>
 
-      {open && (
+      {open && coords && createPortal(
         <div
+          ref={panelRef}
           id={panelId}
           role="tooltip"
           className="fade-in"
           style={{
-            position: "absolute",
-            zIndex: 60,
-            ...vertical,
-            ...horizontal,
-            width: "min(280px, 82vw)",
+            position: "fixed",
+            top: coords.top,
+            left: coords.left,
+            width: coords.width,
+            transform: coords.growUp ? "translateY(-100%)" : "none",
+            zIndex: 1000,
             background: "#fff",
             color: "var(--text)",
             border: "1.5px solid var(--teal)",
@@ -140,7 +191,8 @@ export default function HelpTooltip({ text, label = "Help", placement = "bottom"
             ×
           </button>
           {text}
-        </div>
+        </div>,
+        document.body
       )}
     </span>
   );
