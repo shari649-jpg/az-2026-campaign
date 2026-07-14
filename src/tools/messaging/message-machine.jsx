@@ -7,6 +7,8 @@ import {
 } from "../../lib/stormLibrary";
 import { useAuth } from "../../context/AuthContext";
 import { auth } from "../../firebase";
+import HelpTooltip from "../common/HelpTooltip";
+import { HELP } from "../../lib/helpContent";
 
 const PLATFORMS = [
   { id: "facebook", name: "Facebook", abbr: "FB", maxChars: 63206, bg: "#0a4fa8", text: "#fff" },
@@ -405,9 +407,11 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
 
           <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:14, flexWrap:"wrap" }}>
             <button style={S.btnDark} onClick={() => onCopy(message || "", p.name)}>Copy Text</button>
+            <HelpTooltip text={HELP.messageMachine.copy} label={`Help: Copy ${p.name} text`} />
             <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => handleQuick("shorten")} title="Regenerate a shorter version">Shorten</button>
             <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => handleQuick("expand")} title="Regenerate a more detailed version">Expand</button>
             <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => onRegen(p.id, "", message)} title="Rephrase this message">Rephrase</button>
+            <HelpTooltip text={HELP.messageMachine.refine} label={`Help: Expand, Shorten & Rephrase for ${p.name}`} />
           </div>
         </div>
       )}
@@ -1303,7 +1307,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               {/* ── Messaging Mode + Frame ── */}
               <section style={{ ...S.card, background: msgMode === "national" ? "#f0f7f5" : T.surface, border: `2px solid ${msgMode === "national" ? T.teal : T.border}` }}>
                 <fieldset style={{ border:"none", padding:0 }}>
-                  <legend style={S.label}>Messaging Mode <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
+                  <legend style={S.label}>Messaging Mode <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span><HelpTooltip text={HELP.messageMachine.mode} label="Help: Messaging Mode" /></legend>
                   <p style={{ ...S.hint, marginBottom:12 }}>Default: Neutral — no regional or national style guide applied</p>
                   <div style={{ display:"flex", gap:12, marginBottom: 16, flexWrap:"wrap" }}>
                     {[
@@ -1336,7 +1340,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
               {/* Issue */}
               <section style={S.card}>
-                <label htmlFor="issue" style={S.label}>Issue / Content <span style={{color:T.red}} aria-label="required">*</span></label>
+                <label htmlFor="issue" style={S.label}>Issue / Content <span style={{color:T.red}} aria-label="required">*</span><HelpTooltip text={HELP.messageMachine.issue} label="Help: Issue field" /></label>
                 <textarea id="issue" rows={6} style={{...S.textarea,resize:"vertical"}}
                   placeholder="Describe the issue using as little or as much detail as you wish, or paste in text. Have a news article instead? Paste its URL below."
                   value={formData.issue} onChange={e=>{ upd("issue",e.target.value); if(genError) setGenError(null); }} />
@@ -1349,7 +1353,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                     </button>
                   ) : (
                     <div>
-                      <label htmlFor="article-url" style={{...S.label, fontSize:13, marginBottom:8}}>Article URL</label>
+                      <label htmlFor="article-url" style={{...S.label, fontSize:13, marginBottom:8}}>Article URL<HelpTooltip text={HELP.messageMachine.urlIngest} label="Help: Article URL" /></label>
                       <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
                         <input id="article-url" type="url" style={{...S.input, flex:1, minWidth:220}}
                           placeholder="https://example.com/article"
@@ -1421,10 +1425,11 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                       </div>
                       );
                     })()}
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                     <button type="button" onClick={() => setProModeOpen(o => !o)}
                       style={{
                         display:"flex", alignItems:"center", justifyContent:"space-between",
-                        width:"100%", padding:"12px 18px",
+                        flex:1, padding:"12px 18px",
                         borderRadius: proModeOpen ? "10px 10px 0 0" : 10,
                         cursor:"pointer",
                         fontFamily:"inherit", fontSize:15, fontWeight:700,
@@ -1438,6 +1443,8 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                       </span>
                       <span style={{ fontSize:18, transform: proModeOpen ? "rotate(180deg)" : "none", transition:"transform 0.15s" }}>▾</span>
                     </button>
+                    <HelpTooltip text={HELP.messageMachine.proModeToggle} label="Help: Pro Mode" align="end" />
+                    </div>
                   </div>
                 );
               })()}
@@ -1453,7 +1460,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               {/* Messaging Frame — relocated here for Pro users */}
               <section style={S.card}>
                 <fieldset style={{ border:"none", padding:0 }}>
-                  <legend style={S.label}>Messaging Frame <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
+                  <legend style={S.label}>Messaging Frame <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span><HelpTooltip text={HELP.messageMachine.messagingFrame} label="Help: Messaging Frame" /></legend>
                   <p style={{ ...S.hint, marginBottom:12 }}>Focus the entire message on one strategic theme. Leave blank for general messaging.</p>
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
                     {NATIONAL_FRAMES.map(f => {
@@ -1485,7 +1492,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               {msgMode === "az" && (
                 <section style={S.card}>
                   <fieldset style={{ border:"none", padding:0 }}>
-                    <legend style={S.label}>County Voice <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional — layers on top of Voice/Persona)</span></legend>
+                    <legend style={S.label}>County Voice <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional — layers on top of Voice/Persona)</span><HelpTooltip text={HELP.messageMachine.countyVoice} label="Help: County Voice" /></legend>
                     <p style={{ ...S.hint, marginBottom:10 }}>Grounds the message in a specific county's local style — landmarks, local stakes, and tone. Stacks with Voice/Persona rather than replacing it.</p>
                     <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginTop:4 }}>
                       {Object.keys(COUNTY_VOICES).map(c => {
@@ -1532,7 +1539,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:18 }}>
                 <section style={S.card}>
                   <fieldset style={{ border:"none", padding:0 }}>
-                    <legend style={S.label}>Target Audience <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
+                    <legend style={S.label}>Target Audience <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span><HelpTooltip text={HELP.messageMachine.audienceStyleTone} label="Help: Target Audience, Style & Tone" /></legend>
                     <p style={{ ...S.hint, marginBottom:10 }}>Default: general moderate voter who is not very engaged in politics</p>
                     <div style={{ display:"flex", flexDirection:"column", gap:12, marginTop:4 }}>
                       {AUDIENCES.map(a => {
@@ -1550,7 +1557,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   </fieldset>
                 </section>
                 <section style={S.card}>
-                  <label htmlFor="voice" style={S.label}>Voice / Persona</label>
+                  <label htmlFor="voice" style={S.label}>Voice / Persona<HelpTooltip text={HELP.messageMachine.voicePersona} label="Help: Voice / Persona" /></label>
                   <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
                     {VOICE_PRESETS.map(p => {
                       const on = formData.voice === p.text;
@@ -1654,7 +1661,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               {/* Platforms */}
               <section style={S.card}>
                 <fieldset style={{ border:"none", padding:0 }}>
-                  <legend style={S.label}>Platforms <span style={{color:T.red}} aria-label="required">*</span></legend>
+                  <legend style={S.label}>Platforms <span style={{color:T.red}} aria-label="required">*</span><HelpTooltip text={HELP.messageMachine.platforms} label="Help: Platforms" /></legend>
                   <div className="platform-grid" style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:12, marginTop:8 }}>
                     {PLATFORMS.map(p => {
                       const on = formData.platforms.includes(p.id);
@@ -1683,7 +1690,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               </section>
 
               {/* Generate button */}
-              <div style={{ display:"flex", gap:14, flexWrap:"wrap", marginTop:8 }}>
+              <div style={{ display:"flex", gap:14, flexWrap:"wrap", marginTop:8, alignItems:"center" }}>
                 <button onClick={generateAll} disabled={generating} style={{
                   ...S.btnPrimary, flex:1, minWidth:200, fontSize:20, padding:"18px 24px",
                   display:"flex", alignItems:"center", justifyContent:"center", gap:14,
@@ -1691,6 +1698,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 }}>
                   Generate Messages →
                 </button>
+                <HelpTooltip text={HELP.messageMachine.generate} label="Help: Generate Messages" />
                 {hasMessages && (
                   <button onClick={()=>setView("results")} style={{ ...S.btnSecondary, fontSize:16, padding:"18px 20px", whiteSpace:"nowrap" }}>
                     ← Back to Results
@@ -1726,14 +1734,20 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   + New
                 </button>
                 {canPushToStorm && (
-                  <button onClick={openPushModal} style={{ ...S.btnSecondary, fontSize:15, padding:"9px 16px", borderColor:"#3ECFB2", color:"#1D5C4A" }}>
-                    ⛈️ Push to Storm →
-                  </button>
+                  <span style={{ display:"inline-flex", alignItems:"center" }}>
+                    <button onClick={openPushModal} style={{ ...S.btnSecondary, fontSize:15, padding:"9px 16px", borderColor:"#3ECFB2", color:"#1D5C4A" }}>
+                      ⛈️ Push to Storm →
+                    </button>
+                    <HelpTooltip text={HELP.messageMachine.pushToStorm} label="Help: Push to Storm" />
+                  </span>
                 )}
                 {/* Primary action — gold, right-aligned */}
-                <button onClick={()=>setSaveModal(true)} style={{ ...S.btnPrimary, fontSize:15, padding:"9px 18px", marginLeft:"auto" }}>
-                  Save to Library
-                </button>
+                <span style={{ display:"inline-flex", alignItems:"center", marginLeft:"auto" }}>
+                  <button onClick={()=>setSaveModal(true)} style={{ ...S.btnPrimary, fontSize:15, padding:"9px 18px" }}>
+                    Save to Library
+                  </button>
+                  <HelpTooltip text={HELP.messageMachine.saveLibrary} label="Help: Save to Library" align="end" />
+                </span>
               </div>
             </div>
 
@@ -1766,7 +1780,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
             <div style={{ marginTop:40, borderTop:`4px solid ${T.borderStrong}`, paddingTop:36 }}>
               <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:16, marginBottom: hashtags || hashLoading ? 28 : 0 }}>
                 <div>
-                  <h3 style={{ fontSize:26, fontWeight:900, color:T.text, marginBottom:6 }}>Hashtag Suggestions</h3>
+                  <h3 style={{ fontSize:26, fontWeight:900, color:T.text, marginBottom:6 }}>Hashtag Suggestions<HelpTooltip text={HELP.messageMachine.hashtags} label="Help: Hashtag Suggestions" /></h3>
                   <p style={{ fontSize:18, color:T.textMid, lineHeight:1.5 }}>Generate hashtags separately — add them to any post you choose.</p>
                 </div>
                 <button
