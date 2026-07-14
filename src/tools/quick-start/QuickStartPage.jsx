@@ -201,6 +201,19 @@ export default function QuickStartPage() {
           ))}
         </div>
 
+        {/* Cross-link to the full Manual */}
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <span style={{ fontSize: 14, color: "var(--text-mute)" }}>
+            Want more detail on any of these tools?{" "}
+          </span>
+          <button
+            onClick={() => navigate("/manual")}
+            style={{ background: "none", border: "none", padding: 0, font: "inherit", fontWeight: 700, color: TEAL, textDecoration: "underline", cursor: "pointer" }}
+          >
+            Read the full User Manual →
+          </button>
+        </div>
+
         {/* Download strip */}
         <div style={{ border: "2px solid var(--border)", borderRadius: 14, padding: "18px 22px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", background: "var(--bg)" }}>
           <div>
