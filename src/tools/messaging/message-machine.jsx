@@ -7,7 +7,7 @@ import {
 } from "../../lib/stormLibrary";
 import { useAuth } from "../../context/AuthContext";
 import { auth } from "../../firebase";
-import HelpTooltip from "../common/HelpTooltip";
+import HelpTooltip from "../../components/common/HelpTooltip";
 import { HELP } from "../../lib/helpContent";
 
 const PLATFORMS = [
