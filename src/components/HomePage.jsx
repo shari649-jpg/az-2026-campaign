@@ -41,16 +41,22 @@ const TOOLS = [
 
 const WORKFLOWS = [
   {
-    title: "Research → Message",
-    desc: "Research a candidate or issue, then take findings directly into the Message Machine to generate platform posts.",
-    steps: ["Candidate Research", "→", "Message Machine"],
+    title: "Research → Message → Library",
+    desc: "Research a candidate or issue, send the facts and quotes you check straight into Message Machine, then save the finished campaign to the Shared Library.",
+    steps: ["Research", "→", "Message Machine", "→", "Library"],
     color: "#1D5C4A",
   },
   {
-    title: "Monitor → Rebuttal",
-    desc: "Catch a false narrative in Rapid Response, then send it straight to the Rebuttal Generator.",
-    steps: ["Rapid Response", "→", "Rebuttal Generator"],
+    title: "React → Message → Library",
+    desc: "When a story breaks, the team decides in the moment whether it goes to Rapid Response or straight to the Rebuttal Generator. Either way, it flows into Message Machine, then gets saved to the Shared Library.",
+    steps: ["Rapid Response", "or", "Rebuttal Generator", "→", "Message Machine", "→", "Library"],
     color: "#C1673A",
+  },
+  {
+    title: "Message → Storm",
+    desc: "Build a post in Message Machine, then push it straight into a coordinated, multi-platform Storm campaign. (Managers/Administrators)",
+    steps: ["Message Machine", "→", "Storm Chasers Hub"],
+    color: "#4A4558",
   },
 ];
 
@@ -286,6 +292,8 @@ function WorkflowCard({ wf }) {
         {wf.steps.map((step, i) => (
           step === "→"
             ? <span key={i} style={{ fontSize: 16, color: "var(--text-mute)" }}>→</span>
+            : step === "or"
+            ? <span key={i} style={{ fontSize: 12, fontStyle: "italic", color: "var(--text-mute)", padding: "0 2px" }}>or</span>
             : <span key={i} style={{
                 fontSize: 11,
                 fontWeight: 700,
