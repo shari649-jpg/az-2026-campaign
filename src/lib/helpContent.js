@@ -14,13 +14,13 @@
 export const HELP = {
   messageMachine: {
     issue:
-      "Describe what you want to talk about, in your own words. The more specific you are, the sharper your message will be.",
+      "Describe what you want to talk about, in your own words. The more specific you are, the sharper your message will be. Or if you like surprises, be brief!",
     audience:
       "Who is this message speaking to? (e.g. \"suburban parents,\" \"young voters.\") This shapes the tone of every platform's post.",
     platforms:
       "Pick which platforms you want posts for. You don't have to generate all six every time.",
     mode:
-      "Neutral works for general messaging. Choose AZ Coalition for our Arizona-grounded voice, or National for national messaging frames.",
+      "Leave blank for Neutral, general messaging. Choose AZ Coalition for our Arizona-grounded voice, or National for national messaging frames.",
     generate:
       "This takes about 10–25 seconds — it's writing all your selected platforms at once.",
     refine:
@@ -42,9 +42,9 @@ export const HELP = {
     countyDetected:
       "We noticed a single, clear county in what you sent over. Apply its voice, or dismiss this — your call.",
     voicePersona:
-      "Pick a preset to instantly fill in a detailed voice style — then edit it however you like. Click the preset again to clear it.",
+      "Who are you speaking as? Pick a preset to instantly fill in a detailed voice style — then edit it however you like. Click the preset again to clear it. Type in your own, like 'co-worker' or 'rural neighbor'",
     audienceStyleTone:
-      "Dial in exactly who this is for, how formal it reads, its emotional tone, and whose perspective it's written from.",
+      "Who are you speaking to? What is the political identity of your target audience.",
     urlIngest:
       "You can drop a news link right in — no need to detour through Rapid Response first.",
     hashtags:
