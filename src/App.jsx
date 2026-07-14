@@ -17,6 +17,7 @@ import ResourcesPage from "./tools/resources/ResourcesPage";
 import LibraryPage from "./tools/library/LibraryPage";
 import MediaPage from "./tools/media/MediaPage";
 import QuickStartPage from "./tools/quick-start/QuickStartPage";
+import ManualPage from "./tools/manual/ManualPage";
 import MisinfoMonitorPage from "./tools/misinfo-monitor/MisinfoMonitorPage";
 import StormsHubPage from "./tools/storms/StormsHubPage";
 import PublicStormPage from "./pages/PublicStormPage";
@@ -50,6 +51,7 @@ export default function App() {
             <Route path="/profile"         element={<ProfilePage />} />
             <Route path="/announcements"   element={<AnnouncementsPage />} />
             <Route path="/quick-start"     element={<QuickStartPage />} />
+            <Route path="/manual"          element={<ManualPage />} />
             <Route path="/misinfo-monitor" element={<MisinfoMonitorPage />} />
             <Route path="/storms"          element={<StormsHubPage />} />
           </Route>
