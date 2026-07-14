@@ -17,6 +17,7 @@ const MORE_ITEMS = [
   { path: "/library",           short: "Library" },
   { path: "/resources",         short: "Resources" },
   { path: "/quick-start",       short: "Quick Start" },
+  { path: "/manual",             short: "User Manual" },
   { path: "/misinfo-monitor",   short: "BS Monitor" },
   { path: "/storms",             short: "Storm Chaser's Hub" },
 ];
@@ -204,7 +205,7 @@ export default function AppShell() {
         zIndex: 100,
         background: "var(--bg)",
         borderBottom: "3px solid var(--gold)",
-        minheight: "var(--nav-height)",
+        height: "var(--nav-height)",
         boxShadow: "0 2px 12px rgba(74,69,88,0.08)",
       }}>
         <div style={{
@@ -493,7 +494,7 @@ export default function AppShell() {
       {/* Mobile menu */}
       <div className="mobile-menu" style={{
         position: "fixed",
-        top: activeAnnouncement ? "calc(var(--nav-height) + 30px)" : "var(--nav-height)",
+        top: "var(--nav-height)",
         left: 0,
         right: 0,
         background: "var(--bg)",
