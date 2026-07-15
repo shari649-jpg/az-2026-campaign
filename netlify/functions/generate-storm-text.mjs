@@ -1,10 +1,11 @@
 // netlify/functions/generate-storm-text.mjs
 // Storm Chasers Hub — per-platform post text generation/rephrase.
 // Modern Netlify Functions runtime (ESM). Mirrors generate-message.mjs's
-// pattern exactly (Handoff #15, decision #7) — this is a plain pass-through
-// to Claude, same as every other tool's generate function. All prompt
-// construction (including the shared factual-accuracy guardrail) happens
-// client-side in StormPostEditor.jsx.
+// pattern exactly (Handoff #15, decision #7) — plain pass-through to Claude,
+// same as every other tool's generate function. Prompt construction
+// (platform framing, tone, etc.) happens client-side in StormPostEditor.jsx,
+// but the factual-accuracy guardrail is now enforced server-side as well
+// (Handoff #21, Group F) — see the note below the auth/rate-limit block.
 //
 // Auth:       requires a valid Firebase ID token (any signed-in user)
 // Rate limit: 50/day (user), 100/day (manager), 200/day (administrator)
@@ -13,6 +14,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
+import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
@@ -85,10 +87,20 @@ export default async function (req) {
 
     // ── Claude call ─────────────────────────────────────────────────────────
     const { max_tokens, messages, system } = body;
+
+    // Server-side guardrail enforcement (Handoff #21, Group F). Never trust
+    // the client to have included the factual-accuracy rule. If the client's
+    // system prompt already contains it, don't duplicate; otherwise append
+    // it so it's always enforced regardless of caller.
+    const clientSystem = typeof system === "string" ? system : "";
+    const effectiveSystem = clientSystem.includes("FACTUAL ACCURACY:")
+      ? clientSystem
+      : [clientSystem, FACTUAL_ACCURACY_GUARDRAIL].filter(Boolean).join("\n\n");
+
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: max_tokens || 700, messages, ...(system && { system }) }),
+      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: max_tokens || 700, messages, system: effectiveSystem }),
     });
 
     const data = await response.json();
