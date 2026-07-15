@@ -21,6 +21,7 @@ import ManualPage from "./tools/manual/ManualPage";
 import MisinfoMonitorPage from "./tools/misinfo-monitor/MisinfoMonitorPage";
 import StormsHubPage from "./tools/storms/StormsHubPage";
 import PublicStormPage from "./pages/PublicStormPage";
+import PublicStormsListPage from "./pages/PublicStormsListPage";
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/waitlist" element={<WaitlistPage />} />
           <Route path="/storm/:token" element={<PublicStormPage />} />
+          <Route path="/storms/public" element={<PublicStormsListPage />} />
 
           {/* Protected routes */}
           <Route element={
