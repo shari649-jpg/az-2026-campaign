@@ -8,6 +8,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
+import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
@@ -80,10 +81,24 @@ export default async function (req) {
 
     // ── Claude call ─────────────────────────────────────────────────────────
     const { messages, system, max_tokens } = body;
+
+    // Server-side guardrail enforcement (Handoff #21, Group F). Never trust
+    // the client to have included the factual-accuracy rule — it previously
+    // only existed client-side (rebuttal-campaign-generator.jsx), so a
+    // modified client or a direct call to this endpoint could skip it
+    // entirely. If the client's system prompt already contains it, don't
+    // duplicate; otherwise append it so it's always enforced regardless of
+    // caller. Note this function is called twice per full rebuttal
+    // generation — both calls get the guardrail enforced identically.
+    const clientSystem = typeof system === "string" ? system : "";
+    const effectiveSystem = clientSystem.includes("FACTUAL ACCURACY:")
+      ? clientSystem
+      : [clientSystem, FACTUAL_ACCURACY_GUARDRAIL].filter(Boolean).join("\n\n");
+
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: max_tokens || 600, messages, ...(system && { system }) }),
+      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: max_tokens || 600, messages, system: effectiveSystem }),
     });
 
     const data = await response.json();
