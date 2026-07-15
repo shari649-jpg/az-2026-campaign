@@ -37,6 +37,33 @@ const TOOLS = [
     color: "#1D5C4A",
     bg: "#e0f2ec",
   },
+  {
+    path: "/media",
+    label: "Media",
+    eyebrow: "Media",
+    desc: "Browse the coalition's shared photo and video library, or build branded graphics and quote cards in Graphics Studio.",
+    status: "live",
+    color: "#0F6E56",
+    bg: "#dff7f1",
+  },
+  {
+    path: "/library",
+    label: "Shared Library",
+    eyebrow: "Library",
+    desc: "Every saved campaign and article from Message Machine, Rebuttal, and Rapid Response — visible to the whole coalition team.",
+    status: "live",
+    color: "#4A4558",
+    bg: "#eef1f8",
+  },
+  {
+    path: "/storms",
+    label: "Storm Chasers Hub",
+    eyebrow: "Advanced",
+    desc: "Coordinate a multi-platform Storm campaign — build posts, manage status, and publish across the whole team at once.",
+    status: "live",
+    color: "#8a6a10",
+    bg: "#fdf3c0",
+  },
 ];
 
 const WORKFLOWS = [
@@ -62,6 +89,7 @@ const WORKFLOWS = [
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [workflowsOpen, setWorkflowsOpen] = useState(false);
 
   return (
@@ -125,7 +153,7 @@ export default function HomePage() {
                 Open Message Machine →
               </button>
               <button
-                onClick={() => navigate("/quick-start")}
+                onClick={() => navigate("/manual")}
                 style={{
                   background: "none",
                   border: "none",
@@ -144,53 +172,29 @@ export default function HomePage() {
       </div>
 
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "44px 24px 64px" }}>
-        <div style={{ marginBottom: 32 }}>
-          <SectionLabel>All Tools</SectionLabel>
+        <CollapsibleToggle label="All Tools" open={toolsOpen} onToggle={() => setToolsOpen(o => !o)}>
           <div style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
             gap: 14,
-            marginTop: 18,
           }}>
             {TOOLS.map(tool => (
               <ToolCard key={tool.path} tool={tool} onNavigate={navigate} />
             ))}
           </div>
-        </div>
+        </CollapsibleToggle>
 
-        <div style={{ marginBottom: 40 }}>
-          <button
-            onClick={() => setWorkflowsOpen(open => !open)}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: 0,
-              fontFamily: "var(--font-body)",
-              fontSize: 13,
-              fontWeight: 700,
-              color: "var(--text-mid)",
-            }}
-          >
-            <span style={{ display: "inline-block", transform: workflowsOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
-            Combined Workflows
-          </button>
-          {workflowsOpen && (
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-              gap: 18,
-              marginTop: 18,
-            }}>
-              {WORKFLOWS.map(wf => (
-                <WorkflowCard key={wf.title} wf={wf} />
-              ))}
-            </div>
-          )}
-        </div>
+        <CollapsibleToggle label="Combined Workflows" open={workflowsOpen} onToggle={() => setWorkflowsOpen(o => !o)}>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+            gap: 18,
+          }}>
+            {WORKFLOWS.map(wf => (
+              <WorkflowCard key={wf.title} wf={wf} />
+            ))}
+          </div>
+        </CollapsibleToggle>
 
         <div>
           <SectionLabel>Quick Links</SectionLabel>
@@ -210,6 +214,33 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CollapsibleToggle({ label, open, onToggle, children }) {
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <button
+        onClick={onToggle}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: 0,
+          fontFamily: "var(--font-body)",
+          fontSize: 13,
+          fontWeight: 700,
+          color: "var(--text-mid)",
+        }}
+      >
+        <span style={{ display: "inline-block", transform: open ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
+        {label}
+      </button>
+      {open && <div style={{ marginTop: 18 }}>{children}</div>}
     </div>
   );
 }
