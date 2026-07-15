@@ -1,4 +1,13 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+
+// Message Machine is the primary "just do the thing" path (see punch list:
+// homepage overwhelm fix, option 1). It gets its own hero CTA below instead
+// of sitting in the tools grid as one card among equals.
+const MESSAGE_MACHINE = {
+  path: "/messaging",
+  label: "Message Machine",
+};
 
 const TOOLS = [
   {
@@ -6,15 +15,6 @@ const TOOLS = [
     label: "Research: Candidates, Issues & Districts",
     eyebrow: "Intel",
     desc: "Deep-dive profiles on candidates — positions, vulnerabilities, voting records. Search by issue, district demographics, or race comparisons.",
-    status: "live",
-    color: "#1D5C4A",
-    bg: "#e0f2ec",
-  },
-  {
-    path: "/messaging",
-    label: "Message Machine",
-    eyebrow: "Comms",
-    desc: "Generate platform-ready social media posts tailored to issue, audience, voice, and style — across all six platforms.",
     status: "live",
     color: "#1D5C4A",
     bg: "#e0f2ec",
@@ -62,6 +62,7 @@ const WORKFLOWS = [
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const [workflowsOpen, setWorkflowsOpen] = useState(false);
 
   return (
     <div>
@@ -100,41 +101,95 @@ export default function HomePage() {
               fontSize: 17,
               color: "rgba(255,255,255,0.8)",
               lineHeight: 1.65,
-              maxWidth: 520,
+              maxWidth: 480,
+              marginBottom: 22,
             }}>
-              AI-powered campaign tools for research, messaging, and rapid response.
-              Use each tool independently or chain them together.
+              Need to post something? Start with Message Machine — everything
+              else is here when you're ready to go deeper.
             </p>
+            <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+              <button
+                onClick={() => navigate(MESSAGE_MACHINE.path)}
+                style={{
+                  background: "var(--gold)",
+                  color: "#4A1B0C",
+                  border: "none",
+                  borderRadius: "var(--radius)",
+                  padding: "14px 24px",
+                  fontSize: 16,
+                  fontWeight: 700,
+                  fontFamily: "var(--font-body)",
+                  cursor: "pointer",
+                }}
+              >
+                Open Message Machine →
+              </button>
+              <button
+                onClick={() => navigate("/quick-start")}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "rgba(255,255,255,0.75)",
+                  fontSize: 13,
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                  fontFamily: "var(--font-body)",
+                }}
+              >
+                or take the full tour
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "44px 24px 64px" }}>
-        <div style={{ marginBottom: 56 }}>
-          <SectionLabel>Tools</SectionLabel>
+        <div style={{ marginBottom: 32 }}>
+          <SectionLabel>All Tools</SectionLabel>
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-            gap: 18,
-            marginTop: 20,
+            gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+            gap: 14,
+            marginTop: 18,
           }}>
             {TOOLS.map(tool => (
               <ToolCard key={tool.path} tool={tool} onNavigate={navigate} />
             ))}
           </div>
         </div>
-        <div style={{ marginBottom: 56 }}>
-          <SectionLabel>Combined Workflows</SectionLabel>
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-            gap: 18,
-            marginTop: 20,
-          }}>
-            {WORKFLOWS.map(wf => (
-              <WorkflowCard key={wf.title} wf={wf} />
-            ))}
-          </div>
+
+        <div style={{ marginBottom: 40 }}>
+          <button
+            onClick={() => setWorkflowsOpen(open => !open)}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: 0,
+              fontFamily: "var(--font-body)",
+              fontSize: 13,
+              fontWeight: 700,
+              color: "var(--text-mid)",
+            }}
+          >
+            <span style={{ display: "inline-block", transform: workflowsOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
+            Combined Workflows
+          </button>
+          {workflowsOpen && (
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+              gap: 18,
+              marginTop: 18,
+            }}>
+              {WORKFLOWS.map(wf => (
+                <WorkflowCard key={wf.title} wf={wf} />
+              ))}
+            </div>
+          )}
         </div>
 
         <div>
@@ -199,14 +254,14 @@ function ToolCard({ tool, onNavigate }) {
       style={{
         border: "2px solid var(--border)",
         borderRadius: "var(--radius-lg)",
-        padding: 26,
+        padding: 18,
         background: "var(--bg)",
         cursor: isLive ? "pointer" : "default",
         opacity: isLive ? 1 : 0.6,
         transition: "border-color 0.15s, box-shadow 0.15s, transform 0.15s",
         display: "flex",
         flexDirection: "column",
-        gap: 12,
+        gap: 10,
       }}
       onMouseEnter={e => {
         if (!isLive) return;
@@ -246,14 +301,14 @@ function ToolCard({ tool, onNavigate }) {
       <div>
         <h2 style={{
           fontFamily: "var(--font-display)",
-          fontSize: 21,
+          fontSize: 18,
           color: "var(--text)",
           lineHeight: 1.2,
-          marginBottom: 8,
+          marginBottom: 6,
         }}>
           {tool.label}
         </h2>
-        <p style={{ fontSize: 14, color: "var(--text-mid)", lineHeight: 1.65 }}>
+        <p style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.55 }}>
           {tool.desc}
         </p>
       </div>
