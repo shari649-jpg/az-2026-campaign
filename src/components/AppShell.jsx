@@ -16,10 +16,9 @@ const MORE_ITEMS = [
   { path: "/media",             short: "Media" },
   { path: "/library",           short: "Library" },
   { path: "/resources",         short: "Resources" },
-  { path: "/quick-start",       short: "Quick Start" },
-  { path: "/manual",             short: "User Manual" },
   { path: "/misinfo-monitor",   short: "BS Monitor" },
   { path: "/storms",             short: "Storm Chaser's Hub" },
+  { path: "/manual",             short: "Help" },
 ];
 
 // Scrolls the window to the top whenever the route changes, regardless of
