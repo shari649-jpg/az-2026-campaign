@@ -287,6 +287,15 @@ export default function StormsHubPage() {
   const isStaff = role === "administrator" || role === "manager";
 
   const [viewMode, setViewMode] = useState(isStaff ? "manager" : "user");
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  function handleCopyDirectoryLink() {
+    const url = `${window.location.origin}/storms/public`;
+    navigator.clipboard.writeText(url).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  }
 
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "32px 20px 64px", fontFamily: "var(--font-body)" }}>
@@ -298,6 +307,16 @@ export default function StormsHubPage() {
               ? "Create and manage coordinated social storm campaigns."
               : "Download media and copy post text for active social storms."}
           </p>
+          <button
+            onClick={handleCopyDirectoryLink}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10,
+              background: "none", border: "none", padding: 0, cursor: "pointer",
+              fontSize: 13, fontWeight: 700, color: TEAL, textDecoration: "underline",
+            }}
+          >
+            {linkCopied ? "✓ Copied!" : "🔗 Copy public directory link"}
+          </button>
         </div>
 
         {isStaff && (
