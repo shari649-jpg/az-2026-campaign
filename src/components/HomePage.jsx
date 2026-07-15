@@ -229,15 +229,15 @@ function CollapsibleToggle({ label, open, onToggle, children }) {
           cursor: "pointer",
           display: "flex",
           alignItems: "center",
-          gap: 8,
+          gap: 10,
           padding: 0,
-          fontFamily: "var(--font-body)",
-          fontSize: 13,
+          fontFamily: "var(--font-display)",
+          fontSize: 20,
           fontWeight: 700,
-          color: "var(--text-mid)",
+          color: "var(--teal)",
         }}
       >
-        <span style={{ display: "inline-block", transform: open ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
+        <span style={{ display: "inline-block", fontSize: 16, transform: open ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
         {label}
       </button>
       {open && <div style={{ marginTop: 18 }}>{children}</div>}
