@@ -35,6 +35,9 @@
 [functions."public-storm"]
   timeout = 10
 
+[functions."public-storms-list"]
+  timeout = 10
+
 [functions."send-invite"]
   timeout = 26
 
