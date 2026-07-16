@@ -11,11 +11,19 @@
 // internal "User View" share exactly one implementation instead of two
 // that could drift out of sync. Purely presentational — takes `post` and
 // `hashtag` and has no idea whether it's being rendered inside the
-// authenticated app or the public page.
+// authenticated app or the public page... except for one deliberate
+// exception added here (Handoff #19/#22): the "🔁 Regenerate" button
+// needs to know which of two very different backends to call, so the
+// caller now also passes `storm` (full object, member context only) and
+// `isPublic`/`publicToken` (public-page context only). Regeneration is
+// always ephemeral — it only ever changes what's shown locally in this
+// component; `post.texts` in Firestore is never touched.
 
 import { useState } from "react";
 import { zipSync } from "fflate";
-import { MEDIA_TYPES, PLATFORMS } from "../../lib/stormLibrary";
+import { MEDIA_TYPES, PLATFORMS, CHAR_LIMITS, formatGenParams } from "../../lib/stormLibrary";
+import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
+import { auth } from "../../firebase";
 
 const TEAL       = "#1D5C4A";
 const CHARCOAL   = "#4A4558";
@@ -60,7 +68,7 @@ function PlatformIcon({ platformKey, badge }) {
   );
 }
 
-export default function PostDisplayCard({ post, hashtag }) {
+export default function PostDisplayCard({ post, hashtag, storm, isPublic, publicToken }) {
   const isGraphicSet = post.mediaType === MEDIA_TYPES.GRAPHIC && (post.media?.length || 0) > 1;
   const [selected, setSelected] = useState(() => new Set((post.media || []).map((_, i) => i)));
   const [downloading, setDownloading] = useState(false);
@@ -71,6 +79,11 @@ export default function PostDisplayCard({ post, hashtag }) {
   // posts an enormous scroll, especially on mobile, even for someone who
   // only cares about one platform.
   const [openPlatform, setOpenPlatform] = useState(null);
+
+  // ── Regenerate (Handoff #19/#22) — always ephemeral, never saved ──────
+  const [regenTexts, setRegenTexts] = useState({}); // { [platformKey]: "alternate text" } — local-only
+  const [regenLoading, setRegenLoading] = useState(null); // platformKey currently regenerating, or null
+  const [regenNotice, setRegenNotice] = useState(null); // { type: "ratelimit"|"disabled"|"error", msg } — persists until dismissed, since a tripped breaker should stay visible
 
   function toggle(i) { setSelected(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next; }); }
   function selectAll() { setSelected(new Set((post.media || []).map((_, i) => i))); }
@@ -119,6 +132,94 @@ export default function PostDisplayCard({ post, hashtag }) {
     setOpenPlatform(prev => prev === key ? null : key);
   }
 
+  function stormContextBlock() {
+    const lines = [
+      `Storm title: ${storm?.title || "Not specified"}`,
+      storm?.subjectType ? `Subject: ${storm.subjectType}${storm.subjectName ? ` — ${storm.subjectName}` : ""}` : null,
+      storm?.summary ? `Summary: ${storm.summary}` : null,
+      storm?.description ? `Details: ${storm.description}` : null,
+      storm?.hashtag ? `Campaign hashtag: #${storm.hashtag}` : null,
+    ].filter(Boolean);
+    return lines.join("\n");
+  }
+
+  // Member path — mirrors StormPostEditor.jsx's buildRephrasePrompt exactly,
+  // since this is the same authenticated tool, just reached from a
+  // read-only card instead of the edit modal. Calls the same
+  // generate-storm-text.mjs function (server-side guardrail enforcement
+  // already covers this path).
+  async function regenerateAsMember(platformKey) {
+    const platform = PLATFORMS.find(p => p.key === platformKey);
+    const limit = CHAR_LIMITS[platformKey];
+    const currentText = post.texts[platformKey];
+    const prompt = `You are an expert political messaging strategist rewriting an existing storm post.
+
+${FACTUAL_ACCURACY_GUARDRAIL}
+
+${stormContextBlock()}
+
+CURRENT ${platform?.label} MESSAGE (${currentText.length} characters, max ${limit}):
+${currentText}
+
+INSTRUCTION: Rephrase this message. Keep the same length, meaning, and platform style, but use different wording, sentence structure, and framing. Do not add new facts, names, or figures beyond what's already here.
+
+YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
+Format: {"${platformKey}": "rewritten post text"}`;
+
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+    const res = await fetch("/.netlify/functions/generate-storm-text", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}) },
+      body: JSON.stringify({ max_tokens: 700, messages: [{ role: "user", content: prompt }] }),
+    });
+    if (res.status === 429) { const err = new Error("rate_limit"); err.type = "ratelimit"; throw err; }
+    const data = await res.json();
+    if (data.error) throw new Error("generation_failed");
+    const text = data.content.map(b => b.text || "").join("");
+    const cleaned = text.replace(/```json|```/g, "").trim();
+    if (!cleaned.startsWith("{")) throw new Error("generation_failed");
+    const parsed = JSON.parse(cleaned);
+    return parsed[platformKey] || "";
+  }
+
+  // Public path — a separate, tightly-scoped function; the entire prompt
+  // is built server-side from stored data, never from anything this
+  // client sends. See public-storm-regenerate.mjs.
+  async function regenerateAsPublic(platformKey) {
+    const res = await fetch("/.netlify/functions/public-storm-regenerate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: publicToken, postId: post.id, platformKey }),
+    });
+    const data = await res.json();
+    if (res.status === 429) { const err = new Error("rate_limit"); err.type = "ratelimit"; throw err; }
+    if (data.error === "disabled") { const err = new Error("disabled"); err.type = "disabled"; throw err; }
+    if (!data.ok) throw new Error("generation_failed");
+    return data.text || "";
+  }
+
+  async function handleRegenerate(platformKey) {
+    setRegenLoading(platformKey);
+    try {
+      const text = isPublic ? await regenerateAsPublic(platformKey) : await regenerateAsMember(platformKey);
+      setRegenTexts(prev => ({ ...prev, [platformKey]: text }));
+      setRegenNotice(null);
+    } catch (e) {
+      if (e.type === "ratelimit") {
+        setRegenNotice({ type: "ratelimit", msg: "🚦 Regenerate limit reached for now — resets at midnight UTC." });
+      } else if (e.type === "disabled") {
+        setRegenNotice({ type: "disabled", msg: "Regenerate is temporarily turned off by staff. Try again later." });
+      } else {
+        setRegenNotice({ type: "error", msg: "⚠️ Couldn't regenerate — please try again." });
+      }
+    }
+    setRegenLoading(null);
+  }
+
+  function revertRegenerated(platformKey) {
+    setRegenTexts(prev => { const next = { ...prev }; delete next[platformKey]; return next; });
+  }
+
   // Only platforms with actual text get an icon at all — an empty
   // platform never appears.
   const activePlatforms = PLATFORMS.filter(p => post.texts?.[p.key]?.trim());
@@ -152,12 +253,19 @@ export default function PostDisplayCard({ post, hashtag }) {
         </>
       )}
 
-      <button onClick={handleDownload} disabled={downloading || selectedCount === 0} style={{
-        background: selectedCount === 0 ? "#ddd" : TEAL, color: "#fff", border: "none", borderRadius: 8,
-        padding: "9px 18px", fontWeight: 800, fontSize: 13.5, cursor: selectedCount === 0 ? "default" : "pointer", marginBottom: 16,
-      }}>
-        {downloadLabel}
-      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        <button onClick={handleDownload} disabled={downloading || selectedCount === 0} style={{
+          background: selectedCount === 0 ? "#ddd" : TEAL, color: "#fff", border: "none", borderRadius: 8,
+          padding: "9px 18px", fontWeight: 800, fontSize: 13.5, cursor: selectedCount === 0 ? "default" : "pointer",
+        }}>
+          {downloadLabel}
+        </button>
+        {formatGenParams(post.genParams) && (
+          <span style={{ fontSize: 11.5, color: "#888", lineHeight: 1.3 }}>
+            {formatGenParams(post.genParams)}
+          </span>
+        )}
+      </div>
 
       {/* Platform icons — tap one to expand just that platform's text below.
           Tap the same one again (or a different one) to switch/close.
@@ -194,20 +302,60 @@ export default function PostDisplayCard({ post, hashtag }) {
         </div>
       )}
 
-      {openPlatformData && (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, background: SURFACE_ALT, borderRadius: 8, padding: "10px 12px", marginTop: 10 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: TEAL, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 3 }}>{openPlatformData.label}</div>
-            <div style={{ fontSize: 13.5, color: "#333", whiteSpace: "pre-wrap" }}>{post.texts[openPlatformData.key]}</div>
+      {openPlatformData && (() => {
+        const key = openPlatformData.key;
+        const regenText = regenTexts[key];
+        const isRegenLoading = regenLoading === key;
+        const displayedText = regenText ?? post.texts[key];
+        return (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, background: regenText ? "#fffaf0" : SURFACE_ALT, border: regenText ? `1.5px solid #e0c568` : "none", borderRadius: 8, padding: "10px 12px" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: TEAL, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 3 }}>
+                  {openPlatformData.label}{regenText && <span style={{ color: "#8a6215", marginLeft: 6, textTransform: "none", letterSpacing: 0 }}>· 🔁 alternate version (not saved)</span>}
+                </div>
+                <div style={{ fontSize: 13.5, color: "#333", whiteSpace: "pre-wrap" }}>{displayedText}</div>
+              </div>
+              <button onClick={() => handleCopy(key, displayedText)} style={{
+                flexShrink: 0, background: copiedKey === key ? TURQUOISE : "#fff", color: copiedKey === key ? "#fff" : TEAL,
+                border: `1.5px solid ${TEAL}`, borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+              }}>
+                {copiedKey === key ? "Copied ✓" : "Copy"}
+              </button>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 6 }}>
+              <button
+                onClick={() => handleRegenerate(key)}
+                disabled={isRegenLoading || regenNotice?.type === "ratelimit" || regenNotice?.type === "disabled"}
+                style={{
+                  background: "none", border: `1.5px solid ${TURQUOISE}`, borderRadius: 6, padding: "3px 10px",
+                  fontSize: 11.5, fontWeight: 700, color: TURQUOISE,
+                  cursor: (isRegenLoading || regenNotice?.type === "ratelimit" || regenNotice?.type === "disabled") ? "default" : "pointer",
+                  opacity: (isRegenLoading || regenNotice?.type === "ratelimit" || regenNotice?.type === "disabled") ? 0.55 : 1,
+                }}
+              >
+                {isRegenLoading ? "Regenerating…" : "🔁 Regenerate"}
+              </button>
+              {regenText && (
+                <button onClick={() => revertRegenerated(key)} style={{ background: "none", border: "none", color: "#888", fontSize: 11.5, fontWeight: 700, cursor: "pointer", textDecoration: "underline", padding: 0 }}>
+                  Revert to original
+                </button>
+              )}
+            </div>
+            {regenNotice && (
+              <div style={{
+                marginTop: 8, fontSize: 12, color: regenNotice.type === "error" ? "#991b1b" : "#8a6215",
+                background: regenNotice.type === "error" ? "#fee2e2" : "#fff3d6",
+                border: `1px solid ${regenNotice.type === "error" ? "#fca5a5" : "#e0c568"}`,
+                borderRadius: 7, padding: "6px 10px", display: "flex", justifyContent: "space-between", gap: 8,
+              }}>
+                <span>{regenNotice.msg}</span>
+                <button onClick={() => setRegenNotice(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontWeight: 800 }}>✕</button>
+              </div>
+            )}
           </div>
-          <button onClick={() => handleCopy(openPlatformData.key, post.texts[openPlatformData.key])} style={{
-            flexShrink: 0, background: copiedKey === openPlatformData.key ? TURQUOISE : "#fff", color: copiedKey === openPlatformData.key ? "#fff" : TEAL,
-            border: `1.5px solid ${TEAL}`, borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer",
-          }}>
-            {copiedKey === openPlatformData.key ? "Copied ✓" : "Copy"}
-          </button>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
