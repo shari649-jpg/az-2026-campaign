@@ -81,6 +81,10 @@ FIRST COMMENT: [1 punchy sentence under 280 chars]
 POST: Hook line / Beat 1 / Beat 2 / Beat 3 / CTA line
 FIRST COMMENT: [1 punchy sentence]
 
+## Contradiction Check
+Only include this section at all if the SELF-CONTRADICTION rule below applies to at least one platform's post — omit the entire section if it applies to none. If it applies, list one line per affected platform in this exact format:
+[Platform name]: [one specific sentence naming the contradiction between that post's own stated evidence and its own conclusion]
+
 ${FACTUAL_ACCURACY_GUARDRAIL}
 
 RULES:
@@ -168,7 +172,7 @@ function copyText(text) {
 
 // ── Output parser ─────────────────────────────────────────────────────────
 function parseOutput(text) {
-  const result = { anchor: null, anchorWhy: null, lenses: [], activist: null, platforms: {} };
+  const result = { anchor: null, anchorWhy: null, lenses: [], activist: null, platforms: {}, contradictions: {} };
 
   // Anchor phrase
   const anchorMatch = text.match(/##\s*Anchor Phrase\s*\n+([\s\S]*?)(?=\n##|\n###|$)/i);
@@ -225,14 +229,32 @@ function parseOutput(text) {
     };
   });
 
+  // Contradiction Check (Handoff #22 self-contradiction flag) — optional,
+  // only present when the model actually noticed one. Never blocking.
+  const contraMatch = text.match(/##\s*Contradiction Check\s*\n+([\s\S]*?)(?=\n##|$)/i);
+  if (contraMatch) {
+    const block = contraMatch[1].trim();
+    PLAT_NAMES.forEach(name => {
+      const escaped = name.replace("/", "\\/");
+      const lineMatch = block.match(new RegExp(`^${escaped}\\s*:\\s*(.+)$`, "im"));
+      if (lineMatch) result.contradictions[name] = lineMatch[1].trim();
+    });
+  }
+
   return result;
 }
 
 // ── Structured output renderer ────────────────────────────────────────────
 function CampaignOutput({ output, onCopy, onSave, onPushToMachine, onEdit, copied, saved }) {
   const [copiedPlat, setCopiedPlat] = useState(null);
+  const [dismissedContradictions, setDismissedContradictions] = useState({});
   const parsed = parseOutput(output);
   const hasPlatforms = Object.keys(parsed.platforms).length > 0;
+
+  // Reset dismissals whenever the output itself changes (a fresh generation
+  // or edit should show any contradiction flags again, not carry over an
+  // old dismissal from a previous version of the text).
+  useEffect(() => { setDismissedContradictions({}); }, [output]);
 
   const copyPlat = async (text, key) => {
     await copyText(text);
@@ -302,12 +324,21 @@ function CampaignOutput({ output, onCopy, onSave, onPushToMachine, onEdit, copie
         const bg = PLAT_COLORS[name] || INK;
         const abbr = PLAT_ABBR[name] || name.slice(0, 2).toUpperCase();
         const fullText = `POST:\n${post}${comment ? `\n\nFIRST COMMENT:\n${comment}` : ""}`;
+        const contradictionNote = !dismissedContradictions[name] ? parsed.contradictions[name] : null;
         return (
           <div key={name} style={{ border: `2px solid ${BORDER}`, borderRadius: "4px", overflow: "hidden" }}>
             {/* Platform header */}
             <div style={{ background: bg, color: "#fff", padding: "10px 16px", display: "flex", alignItems: "center", gap: "10px" }}>
               <div style={{ width: "28px", height: "28px", borderRadius: "6px", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "900" }}>{abbr}</div>
               <span style={{ fontWeight: "700", fontSize: "14px", letterSpacing: "0.03em" }}>{name}</span>
+              {contradictionNote && (
+                <span title="Possible self-contradiction — see below" style={{
+                  fontSize: "10px", fontWeight: "800", color: "#8a6215", background: "#fff3d6",
+                  border: "1px solid #e0c568", borderRadius: "999px", padding: "2px 8px",
+                }}>
+                  ⚠️ Check this
+                </span>
+              )}
               <button
                 onClick={() => copyPlat(fullText, name)}
                 style={{ marginLeft: "auto", padding: "4px 12px", background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.4)", borderRadius: "2px", fontSize: "11px", cursor: "pointer", fontFamily: "'Georgia',serif", letterSpacing: "0.06em", textTransform: "uppercase" }}
@@ -315,6 +346,20 @@ function CampaignOutput({ output, onCopy, onSave, onPushToMachine, onEdit, copie
                 {copiedPlat === name ? "✓ Copied" : "Copy"}
               </button>
             </div>
+            {contradictionNote && (
+              <div style={{ background: "#fffaf0", border: "none", borderBottom: `1.5px solid #e0c568`, padding: "10px 16px", position: "relative" }}>
+                <button
+                  onClick={() => setDismissedContradictions(d => ({ ...d, [name]: true }))}
+                  aria-label="Dismiss"
+                  style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", cursor: "pointer", fontSize: "13px", color: "#8a6215", fontWeight: "800" }}
+                >
+                  ✕
+                </button>
+                <p style={{ fontSize: "12.5px", color: "#6b4f14", lineHeight: "1.5", margin: 0, paddingRight: "20px" }}>
+                  <strong>Possible self-contradiction:</strong> {contradictionNote} Was this intentional?
+                </p>
+              </div>
+            )}
             {/* Post */}
             <div style={{ padding: "14px 16px", borderBottom: `1px solid ${BORDER}`, background: SURFACE }}>
               <div style={{ fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase", color: LIGHT, marginBottom: "6px" }}>Post</div>
