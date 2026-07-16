@@ -7,7 +7,7 @@ import { useState, useEffect } from "react";
 import {
   loadPosts, deletePost, MEDIA_TYPES, PUSH_TO_STORM_KEY, PUSH_TO_STORM_TTL_MS,
   canReview, STORM_STATUS, MAX_GRAPHIC_MB, PUBLIC_STORM_BASE_URL,
-  setStormPublic, setStormPublicCardImage, uploadPublicCardImage,
+  setStormPublic, setStormPublicCardImage, uploadPublicCardImage, formatGenParams,
 } from "../../lib/stormLibrary";
 import { useAuth } from "../../context/AuthContext";
 import StormPostEditor from "./StormPostEditor";
@@ -140,6 +140,11 @@ export default function StormPostsPanel({ storm, justCreated, onClose }) {
                       {" · "}
                       {Object.values(post.texts || {}).filter(t => t.trim()).length} platform text{Object.values(post.texts || {}).filter(t => t.trim()).length === 1 ? "" : "s"}
                     </div>
+                    {formatGenParams(post.genParams) && (
+                      <div style={{ fontSize: 11, color: TEAL, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {formatGenParams(post.genParams)}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -161,6 +166,7 @@ export default function StormPostsPanel({ storm, justCreated, onClose }) {
           nextOrder={posts.length}
           initialTexts={pendingPush?.texts}
           initialTitle={pendingPush?.title}
+          initialGenParams={pendingPush?.genParams}
           onClose={() => { setEditorOpen(false); setPendingPush(null); }}
           onSaved={handleSaved}
         />
