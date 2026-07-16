@@ -323,6 +323,12 @@ export async function createPost(stormId, data) {
     // locked field hides its Rephrase button and shows a "Locked by staff"
     // tag to everyone else. Defaults to unlocked for every platform.
     lockedFields: PLATFORMS.reduce((acc, p) => ({ ...acc, [p.key]: !!data.lockedFields?.[p.key] }), {}),
+    // Generation params (Handoff #22, option A) — only present when this
+    // post arrived via Message Machine's Push-to-Storm, which is the only
+    // place Mode/Audience/Voice/Tone exist today. Native Storms posts (via
+    // StormPostEditor's own Generate/Rephrase) have no such concept, so
+    // this is simply omitted for those — never fabricate a value.
+    genParams: data.genParams || null,
     createdBy: currentUserStamp(),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -331,6 +337,20 @@ export async function createPost(stormId, data) {
   // show "N posts" without an extra read per storm.
   await updateDoc(doc(db, COL, stormId), { postCount: increment(1) }).catch(() => {});
   return docRef.id;
+}
+
+// Compact one-line summary of a post's generation params, for display on
+// storm cards. Returns null if the post has none (native Storms posts, or
+// posts pushed before this field existed) so callers can skip rendering
+// entirely rather than showing an empty row.
+export function formatGenParams(genParams) {
+  if (!genParams) return null;
+  const parts = [];
+  if (genParams.mode) parts.push(`Mode: ${genParams.mode}`);
+  if (genParams.audience) parts.push(`Audience: ${genParams.audience}`);
+  if (genParams.voice) parts.push(`Voice: ${genParams.voice}`);
+  if (genParams.tone) parts.push(`Tone: ${genParams.tone}`);
+  return parts.length ? parts.join(" · ") : null;
 }
 
 export async function updatePost(stormId, postId, data) {
