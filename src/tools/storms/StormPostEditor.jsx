@@ -34,6 +34,7 @@ export default function StormPostEditor({ stormId, storm, role, post, nextOrder,
   const [locked, setLocked] = useState({ ...EMPTY_LOCKS, ...(post?.lockedFields || {}) });
   const [genLoading, setGenLoading] = useState({}); // { [platformKey]: true } while a generate/rephrase call is in flight
   const [genNotice, setGenNotice] = useState(null); // { type: "ratelimit"|"flagged"|"error", msg }
+  const [contradictionFlags, setContradictionFlags] = useState({}); // { [platformKey]: "explanation" } — self-contradictions the model noticed (Handoff #22), never blocking, just surfaced for a human to decide
   const [expandedPlatform, setExpandedPlatform] = useState(null); // platform key currently open in the full-size read/edit view, or null
   const [uploadProgress, setUploadProgress] = useState(null); // 0-1 while saving
   const [error, setError] = useState("");
@@ -118,7 +119,8 @@ Write one post for ${platform?.label} (max ${limit} characters). Match the platf
 IMPORTANT: Do NOT include any hashtags in the message body itself. Write clean prose only.
 
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
-Format: {"${platformKey}": "post text"}`;
+Format: {"${platformKey}": "post text"}
+If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_contradictionFlags": {"${platformKey}": "one-sentence explanation of the contradiction"}} — omitted entirely if it doesn't apply.`;
   }
 
   function buildRephrasePrompt(platformKey) {
@@ -137,7 +139,8 @@ ${currentText}
 INSTRUCTION: Rephrase this message. Keep the same length, meaning, and platform style, but use different wording, sentence structure, and framing. Do not add new facts, names, or figures beyond what's already here.
 
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
-Format: {"${platformKey}": "rewritten post text"}`;
+Format: {"${platformKey}": "rewritten post text"}
+If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_contradictionFlags": {"${platformKey}": "one-sentence explanation of the contradiction"}} — omitted entirely if it doesn't apply.`;
   }
 
   async function callStormAPI(prompt, maxTokens = 700) {
@@ -181,7 +184,7 @@ Format: {"${platformKey}": "rewritten post text"}`;
     setGenLoading(p => ({ ...p, [platformKey]: true }));
     try {
       const r = await callStormAPI(buildGeneratePrompt(platformKey));
-      setTexts(p => ({ ...p, ...r }));
+      applyGenerationResult(platformKey, r);
       setGenNotice(null);
     } catch (e) {
       handleGenError(e);
@@ -193,12 +196,39 @@ Format: {"${platformKey}": "rewritten post text"}`;
     setGenLoading(p => ({ ...p, [platformKey]: true }));
     try {
       const r = await callStormAPI(buildRephrasePrompt(platformKey));
-      setTexts(p => ({ ...p, ...r }));
+      applyGenerationResult(platformKey, r);
       setGenNotice(null);
     } catch (e) {
       handleGenError(e);
     }
     setGenLoading(p => ({ ...p, [platformKey]: false }));
+  }
+
+  // Shared by generate/rephrase: applies the new text and separates out the
+  // optional "_contradictionFlags" key (Handoff #22 self-contradiction
+  // check) so it never ends up stored as post text. A successful rewrite
+  // with no flag clears any earlier flag for this platform.
+  function applyGenerationResult(platformKey, r) {
+    const { _contradictionFlags, ...textOnly } = r;
+    setTexts(p => ({ ...p, ...textOnly }));
+    const note = _contradictionFlags && _contradictionFlags[platformKey];
+    setContradictionFlags(p => {
+      if (!note) {
+        if (!(platformKey in p)) return p;
+        const next = { ...p };
+        delete next[platformKey];
+        return next;
+      }
+      return { ...p, [platformKey]: note };
+    });
+  }
+
+  function dismissContradiction(platformKey) {
+    setContradictionFlags(p => {
+      const next = { ...p };
+      delete next[platformKey];
+      return next;
+    });
   }
 
   function handleGenError(e) {
@@ -343,11 +373,20 @@ Format: {"${platformKey}": "rewritten post text"}`;
               const over = remaining < 0;
               const isLocked = locked[p.key];
               const isLoading = !!genLoading[p.key];
+              const contradictionNote = contradictionFlags[p.key];
               return (
                 <div key={p.key}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <label style={{ fontSize: 12, fontWeight: 700, color: CHARCOAL }}>{p.label}</label>
+                      {contradictionNote && (
+                        <span style={{
+                          fontSize: 10.5, fontWeight: 800, color: "#8a6215", background: "#fff3d6",
+                          border: "1px solid #e0c568", borderRadius: 999, padding: "2px 8px", letterSpacing: "0.02em",
+                        }}>
+                          ⚠️ Check this
+                        </span>
+                      )}
                       {isLocked && (
                         <span style={{
                           fontSize: 10.5, fontWeight: 800, color: "#fff", background: TERRACOTTA,
@@ -402,6 +441,23 @@ Format: {"${platformKey}": "rewritten post text"}`;
                       </span>
                     </div>
                   </div>
+                  {contradictionNote && (
+                    <div style={{
+                      background: "#fffaf0", border: "1.5px solid #e0c568", borderRadius: 8,
+                      padding: "8px 12px", marginTop: 6, marginBottom: 2, position: "relative",
+                    }}>
+                      <button
+                        onClick={() => dismissContradiction(p.key)}
+                        aria-label="Dismiss"
+                        style={{ position: "absolute", top: 6, right: 8, background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#8a6215", fontWeight: 800 }}
+                      >
+                        ✕
+                      </button>
+                      <p style={{ fontSize: 12.5, color: "#6b4f14", lineHeight: 1.5, margin: 0, paddingRight: 18 }}>
+                        <strong>Possible self-contradiction:</strong> {contradictionNote} Was this intentional?
+                      </p>
+                    </div>
+                  )}
                   <textarea
                     value={texts[p.key]}
                     onChange={e => !isLocked && setTexts(prev => ({ ...prev, [p.key]: e.target.value }))}
@@ -469,6 +525,7 @@ Format: {"${platformKey}": "rewritten post text"}`;
       const over = remaining < 0;
       const isLocked = locked[expandedPlatform];
       const isLoading = !!genLoading[expandedPlatform];
+      const contradictionNote = contradictionFlags[expandedPlatform];
       return (
         <div
           style={{
@@ -495,6 +552,21 @@ Format: {"${platformKey}": "rewritten post text"}`;
               </div>
               <button onClick={() => setExpandedPlatform(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#999" }}>✕</button>
             </div>
+
+            {contradictionNote && (
+              <div style={{ background: "#fffaf0", border: "1.5px solid #e0c568", borderRadius: 8, padding: "10px 14px", position: "relative" }}>
+                <button
+                  onClick={() => dismissContradiction(expandedPlatform)}
+                  aria-label="Dismiss"
+                  style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#8a6215", fontWeight: 800 }}
+                >
+                  ✕
+                </button>
+                <p style={{ fontSize: 13, color: "#6b4f14", lineHeight: 1.5, margin: 0, paddingRight: 20 }}>
+                  <strong>Possible self-contradiction:</strong> {contradictionNote} Was this intentional?
+                </p>
+              </div>
+            )}
 
             <textarea
               autoFocus
