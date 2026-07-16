@@ -115,6 +115,10 @@ export default async function (req) {
         mediaType: p.mediaType,
         media: p.media || [],
         texts: p.texts || {},
+        // Generation params (Handoff #22) — only ever the same short
+        // Mode/Audience/Voice/Tone labels already visible to any signed-in
+        // member; never staff names, dates, or anything else new.
+        genParams: p.genParams || null,
       };
     });
 
