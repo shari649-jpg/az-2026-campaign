@@ -109,6 +109,15 @@ const SPEAKER_PERSPECTIVES = [
 const DEFAULT_AUDIENCE = "general moderate voter who is not very engaged in politics";
 const DEFAULT_STYLE    = "neutral";
 
+// Human-readable generation params captured at Push-to-Storm time (Handoff
+// #22, option A) so a Storm post pushed from here can show what settings
+// produced it. Only meaningful fields are included — Storms' own native
+// Generate/Rephrase has no equivalent concept, so a post created directly
+// in Storms simply has none of this and shows nothing.
+function modeLabel(mode) {
+  return mode === "az" ? "Arizona" : mode === "national" ? "National" : "Neutral";
+}
+
 const T = {
   pageBg:   "#ffffff",
   surface:  "#ffffff",
@@ -1009,6 +1018,14 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
     setPushLoading(false);
   };
 
+  const buildGenParams = () => {
+    const params = { mode: modeLabel(msgMode) };
+    if (formData.audience) params.audience = formData.audience;
+    if (formData.voice) params.voice = formData.voice;
+    if (formData.modifier) params.tone = formData.modifier;
+    return params;
+  };
+
   const pushToExistingStorm = async (storm) => {
     setPushLoading(true); setPushError("");
     try {
@@ -1018,6 +1035,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
         mediaType: STORM_MEDIA_TYPES.VIDEO, // placeholder — no media at push time; staff adds it manually
         media: [],
         texts: { ...messages },
+        genParams: buildGenParams(),
         order: existingPosts.length,
       });
       setPushModal(false);
@@ -1033,6 +1051,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
       localStorage.setItem(PUSH_TO_STORM_KEY, JSON.stringify({
         texts: { ...messages },
         title: derivedPostTitle(),
+        genParams: buildGenParams(),
         pushedAt: new Date().toISOString(),
       }));
       window.location.href = "/storms";
