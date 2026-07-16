@@ -23,7 +23,7 @@ const SURFACE_ALT = "#F3F4F0";
 const EMPTY_TEXTS = PLATFORMS.reduce((acc, p) => ({ ...acc, [p.key]: "" }), {});
 const EMPTY_LOCKS = PLATFORMS.reduce((acc, p) => ({ ...acc, [p.key]: false }), {});
 
-export default function StormPostEditor({ stormId, storm, role, post, nextOrder, initialTexts, initialTitle, onClose, onSaved }) {
+export default function StormPostEditor({ stormId, storm, role, post, nextOrder, initialTexts, initialTitle, initialGenParams, onClose, onSaved }) {
   const isEdit = !!post;
   const canLock = canLockFields(role);
   const [title, setTitle] = useState(post?.title || initialTitle || "");
@@ -266,7 +266,7 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         uploaded.push(result);
       }
       const finalMedia = [...existingMedia, ...uploaded];
-      const payload = { title, mediaType, media: finalMedia, texts, lockedFields: locked };
+      const payload = { title, mediaType, media: finalMedia, texts, lockedFields: locked, genParams: post?.genParams || initialGenParams || null };
 
       if (isEdit) {
         await updatePost(stormId, post.id, payload);
