@@ -89,18 +89,32 @@ export default async function (req) {
     const { max_tokens, messages, system } = body;
 
     // Server-side guardrail enforcement (Handoff #21, Group F). Never trust
-    // the client to have included the factual-accuracy rule. If the client's
-    // system prompt already contains it, don't duplicate; otherwise append
-    // it so it's always enforced regardless of caller.
+    // the client to have included the factual-accuracy rule.
+    //
+    // Storms is a different shape than Message Machine/Rebuttal: those two
+    // send the guardrail via `system`, but StormPostEditor.jsx bakes
+    // FACTUAL_ACCURACY_GUARDRAIL directly into the prompt text inside
+    // `messages` instead (see buildGeneratePrompt/buildRephrasePrompt) and
+    // never sends a `system` field at all. The original patch only checked
+    // `system` for the guardrail header, so every Storm call looked
+    // "unguarded" and got a second copy injected via a system field Storms
+    // was never architected to send — the guardrail ended up duplicated,
+    // and Storms started sending a system param it didn't have before.
+    // Fixed: check the actual message content too, and only add a system
+    // field when the guardrail isn't already present anywhere in the request.
     const clientSystem = typeof system === "string" ? system : "";
-    const effectiveSystem = clientSystem.includes("FACTUAL ACCURACY:")
+    const messagesText = Array.isArray(messages)
+      ? messages.map(m => (typeof m.content === "string" ? m.content : "")).join("\n")
+      : "";
+    const alreadyGuarded = clientSystem.includes("FACTUAL ACCURACY:") || messagesText.includes("FACTUAL ACCURACY:");
+    const effectiveSystem = alreadyGuarded
       ? clientSystem
       : [clientSystem, FACTUAL_ACCURACY_GUARDRAIL].filter(Boolean).join("\n\n");
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: max_tokens || 700, messages, system: effectiveSystem }),
+      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: max_tokens || 700, messages, ...(effectiveSystem && { system: effectiveSystem }) }),
     });
 
     const data = await response.json();
