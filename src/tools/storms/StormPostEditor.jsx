@@ -34,6 +34,7 @@ export default function StormPostEditor({ stormId, storm, role, post, nextOrder,
   const [locked, setLocked] = useState({ ...EMPTY_LOCKS, ...(post?.lockedFields || {}) });
   const [genLoading, setGenLoading] = useState({}); // { [platformKey]: true } while a generate/rephrase call is in flight
   const [genNotice, setGenNotice] = useState(null); // { type: "ratelimit"|"flagged"|"error", msg }
+  const [expandedPlatform, setExpandedPlatform] = useState(null); // platform key currently open in the full-size read/edit view, or null
   const [uploadProgress, setUploadProgress] = useState(null); // 0-1 while saving
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -252,6 +253,7 @@ Format: {"${platformKey}": "rewritten post text"}`;
   }
 
   return (
+    <>
     <div style={{
       // z-index bumped from 95 to 1000 (July 2026) — see StormPostsPanel.jsx
       // for why: the AppShell header (zIndex:100, including the announcement
@@ -369,6 +371,18 @@ Format: {"${platformKey}": "rewritten post text"}`;
                       )}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedPlatform(p.key)}
+                        title="Expand to read and edit the full text"
+                        style={{
+                          background: "none", border: `1.5px solid ${BORDER}`, borderRadius: 6,
+                          padding: "2px 8px", fontSize: 12, fontWeight: 700, color: CHARCOAL,
+                          cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+                        }}
+                      >
+                        ⤢ Expand
+                      </button>
                       {!isLocked && (
                         <button
                           type="button"
@@ -446,6 +460,115 @@ Format: {"${platformKey}": "rewritten post text"}`;
         </div>
       </div>
     </div>
+
+    {expandedPlatform && (() => {
+      const p = PLATFORMS.find(pp => pp.key === expandedPlatform);
+      const limit = CHAR_LIMITS[expandedPlatform];
+      const count = texts[expandedPlatform].length;
+      const remaining = limit - count;
+      const over = remaining < 0;
+      const isLocked = locked[expandedPlatform];
+      const isLoading = !!genLoading[expandedPlatform];
+      return (
+        <div
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1100,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px",
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setExpandedPlatform(null); }}
+        >
+          <div style={{
+            background: "#fff", borderRadius: 14, padding: 24, maxWidth: 640, width: "100%",
+            maxHeight: "85vh", display: "flex", flexDirection: "column", gap: 12,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <h3 style={{ margin: 0, fontSize: 18, color: TEAL, fontFamily: "var(--font-display)" }}>{p.label}</h3>
+                {isLocked && (
+                  <span style={{
+                    fontSize: 10.5, fontWeight: 800, color: "#fff", background: TERRACOTTA,
+                    borderRadius: 999, padding: "2px 8px", letterSpacing: "0.02em",
+                  }}>
+                    🔒 Locked by staff
+                  </span>
+                )}
+              </div>
+              <button onClick={() => setExpandedPlatform(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#999" }}>✕</button>
+            </div>
+
+            <textarea
+              autoFocus
+              value={texts[expandedPlatform]}
+              onChange={e => !isLocked && setTexts(prev => ({ ...prev, [expandedPlatform]: e.target.value }))}
+              readOnly={isLocked}
+              rows={12}
+              style={{
+                ...inputStyle, resize: "vertical", flex: 1, minHeight: 220, fontSize: 15.5, lineHeight: 1.5,
+                borderColor: over ? TERRACOTTA : BORDER,
+                background: isLocked ? SURFACE_ALT : over ? "rgba(193,103,58,0.05)" : "#fff",
+                cursor: isLocked ? "not-allowed" : "text",
+              }}
+              placeholder={`${p.label} post text…`}
+            />
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                {!isLocked && (
+                  <button
+                    type="button"
+                    onClick={() => texts[expandedPlatform].trim() ? rephraseForPlatform(expandedPlatform) : generateForPlatform(expandedPlatform)}
+                    disabled={isLoading}
+                    style={{
+                      background: "none", border: `1.5px solid ${TURQUOISE}`, borderRadius: 6,
+                      padding: "5px 14px", fontSize: 12.5, fontWeight: 700, color: TURQUOISE,
+                      cursor: isLoading ? "default" : "pointer", opacity: isLoading ? 0.6 : 1,
+                    }}
+                  >
+                    {isLoading ? "Working…" : texts[expandedPlatform].trim() ? "Rephrase" : "Generate"}
+                  </button>
+                )}
+                {canLock && (
+                  <button
+                    type="button"
+                    onClick={() => toggleLock(expandedPlatform)}
+                    style={{
+                      background: "none", border: "none", cursor: "pointer", fontSize: 12.5,
+                      color: isLocked ? TERRACOTTA : "#aaa", fontWeight: 700, padding: 0,
+                    }}
+                  >
+                    {isLocked ? "Unlock" : "Lock"}
+                  </button>
+                )}
+              </div>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: over ? TERRACOTTA : "#999" }}>
+                {over ? `${remaining} over` : `${count} / ${limit}`}
+              </span>
+            </div>
+
+            {genNotice && (
+              <div style={{
+                background: genNotice.type === "ratelimit" ? "#f5f0ff" : genNotice.type === "warning" ? "#fffaf0" : "#fee2e2",
+                border: `1.5px solid ${genNotice.type === "ratelimit" ? "#7c3aed" : genNotice.type === "warning" ? "#e0c568" : "#fca5a5"}`,
+                borderRadius: 8, padding: "8px 12px", fontSize: 12.5, color: "#444", display: "flex", justifyContent: "space-between", gap: 10,
+              }}>
+                <span>{genNotice.msg}</span>
+                <button onClick={() => setGenNotice(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#999", fontWeight: 700 }}>✕</button>
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button onClick={() => setExpandedPlatform(null)} style={{
+                background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px",
+                fontWeight: 800, cursor: "pointer",
+              }}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+    </>
   );
 }
 
