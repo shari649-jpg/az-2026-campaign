@@ -94,7 +94,7 @@ export default function PublicStormPage() {
             {data.posts.length === 0 ? (
               <p style={{ color: "rgba(255,255,255,0.75)", textAlign: "center", fontSize: 14 }}>Nothing to show here yet.</p>
             ) : (
-              data.posts.map(post => <PostDisplayCard key={post.id} post={post} hashtag={data.hashtag} />)
+              data.posts.map(post => <PostDisplayCard key={post.id} post={post} hashtag={data.hashtag} isPublic publicToken={token} />)
             )}
           </div>
         </>
