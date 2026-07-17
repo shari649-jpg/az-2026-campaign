@@ -203,14 +203,14 @@ export default function RegisterPage() {
         <LogoBlock />
         <div style={{ ...cardStyle, textAlign: "center", padding: "48px 36px" }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
-          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "#1D5C4A", marginBottom: 12, marginTop: 0 }}>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--teal)", marginBottom: 12, marginTop: 0 }}>
             Registration is invite-only
           </h2>
           <p style={{ fontSize: 15, color: "#666", lineHeight: 1.7, marginBottom: 24 }}>
             The Comms Hub is available to approved coalition members only. Request access and our team will review your application.
           </p>
           <Link to="/waitlist" style={{
-            display: "inline-block", background: "#1D5C4A", color: "#fff",
+            display: "inline-block", background: "var(--teal)", color: "#fff",
             textDecoration: "none", fontWeight: 700, fontSize: 15,
             padding: "13px 32px", borderRadius: 8, letterSpacing: "0.04em",
           }}>
@@ -218,7 +218,7 @@ export default function RegisterPage() {
           </Link>
           <div style={{ marginTop: 20, fontSize: 13, color: "#aaa" }}>
             Already have an account?{" "}
-            <Link to="/login" style={{ color: "#1D5C4A", fontWeight: 700, textDecoration: "none" }}>Sign in</Link>
+            <Link to="/login" style={{ color: "var(--teal)", fontWeight: 700, textDecoration: "none" }}>Sign in</Link>
           </div>
         </div>
       </div>
@@ -232,18 +232,18 @@ export default function RegisterPage() {
         <LogoBlock />
         <div style={{ ...cardStyle, textAlign: "center", padding: "48px 36px" }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>⏱️</div>
-          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "#1D5C4A", marginBottom: 12, marginTop: 0 }}>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--teal)", marginBottom: 12, marginTop: 0 }}>
             This invite has expired
           </h2>
           <p style={{ fontSize: 15, color: "#666", lineHeight: 1.7, marginBottom: 24 }}>
             Invite links are valid for 72 hours. Please{" "}
-            <a href="mailto:info@arizonacoalition.net?subject=Invite%20link%20expired" style={{ color: "#1D5C4A", fontWeight: 700, textDecoration: "none" }}>
+            <a href="mailto:info@arizonacoalition.net?subject=Invite%20link%20expired" style={{ color: "var(--teal)", fontWeight: 700, textDecoration: "none" }}>
               contact your coalition administrator
             </a>{" "}
             to request a new invite.
           </p>
           <Link to="/waitlist" style={{
-            display: "inline-block", background: "#1D5C4A", color: "#fff",
+            display: "inline-block", background: "var(--teal)", color: "#fff",
             textDecoration: "none", fontWeight: 700, fontSize: 15,
             padding: "13px 32px", borderRadius: 8, letterSpacing: "0.04em",
           }}>
@@ -261,17 +261,17 @@ export default function RegisterPage() {
         <LogoBlock />
         <div style={{ ...cardStyle, textAlign: "center", padding: "48px 36px" }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "#1D5C4A", marginBottom: 12, marginTop: 0 }}>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--teal)", marginBottom: 12, marginTop: 0 }}>
             This invite has already been used
           </h2>
           <p style={{ fontSize: 15, color: "#666", lineHeight: 1.7, marginBottom: 24 }}>
             If you already registered, sign in below. If something went wrong,{" "}
-            <a href="mailto:info@arizonacoalition.net?subject=Invite%20link%20issue" style={{ color: "#1D5C4A", fontWeight: 700, textDecoration: "none" }}>
+            <a href="mailto:info@arizonacoalition.net?subject=Invite%20link%20issue" style={{ color: "var(--teal)", fontWeight: 700, textDecoration: "none" }}>
               contact your administrator
             </a>.
           </p>
           <Link to="/login" style={{
-            display: "inline-block", background: "#1D5C4A", color: "#fff",
+            display: "inline-block", background: "var(--teal)", color: "#fff",
             textDecoration: "none", fontWeight: 700, fontSize: 15,
             padding: "13px 32px", borderRadius: 8, letterSpacing: "0.04em",
           }}>
@@ -289,10 +289,10 @@ export default function RegisterPage() {
         <LogoBlock />
         <div style={{ ...cardStyle, textAlign: "center", padding: "48px 36px" }}>
           <div style={{ fontSize: 56, marginBottom: 16 }}>📬</div>
-          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "#1D5C4A", marginBottom: 12, marginTop: 0 }}>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--teal)", marginBottom: 12, marginTop: 0 }}>
             Check your email
           </h2>
-          <p style={{ fontSize: 16, color: "#4A4558", lineHeight: 1.7, marginBottom: 8 }}>
+          <p style={{ fontSize: 16, color: "var(--charcoal)", lineHeight: 1.7, marginBottom: 8 }}>
             We've sent a verification link to <strong>{form.email}</strong>.
           </p>
           <p style={{ fontSize: 14, color: "#888", lineHeight: 1.6, marginBottom: 28 }}>
@@ -302,7 +302,7 @@ export default function RegisterPage() {
             onClick={handleResend}
             disabled={resending || resendCooldown > 0}
             style={{
-              background: "none", border: "2px solid #1D5C4A", color: "#1D5C4A",
+              background: "none", border: "2px solid var(--teal)", color: "var(--teal)",
               borderRadius: 8, padding: "11px 24px", fontSize: 14, fontWeight: 700,
               fontFamily: "var(--font-body)", cursor: (resending || resendCooldown > 0) ? "not-allowed" : "pointer",
               opacity: (resending || resendCooldown > 0) ? 0.6 : 1,
@@ -317,7 +317,7 @@ export default function RegisterPage() {
             </div>
           )}
           <div style={{ fontSize: 13, color: "#aaa" }}>
-            <Link to="/login" style={{ color: "#1D5C4A", fontWeight: 700, textDecoration: "none" }}>
+            <Link to="/login" style={{ color: "var(--teal)", fontWeight: 700, textDecoration: "none" }}>
               Go to Sign In →
             </Link>
           </div>
@@ -331,7 +331,7 @@ export default function RegisterPage() {
     <div style={pageStyle}>
       <LogoBlock />
       <div style={cardStyle}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "#1D5C4A", marginBottom: 6, marginTop: 0 }}>
+        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--teal)", marginBottom: 6, marginTop: 0 }}>
           Create Your Account
         </h1>
         <p style={{ fontSize: 14, color: "#888", marginBottom: 24, marginTop: 0, lineHeight: 1.6 }}>
@@ -386,7 +386,7 @@ export default function RegisterPage() {
 
           {/* Social Media — up to 6 */}
           <div style={{ borderTop: "1px solid #e8e8e4", paddingTop: 16, marginTop: 4 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#1D5C4A", marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--teal)", marginBottom: 14 }}>
               Social Media Accounts
             </div>
 
@@ -442,14 +442,14 @@ export default function RegisterPage() {
               type="checkbox"
               checked={agreedToTerms}
               onChange={e => setAgreedToTerms(e.target.checked)}
-              style={{ marginTop: 3, flexShrink: 0, width: 16, height: 16, accentColor: "#1D5C4A", cursor: "pointer" }}
+              style={{ marginTop: 3, flexShrink: 0, width: 16, height: 16, accentColor: "var(--teal)", cursor: "pointer" }}
               required
             />
             <span>
               I agree to the{" "}
-              <Link to="/terms" target="_blank" style={{ color: "#1D5C4A", fontWeight: 700 }}>Terms and Conditions</Link>,{" "}
-              <Link to="/privacy" target="_blank" style={{ color: "#1D5C4A", fontWeight: 700 }}>Privacy Policy</Link>, and{" "}
-              <Link to="/ai-policy" target="_blank" style={{ color: "#1D5C4A", fontWeight: 700 }}>Ethical Use of AI Policy</Link>. <Required />
+              <Link to="/terms" target="_blank" style={{ color: "var(--teal)", fontWeight: 700 }}>Terms and Conditions</Link>,{" "}
+              <Link to="/privacy" target="_blank" style={{ color: "var(--teal)", fontWeight: 700 }}>Privacy Policy</Link>, and{" "}
+              <Link to="/ai-policy" target="_blank" style={{ color: "var(--teal)", fontWeight: 700 }}>Ethical Use of AI Policy</Link>. <Required />
             </span>
           </label>
 
@@ -463,7 +463,7 @@ export default function RegisterPage() {
 
         <div style={{ marginTop: 20, textAlign: "center", fontSize: 14, color: "#aaa" }}>
           Already have an account?{" "}
-          <Link to="/login" style={{ color: "#1D5C4A", fontWeight: 700, textDecoration: "none" }}>Sign in</Link>
+          <Link to="/login" style={{ color: "var(--teal)", fontWeight: 700, textDecoration: "none" }}>Sign in</Link>
         </div>
       </div>
     </div>
@@ -471,7 +471,7 @@ export default function RegisterPage() {
 }
 
 function Required() {
-  return <span style={{ color: "#C1673A", marginLeft: 2 }}>*</span>;
+  return <span style={{ color: "var(--terracotta)", marginLeft: 2 }}>*</span>;
 }
 
 function LogoBlock() {
