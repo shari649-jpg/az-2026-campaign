@@ -98,8 +98,8 @@ RULES:
 
 // ── Palette & styles ──────────────────────────────────────────────────────
 const INK = "#1A1A1A", BG = "#F7F5F0", SURFACE = "#FDFCFA",
-      BORDER = "#C8C4BC", MID = "#555", LIGHT = "#888", GREEN = "#2A6A2A",
-      TEAL = "#1D5C4A", GOLD = "#F5C842";
+      BORDER = "var(--border)", MID = "#555", LIGHT = "#888", GREEN = "#2A6A2A",
+      TEAL = "var(--teal)", GOLD = "var(--gold)"; // INK/BG/SURFACE/MID/LIGHT/GREEN are this tool's own deliberate newspaper-editorial look, left as-is — only TEAL/GOLD/BORDER are shared brand tokens
 
 const S = {
   app:    { minHeight: "100vh", background: BG, fontFamily: "'Georgia','Times New Roman',serif", color: INK },
@@ -378,7 +378,7 @@ function CampaignOutput({ output, onCopy, onSave, onPushToMachine, onEdit, copie
 
       {/* Action row */}
       <div style={S.actRow}>
-        <button style={{ ...btnOutline(false), background: "#F5C842", borderColor: "#d4aa30", color: INK, fontWeight: "700" }} onClick={onPushToMachine}>
+        <button style={{ ...btnOutline(false), background: "var(--gold)", borderColor: "var(--gold-dark)", color: INK, fontWeight: "700" }} onClick={onPushToMachine}>
           Push to Message Machine →
         </button>
         <button style={btnOutline(copied)} onClick={onCopy}>
