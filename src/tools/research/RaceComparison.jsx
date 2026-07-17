@@ -275,7 +275,7 @@ export default function RaceComparison() {
     wrap:       { fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: B.text, padding: '0 24px' },
     input:      { width: '100%', padding: '11px 16px', border: `1.5px solid ${B.border}`, borderRadius: 8, fontSize: 15, color: B.text, background: B.surface, fontFamily: 'inherit', boxSizing: 'border-box' },
     btnPrimary: { background: B.teal, color: '#fff', fontWeight: 700, padding: '10px 22px', borderRadius: 8, border: `2px solid ${B.tealLight}`, cursor: 'pointer', fontSize: 15, fontFamily: 'inherit' },
-    btnGold:    { background: B.gold, color: B.teal, fontWeight: 700, padding: '10px 22px', borderRadius: 8, border: '2px solid #d4aa30', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit' },
+    btnGold:    { background: 'var(--purple)', color: '#fff', fontWeight: 700, padding: '10px 22px', borderRadius: 8, border: '2px solid var(--purple-dark)', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit' },
     btnSmall:   { background: 'transparent', color: B.textMid, fontWeight: 700, padding: '5px 12px', borderRadius: 6, border: `1px solid ${B.border}`, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' },
   };
 
@@ -583,7 +583,7 @@ export default function RaceComparison() {
               </span>
               <button
                 onClick={sendWithDistrict}
-                style={{ background: B.gold, color: B.teal, fontWeight: 700, padding: '9px 20px', borderRadius: 8, border: '2px solid #d4aa30', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit' }}
+                style={{ background: 'var(--purple)', color: '#fff', fontWeight: 700, padding: '9px 20px', borderRadius: 8, border: '2px solid var(--purple-dark)', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit' }}
               >
                 Yes, include it →
               </button>
@@ -601,7 +601,7 @@ export default function RaceComparison() {
               </span>
               <button
                 onClick={pushToMessageMachine}
-                style={{ background: B.gold, color: B.teal, fontWeight: 700, padding: '9px 20px', borderRadius: 8, border: '2px solid #d4aa30', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit', opacity: pushed ? 0.7 : 1 }}
+                style={{ background: 'var(--purple)', color: '#fff', fontWeight: 700, padding: '9px 20px', borderRadius: 8, border: '2px solid var(--purple-dark)', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit', opacity: pushed ? 0.7 : 1 }}
               >
                 {pushed ? '✓ Sent!' : 'Send to Message Machine →'}
               </button>
