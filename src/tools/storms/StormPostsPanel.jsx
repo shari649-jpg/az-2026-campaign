@@ -12,11 +12,11 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import StormPostEditor from "./StormPostEditor";
 
-const TEAL       = "#1D5C4A";
-const CHARCOAL   = "#4A4558";
-const TERRACOTTA = "#C1673A";
-const BORDER     = "#C8C4BC";
-const SURFACE_ALT = "#F3F4F0";
+const TEAL       = "var(--teal)";
+const CHARCOAL   = "var(--charcoal)";
+const TERRACOTTA = "var(--terracotta)";
+const BORDER     = "var(--border)";
+const SURFACE_ALT = "var(--surface-alt)";
 
 export default function StormPostsPanel({ storm, justCreated, onClose }) {
   const { role } = useAuth();
