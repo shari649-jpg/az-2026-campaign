@@ -237,7 +237,7 @@ export default function CandidateQuery() {
     label:   { fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: B.textMid, marginBottom: 6, display: 'block' },
     input:   { width: '100%', padding: '12px 16px', border: `1.5px solid ${B.border}`, borderRadius: 8, fontSize: 16, color: B.text, background: B.surface, fontFamily: 'inherit' },
     btnPrimary: { background: B.teal, color: '#fff', fontWeight: 700, padding: '12px 28px', borderRadius: 8, border: `2px solid ${B.tealLight}`, cursor: 'pointer', fontSize: 16, fontFamily: 'inherit' },
-    btnGold:    { background: B.gold, color: B.teal, fontWeight: 700, padding: '12px 24px', borderRadius: 8, border: '2px solid #d4aa30', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit' },
+    btnGold:    { background: 'var(--purple)', color: '#fff', fontWeight: 700, padding: '12px 24px', borderRadius: 8, border: '2px solid var(--purple-dark)', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit' },
     btnSmall:   { background: 'transparent', color: B.textMid, fontWeight: 700, padding: '6px 14px', borderRadius: 6, border: `1px solid ${B.border}`, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' },
     card:    { background: B.surface, border: `1.5px solid ${B.border}`, borderRadius: 12, marginBottom: 16, overflow: 'hidden' },
     filterBtn: (active) => ({
@@ -478,7 +478,7 @@ export default function CandidateQuery() {
               </span>
               <button
                 onClick={pushToMessageMachine}
-                style={{ background: B.gold, color: B.teal, fontWeight: 700, padding: '9px 20px', borderRadius: 8, border: '2px solid #d4aa30', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit', opacity: pushed ? 0.7 : 1 }}
+                style={{ background: 'var(--purple)', color: '#fff', fontWeight: 700, padding: '9px 20px', borderRadius: 8, border: '2px solid var(--purple-dark)', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit', opacity: pushed ? 0.7 : 1 }}
               >
                 {pushed ? '✓ Sent!' : 'Send to Message Machine →'}
               </button>
