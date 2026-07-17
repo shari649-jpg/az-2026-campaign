@@ -1,30 +1,40 @@
 @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=DM+Serif+Display:ital@0;1&display=swap');
 
 :root {
+  /* ── Brand palette — updated July 2026, see color-exploration session ──
+     Deep plum is now primary (was teal). Teal itself shifted bluer
+     (Ocean Teal) and moved to secondary. Charcoal shifted to a
+     purple-leaning "Plum Ink" for text. Terracotta's hue was replaced
+     with Bloom Salmon (pulled from the logo's cactus flower) — the
+     variable name stays --terracotta since ~15 files already reference
+     it; only the value changed, so nothing needed renaming everywhere. */
   --gold:           #F5C842;
   --gold-dark:      #d4a820;
   --gold-light:     #fdf3c0;
-  --teal:           #1D5C4A;
-  --teal-mid:       #2a7a62;
-  --teal-light:     #e0f2ec;
-  --charcoal:       #4A4558;
-  --charcoal-dark:  #2e2b3a;
-  --turquoise:      #3ECFB2;
-  --turquoise-light:#d0f7f0;
-  --terracotta:     #C1673A;
-  --terracotta-light:#f7e0d4;
+  --teal:           #0E7A8C;
+  --teal-mid:       #0B5F6D;
+  --teal-light:     #DCEEF0;
+  --charcoal:       #362A44;
+  --charcoal-dark:  #241A30;
+  --turquoise:      #17A2A8;
+  --turquoise-light:#D7F0EF;
+  --terracotta:     #EB8292;
+  --terracotta-light:#FBE7EA;
+  --purple:         #4A3163;
+  --purple-dark:    #3A2650;
+  --purple-light:   #EAE3EF;
 
   --bg:             #ffffff;
   --surface:        #fafaf8;
-  --surface-alt:    #f2f0eb;
-  --border:         #c8c4b8;
+  --surface-alt:    #E1E7F0;
+  --border:         #D8DCE3;
   --border-strong:  var(--charcoal);
   --text:           var(--charcoal-dark);
   --text-mid:       var(--charcoal);
-  --text-mute:      #7a7690;
+  --text-mute:      #8A7F92;
 
-  --primary:        var(--teal);
-  --primary-dark:   var(--teal-mid);
+  --primary:        var(--purple);
+  --primary-dark:   var(--purple-dark);
   --accent:         var(--gold);
   --accent-dark:    var(--gold-dark);
   --highlight:      var(--turquoise);
@@ -58,7 +68,7 @@ body {
 }
 
 a {
-  color: var(--teal);
+  color: var(--purple);
   text-decoration: none;
 }
 
@@ -71,12 +81,12 @@ button, input, textarea, select {
 }
 
 textarea:focus, input:focus, select:focus {
-  outline: 3px solid var(--teal);
+  outline: 3px solid var(--purple);
   outline-offset: 2px;
 }
 
 button:focus-visible {
-  outline: 3px solid var(--teal);
+  outline: 3px solid var(--purple);
   outline-offset: 3px;
 }
 
