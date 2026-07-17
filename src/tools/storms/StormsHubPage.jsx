@@ -25,13 +25,13 @@ import {
 } from "../../lib/stormLibrary";
 import StormPostsPanel from "./StormPostsPanel";
 
-const GOLD       = "#F5C842";
-const TEAL       = "#1D5C4A";
-const CHARCOAL   = "#4A4558";
-const TURQUOISE  = "#3ECFB2";
-const TERRACOTTA = "#C1673A";
-const BORDER     = "#C8C4BC";
-const SURFACE_ALT = "#F3F4F0";
+const GOLD       = "var(--gold)";
+const TEAL       = "var(--teal)";
+const CHARCOAL   = "var(--charcoal)";
+const TURQUOISE  = "var(--turquoise)";
+const TERRACOTTA = "var(--terracotta)";
+const BORDER     = "var(--border)";
+const SURFACE_ALT = "var(--surface-alt)";
 
 const STATUS_META = {
   [STORM_STATUS.DRAFT]:           { label: "Draft",           bg: "#eee",              color: "#666" },
@@ -641,7 +641,7 @@ function UserStormCard({ storm, isOpen, onToggle }) {
             <p style={{ color: "#999", fontSize: 14 }}>No posts in this storm yet.</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {posts.map(post => <PostDisplayCard key={post.id} post={post} hashtag={storm.hashtag} storm={storm} />)}
+              {posts.map(post => <PostDisplayCard key={post.id} post={post} hashtag={storm.hashtag} />)}
             </div>
           )}
         </div>
