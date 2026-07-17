@@ -378,7 +378,7 @@ function CampaignOutput({ output, onCopy, onSave, onPushToMachine, onEdit, copie
 
       {/* Action row */}
       <div style={S.actRow}>
-        <button style={{ ...btnOutline(false), background: "var(--gold)", borderColor: "var(--gold-dark)", color: INK, fontWeight: "700" }} onClick={onPushToMachine}>
+        <button style={{ ...btnOutline(false), background: "var(--purple)", borderColor: "var(--purple-dark)", color: "#fff", fontWeight: "700" }} onClick={onPushToMachine}>
           Push to Message Machine →
         </button>
         <button style={btnOutline(copied)} onClick={onCopy}>
