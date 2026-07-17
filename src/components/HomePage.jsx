@@ -1,4 +1,13 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+
+// Message Machine is the primary "just do the thing" path (see punch list:
+// homepage overwhelm fix, option 1). It gets its own hero CTA below instead
+// of sitting in the tools grid as one card among equals.
+const MESSAGE_MACHINE = {
+  path: "/messaging",
+  label: "Message Machine",
+};
 
 const TOOLS = [
   {
@@ -6,15 +15,6 @@ const TOOLS = [
     label: "Research: Candidates, Issues & Districts",
     eyebrow: "Intel",
     desc: "Deep-dive profiles on candidates — positions, vulnerabilities, voting records. Search by issue, district demographics, or race comparisons.",
-    status: "live",
-    color: "var(--teal)",
-    bg: "var(--teal-light)",
-  },
-  {
-    path: "/messaging",
-    label: "Message Machine",
-    eyebrow: "Comms",
-    desc: "Generate platform-ready social media posts tailored to issue, audience, voice, and style — across all six platforms.",
     status: "live",
     color: "var(--teal)",
     bg: "var(--teal-light)",
@@ -37,6 +37,33 @@ const TOOLS = [
     color: "var(--teal)",
     bg: "var(--teal-light)",
   },
+  {
+    path: "/media",
+    label: "Media",
+    eyebrow: "Media",
+    desc: "Browse the coalition's shared photo and video library, or build branded graphics and quote cards in Graphics Studio.",
+    status: "live",
+    color: "#0F6E56",
+    bg: "#dff7f1",
+  },
+  {
+    path: "/library",
+    label: "Shared Library",
+    eyebrow: "Library",
+    desc: "Every saved campaign and article from Message Machine, Rebuttal, and Rapid Response — visible to the whole coalition team.",
+    status: "live",
+    color: "var(--charcoal)",
+    bg: "#eef1f8",
+  },
+  {
+    path: "/storms",
+    label: "Storm Chasers Hub",
+    eyebrow: "Advanced",
+    desc: "Coordinate a multi-platform Storm campaign — build posts, manage status, and publish across the whole team at once.",
+    status: "live",
+    color: "#8a6a10",
+    bg: "var(--gold-light)",
+  },
 ];
 
 const WORKFLOWS = [
@@ -45,23 +72,28 @@ const WORKFLOWS = [
     desc: "Research a candidate or issue, send the facts and quotes you check straight into Message Machine, then save the finished campaign to the Shared Library.",
     steps: ["Research", "→", "Message Machine", "→", "Library"],
     color: "var(--teal)",
+    chipBg: "rgba(14, 122, 140, 0.09)",
   },
   {
     title: "React → Message → Library",
     desc: "When a story breaks, the team decides in the moment whether it goes to Rapid Response or straight to the Rebuttal Generator. Either way, it flows into Message Machine, then gets saved to the Shared Library.",
     steps: ["Rapid Response", "or", "Rebuttal Generator", "→", "Message Machine", "→", "Library"],
     color: "var(--terracotta)",
+    chipBg: "rgba(235, 130, 146, 0.14)",
   },
   {
     title: "Message → Storm",
     desc: "Build a post in Message Machine, then push it straight into a coordinated, multi-platform Storm campaign. (Managers/Administrators)",
     steps: ["Message Machine", "→", "Storm Chasers Hub"],
     color: "var(--charcoal)",
+    chipBg: "rgba(54, 42, 68, 0.09)",
   },
 ];
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [workflowsOpen, setWorkflowsOpen] = useState(false);
 
   return (
     <div>
@@ -100,42 +132,72 @@ export default function HomePage() {
               fontSize: 17,
               color: "rgba(255,255,255,0.8)",
               lineHeight: 1.65,
-              maxWidth: 520,
+              maxWidth: 480,
+              marginBottom: 22,
             }}>
-              AI-powered campaign tools for research, messaging, and rapid response.
-              Use each tool independently or chain them together.
+              Need to post something? Start with Message Machine — everything
+              else is here when you're ready to go deeper.
             </p>
+            <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+              <button
+                onClick={() => navigate(MESSAGE_MACHINE.path)}
+                style={{
+                  background: "var(--gold)",
+                  color: "#4A1B0C",
+                  border: "none",
+                  borderRadius: "var(--radius)",
+                  padding: "14px 24px",
+                  fontSize: 16,
+                  fontWeight: 700,
+                  fontFamily: "var(--font-body)",
+                  cursor: "pointer",
+                }}
+              >
+                Open Message Machine →
+              </button>
+              <button
+                onClick={() => navigate("/manual")}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "rgba(255,255,255,0.75)",
+                  fontSize: 13,
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                  fontFamily: "var(--font-body)",
+                }}
+              >
+                or take the full tour
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "44px 24px 64px" }}>
-        <div style={{ marginBottom: 56 }}>
-          <SectionLabel>Tools</SectionLabel>
+        <CollapsibleToggle label="All Tools" open={toolsOpen} onToggle={() => setToolsOpen(o => !o)}>
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-            gap: 18,
-            marginTop: 20,
+            gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+            gap: 14,
           }}>
             {TOOLS.map(tool => (
               <ToolCard key={tool.path} tool={tool} onNavigate={navigate} />
             ))}
           </div>
-        </div>
-        <div style={{ marginBottom: 56 }}>
-          <SectionLabel>Combined Workflows</SectionLabel>
+        </CollapsibleToggle>
+
+        <CollapsibleToggle label="Combined Workflows" open={workflowsOpen} onToggle={() => setWorkflowsOpen(o => !o)}>
           <div style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
             gap: 18,
-            marginTop: 20,
           }}>
             {WORKFLOWS.map(wf => (
               <WorkflowCard key={wf.title} wf={wf} />
             ))}
           </div>
-        </div>
+        </CollapsibleToggle>
 
         <div>
           <SectionLabel>Quick Links</SectionLabel>
@@ -155,6 +217,33 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CollapsibleToggle({ label, open, onToggle, children }) {
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <button
+        onClick={onToggle}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: 0,
+          fontFamily: "var(--font-display)",
+          fontSize: 20,
+          fontWeight: 700,
+          color: "var(--teal)",
+        }}
+      >
+        <span style={{ display: "inline-block", fontSize: 16, transform: open ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
+        {label}
+      </button>
+      {open && <div style={{ marginTop: 18 }}>{children}</div>}
     </div>
   );
 }
@@ -199,14 +288,14 @@ function ToolCard({ tool, onNavigate }) {
       style={{
         border: "2px solid var(--border)",
         borderRadius: "var(--radius-lg)",
-        padding: 26,
+        padding: 18,
         background: "var(--bg)",
         cursor: isLive ? "pointer" : "default",
         opacity: isLive ? 1 : 0.6,
         transition: "border-color 0.15s, box-shadow 0.15s, transform 0.15s",
         display: "flex",
         flexDirection: "column",
-        gap: 12,
+        gap: 10,
       }}
       onMouseEnter={e => {
         if (!isLive) return;
@@ -246,14 +335,14 @@ function ToolCard({ tool, onNavigate }) {
       <div>
         <h2 style={{
           fontFamily: "var(--font-display)",
-          fontSize: 21,
+          fontSize: 18,
           color: "var(--text)",
           lineHeight: 1.2,
-          marginBottom: 8,
+          marginBottom: 6,
         }}>
           {tool.label}
         </h2>
-        <p style={{ fontSize: 14, color: "var(--text-mid)", lineHeight: 1.65 }}>
+        <p style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.55 }}>
           {tool.desc}
         </p>
       </div>
@@ -299,7 +388,7 @@ function WorkflowCard({ wf }) {
                 fontWeight: 700,
                 letterSpacing: "0.05em",
                 color: wf.color,
-                background: wf.color + "18",
+                background: wf.chipBg,
                 padding: "4px 10px",
                 borderRadius: 6,
                 textTransform: "uppercase",
