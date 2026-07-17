@@ -13,12 +13,12 @@ import {
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
 import { auth } from "../../firebase";
 
-const TEAL       = "#1D5C4A";
-const CHARCOAL   = "#4A4558";
-const TURQUOISE  = "#3ECFB2";
-const TERRACOTTA = "#C1673A";
-const BORDER     = "#C8C4BC";
-const SURFACE_ALT = "#F3F4F0";
+const TEAL       = "var(--teal)";
+const CHARCOAL   = "var(--charcoal)";
+const TURQUOISE  = "var(--turquoise)";
+const TERRACOTTA = "var(--terracotta)";
+const BORDER     = "var(--border)";
+const SURFACE_ALT = "var(--surface-alt)";
 
 const EMPTY_TEXTS = PLATFORMS.reduce((acc, p) => ({ ...acc, [p.key]: "" }), {});
 const EMPTY_LOCKS = PLATFORMS.reduce((acc, p) => ({ ...acc, [p.key]: false }), {});
