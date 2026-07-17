@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 
-export default function ToolPage({ eyebrow, title, desc, chainTo, accentColor = "var(--teal)", children }) {
+export default function ToolPage({ eyebrow, title, desc, chainTo, accentColor = "var(--purple)", children }) {
   const navigate = useNavigate();
 
   return (
@@ -50,16 +50,16 @@ export default function ToolPage({ eyebrow, title, desc, chainTo, accentColor = 
                 fontFamily: "var(--font-body)",
                 letterSpacing: "0.05em",
                 textTransform: "uppercase",
-                color: "var(--teal)",
-                background: "var(--teal-light)",
-                border: "2px solid var(--teal)",
+                color: "var(--purple)",
+                background: "var(--purple-light)",
+                border: "2px solid var(--purple)",
                 borderRadius: 8,
                 padding: "6px 14px",
                 cursor: "pointer",
                 transition: "background 0.15s",
               }}
-              onMouseEnter={e => e.currentTarget.style.background = "#c2e8dc"}
-              onMouseLeave={e => e.currentTarget.style.background = "var(--teal-light)"}
+              onMouseEnter={e => e.currentTarget.style.background = "#ddd0e6"}
+              onMouseLeave={e => e.currentTarget.style.background = "var(--purple-light)"}
             >
               {chainTo.label} →
             </button>
