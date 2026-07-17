@@ -251,7 +251,7 @@ export default function GeographicProfiles() {
                 <button
                   onClick={() => pushToMM(d)}
                   disabled={wasPushed}
-                  style={{ padding: '10px 22px', background: wasPushed ? '#aaa' : B.gold, color: wasPushed ? '#fff' : B.teal, border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, fontFamily: 'inherit', cursor: wasPushed ? 'default' : 'pointer' }}
+                  style={{ padding: '10px 22px', background: wasPushed ? '#aaa' : 'var(--purple)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, fontFamily: 'inherit', cursor: wasPushed ? 'default' : 'pointer' }}
                 >
                   {wasPushed ? '✓ Sent to Message Machine' : 'Send district profile to Message Machine →'}
                 </button>
