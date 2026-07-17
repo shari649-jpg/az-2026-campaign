@@ -99,8 +99,7 @@ export default function ResourcesPage() {
       eyebrow="Library"
       title="Resources Hub"
       desc="Centralized links to strategy documents, Google Drive folders, election resources, and coalition tools."
-      accentColor="var(--charcoal)"
-    >
+      >
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "36px 24px 64px" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
           {RESOURCE_GROUPS.map(group => (
