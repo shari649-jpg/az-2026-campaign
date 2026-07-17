@@ -2,14 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { auth } from "../../firebase";
 
 // ── Brand tokens ────────────────────────────────────────────────────────────
-const TEAL      = "#1D5C4A";
-const GOLD      = "#F5C842";
-const CHARCOAL  = "#4A4558";
-const TURQUOISE = "#3ECFB2";
-const TERRA     = "#C1673A";
-const SURFACE   = "#F9F8F5";
-const BORDER    = "#E0DDD6";
-const TEAL_LITE = "#e0f2ec";
+const TEAL      = "var(--teal)";
+const GOLD      = "var(--gold)";
+const CHARCOAL  = "var(--charcoal)";
+const TURQUOISE = "var(--turquoise)";
+const TERRA     = "var(--terracotta)";
+const SURFACE   = "var(--surface)";
+const BORDER    = "var(--border)";
+const TEAL_LITE = "var(--teal-light)";
 
 // Flip to true once a data-source route is chosen and the Monitor goes live.
 // While false: a NOT LIVE badge shows in the header and all Send-to-Rebuttal
@@ -412,7 +412,7 @@ export default function MisinfoMonitor() {
                 {!MONITOR_LIVE && (
                   <span style={{
                     fontSize: 10, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase",
-                    background: "#C1673A", color: "#fff", borderRadius: 4, padding: "2px 8px",
+                    background: "var(--terracotta)", color: "#fff", borderRadius: 4, padding: "2px 8px",
                   }}>Not Live — Preview</span>
                 )}
               </div>
