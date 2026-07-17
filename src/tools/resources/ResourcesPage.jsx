@@ -3,7 +3,7 @@ import ToolPage from "../../components/ToolPage";
 const RESOURCE_GROUPS = [
   {
     title: "Strategy Documents",
-    color: "#1D5C4A",
+    color: "var(--teal)",
     items: [
       {
         label: "AZ 2026 Messaging Strategy",
@@ -33,7 +33,7 @@ const RESOURCE_GROUPS = [
   },
   {
     title: "Google Drive",
-    color: "#4A4558",
+    color: "var(--charcoal)",
     items: [
       {
         label: "Main Coalition Drive",
@@ -63,7 +63,7 @@ const RESOURCE_GROUPS = [
   },
   {
     title: "Election Resources",
-    color: "#C1673A",
+    color: "var(--terracotta)",
     items: [
       { label: "AZ SOS — Elections", desc: "Official Arizona election information", href: "https://azsos.gov/elections", tag: "Gov" },
       { label: "My Arizona Vote", desc: "Voter registration, ballot status, polling locations", href: "https://my.arizona.vote", tag: "Gov" },
@@ -73,7 +73,7 @@ const RESOURCE_GROUPS = [
   },
   {
     title: "Research & Reference",
-    color: "#4A4558",
+    color: "var(--charcoal)",
     items: [
       { label: "Ballotpedia — Arizona", desc: "Candidates, races, ballot measures statewide", href: "https://ballotpedia.org/Arizona", tag: "Ext" },
       { label: "Arizona Legislature", desc: "Bill tracking, member roster, session calendar", href: "https://www.azleg.gov", tag: "Gov" },
@@ -83,7 +83,7 @@ const RESOURCE_GROUPS = [
   },
   {
     title: "Tools & Platforms",
-    color: "#3ECFB2",
+    color: "var(--turquoise)",
     items: [
       { label: "SocialPilot", desc: "Scheduled posting and analytics across all platforms", href: "https://socialpilot.co", tag: "Tool" },
       { label: "Canva — AZ Coalition", desc: "Coalition graphics and design templates", href: null, tag: "Tool" },
@@ -99,7 +99,7 @@ export default function ResourcesPage() {
       eyebrow="Library"
       title="Resources Hub"
       desc="Centralized links to strategy documents, Google Drive folders, election resources, and coalition tools."
-      accentColor="#4A4558"
+      accentColor="var(--charcoal)"
     >
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "36px 24px 64px" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
