@@ -735,9 +735,9 @@ export default function RapidResponseReader() {
     fontSize: 15,
     fontWeight: 700,
     cursor: "pointer",
-    border: active ? `2px solid ${B.teal}` : `1.5px solid transparent`,
-    background: active ? B.teal : "transparent",
-    color: active ? "#fff" : B.textMid,
+    border: active ? "2px solid #fff" : "1.5px solid transparent",
+    background: active ? "#fff" : "transparent",
+    color: active ? B.teal : "rgba(255,255,255,0.8)",
     transition: "all 0.15s",
     fontFamily: "inherit",
   });
@@ -746,20 +746,22 @@ export default function RapidResponseReader() {
     <div style={{ minHeight: "100vh", background: B.pageBg, color: B.text, fontFamily: "'Atkinson Hyperlegible', Georgia, serif" }}>
       <style>{globalCSS}</style>
 
-      {/* HEADER */}
-      <header style={{ background: B.surface, borderBottom: `3px solid ${B.teal}`, position: "sticky", top: 0, zIndex: 40 }}>
+      {/* HEADER — matches Media/Shared Library's bold teal panel (July 2026
+          consistency pass); this used to be its own bespoke white header,
+          the one tool page that never went through ToolPage.jsx at all. */}
+      <header style={{ background: B.teal, borderBottom: "4px solid var(--gold)", position: "sticky", top: 0, zIndex: 40 }}>
         <div style={{ maxWidth: 860, margin: "0 auto", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{ width: 44, height: 44, background: B.teal, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📡</div>
+            <div style={{ width: 44, height: 44, background: "var(--gold)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📡</div>
             <div>
-              <h1 style={{ fontSize: 20, fontWeight: 700, color: B.teal, lineHeight: 1.1, fontFamily: "'DM Serif Display', Georgia, serif" }}>Rapid Response</h1>
-              <p style={{ fontSize: 12, color: B.textMute }}>Article Reader & Analyzer</p>
+              <h1 style={{ fontSize: 20, fontWeight: 700, color: "#fff", lineHeight: 1.1, fontFamily: "'DM Serif Display', Georgia, serif" }}>Rapid Response</h1>
+              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>Article Reader & Analyzer</p>
             </div>
           </div>
 
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             {article && (
-              <button onClick={reset} style={{ ...S.btnSmall, marginRight: 8 }}>+ New Article</button>
+              <button onClick={reset} style={{ ...S.btnSmall, marginRight: 8, color: "#fff", borderColor: "rgba(255,255,255,0.5)" }}>+ New Article</button>
             )}
             <button onClick={() => setView("search")} style={tabStyle(view === "search")}>
               🔎 Search
