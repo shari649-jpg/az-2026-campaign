@@ -4,16 +4,16 @@
 // of these documents so the in-app pages match exactly.
 
 export const L = {
-  gold:       "#F5C842",
-  teal:       "#1D5C4A",
+  gold:       "var(--gold)",
+  teal:       "var(--teal)",
   tealSoft:   "rgba(29, 92, 74, 0.08)",
-  charcoal:   "#4A4558",
-  turquoise:  "#3ECFB2",
-  terracotta: "#C1673A",
+  charcoal:   "var(--charcoal)",
+  turquoise:  "var(--turquoise)",
+  terracotta: "var(--terracotta)",
   ink:        "#1A1A1A",
   surface:    "#FFFFFF",
   surfaceAlt: "#F3F4F0",
-  border:     "#C8C4BC",
+  border:     "var(--border)",
 };
 
 export function SectionHeading({ num, children }) {
