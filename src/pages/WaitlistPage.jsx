@@ -3,12 +3,12 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { Link } from "react-router-dom";
 
-const TEAL      = "#1D5C4A";
-const TEAL_DARK = "#164437";
-const GOLD      = "#F5C842";
-const CHARCOAL  = "#4A4558";
-const TURQUOISE = "#3ECFB2";
-const BORDER    = "#C8C4BC";
+const TEAL      = "var(--teal)";
+const TEAL_DARK = "var(--teal-mid)";
+const GOLD      = "var(--gold)";
+const CHARCOAL  = "var(--charcoal)";
+const TURQUOISE = "var(--turquoise)";
+const BORDER    = "var(--border)";
 
 const SOCIAL_PLATFORMS = ["Instagram","Facebook","TikTok","X / Twitter","Threads","Bluesky","Other"];
 
@@ -227,7 +227,7 @@ export default function WaitlistPage() {
 }
 
 function Required() {
-  return <span style={{ color: "#C1673A", marginLeft: 2 }}>*</span>;
+  return <span style={{ color: "var(--terracotta)", marginLeft: 2 }}>*</span>;
 }
 
 function LogoBlock() {
