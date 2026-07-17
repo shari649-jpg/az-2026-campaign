@@ -4,12 +4,12 @@
 import { useState, useRef, useEffect } from "react";
 import { auth } from "../firebase";
 
-const TEAL       = "#1D5C4A";
-const TEAL_MID   = "#3ECFB2";
-const GOLD       = "#F5C842";
-const CHARCOAL   = "#4A4558";
-const TERRA      = "#C1673A";
-const TEAL_LIGHT = "#E1F5EE";
+const TEAL       = "var(--teal)";
+const TEAL_MID   = "var(--turquoise)"; // this was already the same hex as TURQUOISE elsewhere, just named differently
+const GOLD       = "var(--gold)";
+const CHARCOAL   = "var(--charcoal)";
+const TERRA      = "var(--terracotta)";
+const TEAL_LIGHT = "var(--teal-light)";
 
 const API_URL = "/.netlify/functions/coaching-response";
 
@@ -494,7 +494,7 @@ export default function ConversationCoach() {
                       </div>
                     )}
                     {suggestError && (
-                      <div style={{ fontSize: 12, color: "#7a2a10", marginTop: 8 }}>{suggestError}</div>
+                      <div style={{ fontSize: 12, color: "var(--charcoal)", marginTop: 8 }}>{suggestError}</div>
                     )}
                   </div>
                 )}
@@ -571,7 +571,7 @@ export default function ConversationCoach() {
                     </div>
                   )}
                   {error && (
-                    <div style={{ fontSize: 14, color: "#7a2a10", padding: "8px 12px", background: "#fff0ec", borderRadius: 10, border: "1.5px solid #C1673A" }}>
+                    <div style={{ fontSize: 14, color: "var(--charcoal)", padding: "8px 12px", background: "var(--terracotta-light)", borderRadius: 10, border: "1.5px solid var(--terracotta)" }}>
                       {error}
                     </div>
                   )}
