@@ -4,13 +4,13 @@ import { EmailAuthProvider, linkWithCredential } from "firebase/auth";
 import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 
-const TEAL       = "#1D5C4A";
-const GOLD       = "#F5C842";
-const TURQUOISE  = "#3ECFB2";
-const CHARCOAL   = "#4A4558";
-const TERRACOTTA = "#C1673A";
+const TEAL       = "var(--teal)";
+const GOLD       = "var(--gold)";
+const TURQUOISE  = "var(--turquoise)";
+const CHARCOAL   = "var(--charcoal)";
+const TERRACOTTA = "var(--terracotta)";
 const RED        = "#c41e1e";
-const BG         = "#ffffff";
+const BG         = "var(--bg)";
 
 const SOCIAL_PLATFORMS = ["Instagram","Facebook","TikTok","X / Twitter","Threads","Bluesky","Other"];
 const MAX_SOCIALS = 6;
@@ -139,7 +139,7 @@ export default function ProfilePage() {
 
           <div style={{ marginBottom: 16 }}>
             <label style={labelStyle}>Email</label>
-            <input type="text" value={user?.email || ""} disabled style={{ ...inputStyle, background: "#f2f0eb", color: "#888", cursor: "not-allowed" }} />
+            <input type="text" value={user?.email || ""} disabled style={{ ...inputStyle, background: "var(--surface-alt)", color: "#888", cursor: "not-allowed" }} />
             <p style={hintStyle}>
               Contact <a href="mailto:info@arizonacoalition.net" style={{ color: TEAL, fontWeight: 700 }}>info@arizonacoalition.net</a> to change your email.
             </p>
@@ -218,7 +218,7 @@ export default function ProfilePage() {
               {socials.length < MAX_SOCIALS && (
                 <button type="button" onClick={addSocialField}
                   style={{
-                    background: "none", border: "2px dashed #C8C4BC", borderRadius: 8,
+                    background: "none", border: "2px dashed var(--border)", borderRadius: 8,
                     color: "#888", fontSize: 13, fontWeight: 700, fontFamily: "var(--font-body)",
                     padding: "8px 16px", cursor: "pointer", width: "100%", marginTop: 4,
                     letterSpacing: "0.04em",
@@ -317,7 +317,7 @@ const hintStyle = { fontSize: 12, color: "#888", marginTop: 6, marginBottom: 0 }
 const inputStyle = {
   width: "100%", boxSizing: "border-box", padding: "11px 14px",
   fontSize: 15, fontFamily: "var(--font-body)",
-  border: "2px solid #c8c4b8", borderRadius: 8,
+  border: "2px solid var(--border)", borderRadius: 8,
   background: BG, color: CHARCOAL,
   outline: "none", transition: "border-color 0.15s",
 };
