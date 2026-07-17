@@ -25,11 +25,11 @@ import { MEDIA_TYPES, PLATFORMS, CHAR_LIMITS, formatGenParams } from "../../lib/
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
 import { auth } from "../../firebase";
 
-const TEAL       = "#1D5C4A";
-const CHARCOAL   = "#4A4558";
-const TURQUOISE  = "#3ECFB2";
-const BORDER     = "#C8C4BC";
-const SURFACE_ALT = "#F3F4F0";
+const TEAL       = "var(--teal)";
+const CHARCOAL   = "var(--charcoal)";
+const TURQUOISE  = "var(--turquoise)";
+const BORDER     = "var(--border)";
+const SURFACE_ALT = "var(--surface-alt)";
 
 const linkBtnStyle = { background: "none", border: "none", color: TEAL, fontWeight: 700, cursor: "pointer", padding: 0, textDecoration: "underline" };
 
@@ -291,7 +291,7 @@ Format: {"${platformKey}": "rewritten post text"}`;
                   // shouldn't have to fight a colored circle behind it.
                   // Open state is shown with a soft ring instead.
                   background: "#fff",
-                  boxShadow: isOpen ? `0 0 0 3px ${TEAL}33` : "none",
+                  boxShadow: isOpen ? "0 0 0 3px rgba(14, 122, 140, 0.2)" : "none", // ocean teal at 20% alpha — a CSS var can't take a hex alpha suffix
                   padding: 0, cursor: "pointer", transition: "all 0.15s",
                 }}
               >
