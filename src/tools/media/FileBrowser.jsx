@@ -2,21 +2,21 @@ import { useState, useEffect, useCallback } from "react";
 import { auth } from "../../firebase";
 
 const B = {
-  teal:       "#1D5C4A",
-  tealDark:   "#164437",
-  tealLight:  "#e8f4f0",
-  gold:       "#F5C842",
+  teal:       "var(--teal)",
+  tealDark:   "var(--teal-mid)",
+  tealLight:  "var(--teal-light)",
+  gold:       "var(--gold)",
   goldDark:   "#c9a000",
-  turquoise:  "#3ECFB2",
-  charcoal:   "#4A4558",
-  terracotta: "#C1673A",
-  bg:         "#ffffff",
+  turquoise:  "var(--turquoise)",
+  charcoal:   "var(--charcoal)",
+  terracotta: "var(--terracotta)",
+  bg:         "var(--bg)",
   surface:    "#ffffff",
   surfaceAlt: "#f3f4f0",
-  border:     "#C8C4BC",
-  borderStrong:"#1D5C4A",
+  border:     "var(--border)",
+  borderStrong:"var(--teal)",
   text:       "#1A1A1A",
-  textMid:    "#4A4558",
+  textMid:    "var(--text-mid)",
   textMute:   "#888580",
   red:        "#c41e1e",
 };
@@ -30,7 +30,7 @@ function formatBytes(bytes) {
 function FileTypeTag({ type }) {
   const styles = {
     image: { bg: B.tealLight, color: B.teal, label: "IMAGE" },
-    video: { bg: "#fff3e0", color: "#c1673a", label: "VIDEO" },
+    video: { bg: "var(--terracotta-light)", color: "var(--terracotta)", label: "VIDEO" },
     gif:   { bg: "#f0f0ff", color: "#5c35cc", label: "GIF" },
   };
   const s = styles[type] || styles.image;
