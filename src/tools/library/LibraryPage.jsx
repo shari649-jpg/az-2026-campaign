@@ -4,13 +4,13 @@ import { loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
 import { loadArticles, deleteArticle } from "../../lib/articleLibrary";
 import { useAuth } from "../../context/AuthContext";
 
-const GOLD      = "#F5C842";
-const TEAL      = "#1D5C4A";
-const TURQUOISE = "#3ECFB2";
-const CHARCOAL  = "#4A4558";
+const GOLD      = "var(--gold)";
+const TEAL      = "var(--teal)";
+const TURQUOISE = "var(--turquoise)";
+const CHARCOAL  = "var(--charcoal)";
 const RED       = "#c41e1e";
-const BG        = "#ffffff";
-const BORDER    = "#555555";
+const BG        = "var(--bg)";
+const BORDER    = "var(--border-strong)";
 
 function extractAnchorPhrase(output) {
   if (!output) return null;
