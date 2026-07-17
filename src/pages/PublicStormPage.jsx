@@ -16,10 +16,10 @@ import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import PostDisplayCard from "../tools/storms/PostDisplayCard";
 
-const TEAL      = "#1D5C4A";
-const TEAL_DARK = "#164437";
-const GOLD      = "#F5C842";
-const CHARCOAL  = "#4A4558";
+const TEAL      = "var(--teal)";
+const TEAL_DARK = "var(--teal-mid)";
+const GOLD      = "var(--gold)";
+const CHARCOAL  = "var(--charcoal)";
 
 export default function PublicStormPage() {
   const { token } = useParams();
@@ -94,7 +94,7 @@ export default function PublicStormPage() {
             {data.posts.length === 0 ? (
               <p style={{ color: "rgba(255,255,255,0.75)", textAlign: "center", fontSize: 14 }}>Nothing to show here yet.</p>
             ) : (
-              data.posts.map(post => <PostDisplayCard key={post.id} post={post} hashtag={data.hashtag} isPublic publicToken={token} />)
+              data.posts.map(post => <PostDisplayCard key={post.id} post={post} hashtag={data.hashtag} />)
             )}
           </div>
         </>
