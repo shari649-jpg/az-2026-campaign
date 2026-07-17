@@ -109,6 +109,15 @@ const SPEAKER_PERSPECTIVES = [
 const DEFAULT_AUDIENCE = "general moderate voter who is not very engaged in politics";
 const DEFAULT_STYLE    = "neutral";
 
+// Human-readable generation params captured at Push-to-Storm time (Handoff
+// #22, option A) so a Storm post pushed from here can show what settings
+// produced it. Only meaningful fields are included — Storms' own native
+// Generate/Rephrase has no equivalent concept, so a post created directly
+// in Storms simply has none of this and shows nothing.
+function modeLabel(mode) {
+  return mode === "az" ? "Arizona" : mode === "national" ? "National" : "Neutral";
+}
+
 const T = {
   pageBg:   "var(--bg)",
   surface:  "var(--bg)",
@@ -355,7 +364,7 @@ function DesertLoader() {
 }
 
 /* ── Platform Message Card ── */
-function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading }) {
+function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading, contradictionNote, onDismissContradiction }) {
   const [localOpt, setLocalOpt] = useState("");
   const [expanded, setExpanded] = useState(false);
   const charCount = (message || "").length;
@@ -382,6 +391,14 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
       >
         <span style={{ ...S.platformBadge, width: 32, height: 32, fontSize: 11, background: 'rgba(255,255,255,0.2)', color: p.text }}>{p.abbr}</span>
         <span style={{ fontWeight: 900, fontSize: 18, letterSpacing: '0.02em' }}>{p.name}</span>
+        {contradictionNote && (
+          <span title="Possible self-contradiction — expand to review" style={{
+            fontSize: 10.5, fontWeight: 800, color: "#8a6215", background: "#fff3d6",
+            border: "1px solid #e0c568", borderRadius: 999, padding: "2px 8px",
+          }}>
+            ⚠️ Check this
+          </span>
+        )}
         <span style={{ marginLeft: 'auto', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: over ? '#fca5a5' : 'rgba(255,255,255,0.7)', marginRight: 10 }}>
           {charCount.toLocaleString()} / {p.maxChars.toLocaleString()}
         </span>
@@ -390,6 +407,13 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
 
       {expanded && (
         <div style={{ padding: 24 }}>
+          {contradictionNote && (
+            <div style={{ background: "#fffaf0", border: "2px solid #e0c568", borderRadius: 10, padding: "12px 16px", marginBottom: 16, position: "relative" }}>
+              <button onClick={onDismissContradiction} aria-label="Dismiss" style={{ position: "absolute", top: 10, right: 12, background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#8a6215", fontWeight: 900 }}>✕</button>
+              <p style={{ fontSize: 14, fontWeight: 800, color: "#8a6215", marginBottom: 4 }}>⚠️ Possible self-contradiction</p>
+              <p style={{ fontSize: 13.5, color: "#6b4f14", lineHeight: 1.5, paddingRight: 20 }}>{contradictionNote} Was this intentional?</p>
+            </div>
+          )}
           {loading ? (
             <div style={{ display:"flex", alignItems:"center", gap:14, padding:"32px 0", color:T.textMid }}>
               <span className="spin-anim" style={{ ...S.spinner, border:"3px solid #ccc", borderTopColor:T.text }} />
@@ -446,6 +470,7 @@ export default function App() {
   const [pushError, setPushError]   = useState("");
   const [notif, setNotif]           = useState(null);
   const [genError, setGenError]     = useState(null); // persistent error panel for generation failures
+  const [contradictionFlags, setContradictionFlags] = useState({}); // { [platformId]: "explanation" } — self-contradictions the model noticed (Handoff #22), never blocking, just surfaced for a human to decide
   const [hashtags, setHashtags]     = useState(null);
   const [hashLoading, setHashLoading] = useState(false);
 
@@ -601,7 +626,8 @@ IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
 Only include these platform ids: ${platforms.join(", ")}
-Format: {"platform_id": "message text"}`;
+Format: {"platform_id": "message text"}
+If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
     }
 
     // ── AZ MODE ──────────────────────────────────────────────────────────────
@@ -638,7 +664,8 @@ IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
 Only include these platform ids: ${platforms.join(", ")}
-Format: {"platform_id": "message text"}`;
+Format: {"platform_id": "message text"}
+If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
     }
 
     // ── NATIONAL MODE ─────────────────────────────────────────────────────────
@@ -690,7 +717,8 @@ IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
 Only include these platform ids: ${platforms.join(", ")}
-Format: {"platform_id": "message text"}`;
+Format: {"platform_id": "message text"}
+If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
   };
 
   const MM_DRAFT_KEY = "mm_draft_session";
@@ -754,7 +782,8 @@ ${formData.focalPoint ? `- Focal Point (mandatory — do not let ${regenOpt === 
 
 IMPORTANT: Do NOT include hashtags. Write clean prose only.
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation.
-Format: {"${platformId}": "rewritten message text"}`;
+Format: {"${platformId}": "rewritten message text"}
+If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_contradictionFlags": {"${platformId}": "one-sentence explanation of the contradiction"}} — omitted entirely if it doesn't apply.`;
   };
 
   const callAPI = async (prompt, maxTokens=1000) => {
@@ -867,7 +896,9 @@ Format: {"${platformId}": "rewritten message text"}`;
     setGenerating(true); setShowLoader(true); setHashtags(null); setGenError(null);
     try {
       const r = await callAPI(buildPrompt(formData.platforms));
-      setMessages(r);
+      const { _contradictionFlags, ...textOnly } = r;
+      setMessages(textOnly);
+      setContradictionFlags(_contradictionFlags || {});
       setShowLoader(false);
       setView("results");
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -895,7 +926,18 @@ Format: {"${platformId}": "rewritten message text"}`;
         ? buildRegenPrompt(platformId, currentText, regenOpt)
         : buildPrompt([platformId], regenOpt);
       const r = await callAPI(prompt, maxTok);
-      setMessages(p=>({...p,...r}));
+      const { _contradictionFlags, ...textOnly } = r;
+      setMessages(p=>({...p,...textOnly}));
+      const note = _contradictionFlags && _contradictionFlags[platformId];
+      setContradictionFlags(p => {
+        if (!note) {
+          if (!(platformId in p)) return p;
+          const next = { ...p };
+          delete next[platformId];
+          return next;
+        }
+        return { ...p, [platformId]: note };
+      });
     } catch(e) {
       if (e.type === "content_flagged") {
         setGenError("flagged");
@@ -909,6 +951,14 @@ Format: {"${platformId}": "rewritten message text"}`;
   };
 
   const copyText = async (text, name) => { await navigator.clipboard.writeText(text); notify(`${name} message copied!`); };
+
+  const dismissContradiction = (platformId) => {
+    setContradictionFlags(p => {
+      const next = { ...p };
+      delete next[platformId];
+      return next;
+    });
+  };
 
   const generateHashtags = async () => {
     setHashLoading(true); setHashtags(null);
@@ -968,6 +1018,14 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
     setPushLoading(false);
   };
 
+  const buildGenParams = () => {
+    const params = { mode: modeLabel(msgMode) };
+    if (formData.audience) params.audience = formData.audience;
+    if (formData.voice) params.voice = formData.voice;
+    if (formData.modifier) params.tone = formData.modifier;
+    return params;
+  };
+
   const pushToExistingStorm = async (storm) => {
     setPushLoading(true); setPushError("");
     try {
@@ -977,6 +1035,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
         mediaType: STORM_MEDIA_TYPES.VIDEO, // placeholder — no media at push time; staff adds it manually
         media: [],
         texts: { ...messages },
+        genParams: buildGenParams(),
         order: existingPosts.length,
       });
       setPushModal(false);
@@ -992,6 +1051,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
       localStorage.setItem(PUSH_TO_STORM_KEY, JSON.stringify({
         texts: { ...messages },
         title: derivedPostTitle(),
+        genParams: buildGenParams(),
         pushedAt: new Date().toISOString(),
       }));
       window.location.href = "/storms";
@@ -1409,7 +1469,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                       return (
                         <div style={{
                           display:"flex", alignItems:"center", gap:10, flexWrap:"wrap",
-                          background:"#fffdf0", border:`1.5px solid ${T.gold}`, borderRadius:10,
+                          background:"var(--gold-light)", border:`1.5px solid ${T.gold}`, borderRadius:10,
                           padding:"10px 16px", fontSize:14, color:T.text,
                         }}>
                           <span>📍 <strong>{label}</strong> detected from Research — apply its local voice?</span>
@@ -1772,7 +1832,9 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               {PLATFORMS.filter(p=>messages[p.id]!==undefined).map(p => (
                 <PlatformCard key={p.id} platform={p} message={messages[p.id]}
                   onUpdate={(id,text)=>setMessages(prev=>({...prev,[id]:text}))}
-                  onCopy={copyText} onRegen={regenPlatform} loading={!!platLoad[p.id]} />
+                  onCopy={copyText} onRegen={regenPlatform} loading={!!platLoad[p.id]}
+                  contradictionNote={contradictionFlags[p.id]}
+                  onDismissContradiction={() => dismissContradiction(p.id)} />
               ))}
             </div>
 
