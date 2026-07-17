@@ -53,10 +53,10 @@ export default function AuthGuard({ children }) {
           textAlign: "center",
         }}>
           <div style={{ fontSize: 52, marginBottom: 16 }}>📬</div>
-          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "#1D5C4A", marginBottom: 10, marginTop: 0 }}>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--teal)", marginBottom: 10, marginTop: 0 }}>
             Verify your email
           </h2>
-          <p style={{ fontSize: 15, color: "#4A4558", lineHeight: 1.7, marginBottom: 8 }}>
+          <p style={{ fontSize: 15, color: "var(--charcoal)", lineHeight: 1.7, marginBottom: 8 }}>
             A verification link was sent to <strong>{user.email}</strong>.
           </p>
           <p style={{ fontSize: 14, color: "#888", lineHeight: 1.6, marginBottom: 24 }}>
@@ -107,7 +107,7 @@ export default function AuthGuard({ children }) {
             }}
             disabled={resending || resendCooldown > 0}
             style={{
-              background: "none", border: "2px solid #1D5C4A", color: "#1D5C4A",
+              background: "none", border: "2px solid var(--teal)", color: "var(--teal)",
               borderRadius: 8, padding: "11px 24px", fontSize: 14, fontWeight: 700,
               fontFamily: "var(--font-body)",
               cursor: (resending || resendCooldown > 0) ? "not-allowed" : "pointer",
@@ -122,7 +122,7 @@ export default function AuthGuard({ children }) {
             Once verified,{" "}
             <button
               onClick={() => window.location.reload()}
-              style={{ background: "none", border: "none", color: "#1D5C4A", fontWeight: 700, fontSize: 13, cursor: "pointer", padding: 0, fontFamily: "inherit" }}
+              style={{ background: "none", border: "none", color: "var(--teal)", fontWeight: 700, fontSize: 13, cursor: "pointer", padding: 0, fontFamily: "inherit" }}
             >
               click here to continue
             </button>
