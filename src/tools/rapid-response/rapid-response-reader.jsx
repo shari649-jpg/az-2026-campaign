@@ -4,19 +4,19 @@ import { auth } from "../../firebase";
 
 // ── Brand Colors ─────────────────────────────────────────────────────────────
 const B = {
-  gold:       "#F5C842",
-  teal:       "#1D5C4A",
-  tealLight:  "#2a7a62",
-  charcoal:   "#4A4558",
-  turquoise:  "#3ECFB2",
-  terracotta: "#C1673A",
+  gold:       "var(--gold)",
+  teal:       "var(--teal)",
+  tealLight:  "var(--teal-mid)", // this file's "light" was actually the old teal-mid hex — value preserved, just consolidated
+  charcoal:   "var(--charcoal)",
+  turquoise:  "var(--turquoise)",
+  terracotta: "var(--terracotta)",
   pageBg:     "#FAFAF7",
   surface:    "#FFFFFF",
   surfaceAlt: "#F3F4F0",
-  border:     "#C8C4BC",
-  borderStrong: "#1D5C4A",
+  border:     "var(--border)",
+  borderStrong: "var(--teal)",
   text:       "#1A1A1A",
-  textMid:    "#4A4558",
+  textMid:    "var(--text-mid)",
   textMute:   "#888580",
 };
 
