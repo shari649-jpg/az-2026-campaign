@@ -5,16 +5,16 @@ import DistrictProfiles from './DistrictProfiles';
 import IssuesPage from './IssuesPage';
 
 const B = {
-  teal:      '#1D5C4A',
-  tealLight: '#2a7a62',
-  gold:      '#F5C842',
-  turquoise: '#3ECFB2',
-  charcoal:  '#4A4558',
-  surface:   '#FFFFFF',
-  surfaceAlt:'#F3F4F0',
-  border:    '#C8C4BC',
-  text:      '#1A1A1A',
-  textMid:   '#4A4558',
+  teal:      'var(--teal)',
+  tealLight: 'var(--teal-mid)',
+  gold:      'var(--gold)',
+  turquoise: 'var(--turquoise)',
+  charcoal:  'var(--charcoal)',
+  surface:   'var(--bg)',
+  surfaceAlt:'var(--surface-alt)',
+  border:    'var(--border)',
+  text:      'var(--text)',
+  textMid:   'var(--text-mid)',
 };
 
 const TABS = [
