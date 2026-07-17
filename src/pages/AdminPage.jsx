@@ -1,17 +1,17 @@
 import { useState, useEffect } from "react";
 import { Inflate } from "fflate";
-import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, getDoc, setDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 
-const GOLD       = "#F5C842";
-const TEAL       = "#1D5C4A";
-const TURQUOISE  = "#3ECFB2";
-const CHARCOAL   = "#4A4558";
+const GOLD       = "var(--gold)";
+const TEAL       = "var(--teal)";
+const TURQUOISE  = "var(--turquoise)";
+const CHARCOAL   = "var(--charcoal)";
 const RED        = "#c41e1e";
-const TERRACOTTA = "#C1673A";
-const BG         = "#ffffff";
+const TERRACOTTA = "var(--terracotta)";
+const BG         = "var(--bg)";
 
 const ROLE_OPTIONS = ["user", "manager", "administrator"];
 const ROLE_COLORS  = {
@@ -80,37 +80,9 @@ export default function AdminPage() {
   const [cnUploading, setCnUploading] = useState(false);
   const [cnDone, setCnDone]         = useState(false);
   const [notif, setNotif]           = useState(null);
-  // Public Regenerate kill switch (Handoff #19/#22) — config/publicRegenerate.enabled
-  // in Firestore, read by public-storm-regenerate.mjs on every request. No
-  // deploy needed to flip it; loaded lazily only when the Settings tab opens.
-  const [pubRegenEnabled, setPubRegenEnabled] = useState(true);
-  const [pubRegenLoaded, setPubRegenLoaded] = useState(false);
-  const [pubRegenSaving, setPubRegenSaving] = useState(false);
 
   useEffect(() => { if (!isAdmin) navigate("/"); }, [isAdmin]);
   useEffect(() => { if (isAdmin) { fetchUsers(); fetchWaitlist(); } }, [isAdmin]);
-  useEffect(() => { if (activeTab === "settings" && !pubRegenLoaded) fetchPubRegenSetting(); }, [activeTab]);
-
-  const fetchPubRegenSetting = async () => {
-    try {
-      const snap = await getDoc(doc(db, "config", "publicRegenerate"));
-      setPubRegenEnabled(snap.exists() ? snap.data().enabled !== false : true);
-    } catch { /* default stays true (enabled) if the doc can't be read */ }
-    setPubRegenLoaded(true);
-  };
-
-  const togglePubRegen = async () => {
-    setPubRegenSaving(true);
-    try {
-      const next = !pubRegenEnabled;
-      await setDoc(doc(db, "config", "publicRegenerate"), { enabled: next }, { merge: true });
-      setPubRegenEnabled(next);
-      notify(next ? "Public Regenerate turned back on." : "Public Regenerate turned off.");
-    } catch {
-      notify("Couldn't update the setting — try again.", "err");
-    }
-    setPubRegenSaving(false);
-  };
 
   const notify = (msg, type = "ok") => {
     setNotif({ msg, type });
@@ -857,7 +829,6 @@ export default function AdminPage() {
             { id: "users",    label: `Registered Users (${counts.total})` },
             { id: "waitlist", label: `Waitlist (${waitlist.length - counts.registered})${counts.pending > 0 ? ` · ${counts.pending} pending` : ""}` },
           { id: "community-notes", label: "Community Notes Upload" },
-          { id: "settings", label: "Settings" },
           ].map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSearch(""); }}
               style={{
@@ -1298,29 +1269,6 @@ export default function AdminPage() {
                 </ol>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* ── SETTINGS TAB ── */}
-        {activeTab === "settings" && (
-          <div style={{ background: BG, border: "2px solid #eee", borderRadius: 12, padding: "24px 28px" }}>
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: CHARCOAL, margin: "0 0 6px" }}>Public Regenerate</h2>
-            <p style={{ fontSize: 14, color: "#777", margin: "0 0 18px", lineHeight: 1.6 }}>
-              Controls the "🔁 Regenerate" button visitors see on public storm pages (no login required). Turning this off disables the button everywhere immediately — no deploy needed. This does not affect Regenerate for signed-in members, which uses a separate, authenticated path.
-            </p>
-            {!pubRegenLoaded ? (
-              <p style={{ color: "#999", fontSize: 14 }}>Loading…</p>
-            ) : (
-              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: pubRegenSaving ? "default" : "pointer" }}>
-                <input type="checkbox" checked={pubRegenEnabled} disabled={pubRegenSaving} onChange={togglePubRegen} style={{ width: 20, height: 20, cursor: pubRegenSaving ? "default" : "pointer" }} />
-                <span style={{ fontSize: 15, fontWeight: 700, color: pubRegenEnabled ? TEAL : TERRACOTTA }}>
-                  {pubRegenEnabled ? "Enabled" : "Disabled"}
-                </span>
-              </label>
-            )}
-            <p style={{ fontSize: 12.5, color: "#999", marginTop: 18, lineHeight: 1.6 }}>
-              Separately, this also auto-disables per visitor for the rest of the day if it hits 20 regenerations from one IP, 200 from one storm, or 1,000 sitewide — each resets at UTC midnight. Shari gets an email the first time any of those limits trips each day.
-            </p>
           </div>
         )}
 
