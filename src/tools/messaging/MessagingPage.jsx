@@ -7,7 +7,6 @@ export default function MessagingPage() {
       eyebrow="Comms"
       title="Message Machine"
       desc="Generate platform-ready social media posts tailored to issue, audience, voice, and style."
-      accentColor="#1D5C4A"
       chainTo={{ label: "Need to rebut a false narrative? Try the Rebuttal Generator", path: "/rebuttal" }}
     >
       <MessageMachine />
