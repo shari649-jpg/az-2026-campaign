@@ -109,31 +109,22 @@ const SPEAKER_PERSPECTIVES = [
 const DEFAULT_AUDIENCE = "general moderate voter who is not very engaged in politics";
 const DEFAULT_STYLE    = "neutral";
 
-// Human-readable generation params captured at Push-to-Storm time (Handoff
-// #22, option A) so a Storm post pushed from here can show what settings
-// produced it. Only meaningful fields are included — Storms' own native
-// Generate/Rephrase has no equivalent concept, so a post created directly
-// in Storms simply has none of this and shows nothing.
-function modeLabel(mode) {
-  return mode === "az" ? "Arizona" : mode === "national" ? "National" : "Neutral";
-}
-
 const T = {
-  pageBg:   "#ffffff",
-  surface:  "#ffffff",
-  surfaceAlt:"#f3f4f6",
-  border:   "#555555",
-  borderStrong: "#111111",
-  text:     "#111111",
-  textMid:  "#333333",
-  textMute: "#555555",
-  teal:     "#1D5C4A",
-  tealDark: "#164437",
-  gold:     "#F5C842",
-  goldDark: "#d4aa30",
-  turquoise:"#3ECFB2",
-  terracotta:"#C1673A",
-  charcoal: "#4A4558",
+  pageBg:   "var(--bg)",
+  surface:  "var(--bg)",
+  surfaceAlt:"var(--surface-alt)",
+  border:   "var(--border-strong)",
+  borderStrong: "var(--charcoal-dark)",
+  text:     "var(--text)",
+  textMid:  "var(--text-mid)",
+  textMute: "var(--text-mute)",
+  teal:     "var(--teal)",
+  tealDark: "var(--teal-mid)",
+  gold:     "var(--gold)",
+  goldDark: "var(--gold-dark)",
+  turquoise:"var(--turquoise)",
+  terracotta:"var(--terracotta)",
+  charcoal: "var(--charcoal)",
   green:    "#145214",
   red:      "#c41e1e",
 };
@@ -302,7 +293,7 @@ function DesertLoader() {
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 200,
-      background: "linear-gradient(160deg, #1D5C4A 0%, #0f3329 50%, #2a1a08 100%)",
+      background: "linear-gradient(160deg, var(--teal) 0%, #0f3329 50%, #2a1a08 100%)",
       display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center",
       padding: 32,
@@ -364,7 +355,7 @@ function DesertLoader() {
 }
 
 /* ── Platform Message Card ── */
-function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading, contradictionNote, onDismissContradiction }) {
+function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading }) {
   const [localOpt, setLocalOpt] = useState("");
   const [expanded, setExpanded] = useState(false);
   const charCount = (message || "").length;
@@ -391,14 +382,6 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
       >
         <span style={{ ...S.platformBadge, width: 32, height: 32, fontSize: 11, background: 'rgba(255,255,255,0.2)', color: p.text }}>{p.abbr}</span>
         <span style={{ fontWeight: 900, fontSize: 18, letterSpacing: '0.02em' }}>{p.name}</span>
-        {contradictionNote && (
-          <span title="Possible self-contradiction — expand to review" style={{
-            fontSize: 10.5, fontWeight: 800, color: "#8a6215", background: "#fff3d6",
-            border: "1px solid #e0c568", borderRadius: 999, padding: "2px 8px",
-          }}>
-            ⚠️ Check this
-          </span>
-        )}
         <span style={{ marginLeft: 'auto', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: over ? '#fca5a5' : 'rgba(255,255,255,0.7)', marginRight: 10 }}>
           {charCount.toLocaleString()} / {p.maxChars.toLocaleString()}
         </span>
@@ -407,13 +390,6 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
 
       {expanded && (
         <div style={{ padding: 24 }}>
-          {contradictionNote && (
-            <div style={{ background: "#fffaf0", border: "2px solid #e0c568", borderRadius: 10, padding: "12px 16px", marginBottom: 16, position: "relative" }}>
-              <button onClick={onDismissContradiction} aria-label="Dismiss" style={{ position: "absolute", top: 10, right: 12, background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#8a6215", fontWeight: 900 }}>✕</button>
-              <p style={{ fontSize: 14, fontWeight: 800, color: "#8a6215", marginBottom: 4 }}>⚠️ Possible self-contradiction</p>
-              <p style={{ fontSize: 13.5, color: "#6b4f14", lineHeight: 1.5, paddingRight: 20 }}>{contradictionNote} Was this intentional?</p>
-            </div>
-          )}
           {loading ? (
             <div style={{ display:"flex", alignItems:"center", gap:14, padding:"32px 0", color:T.textMid }}>
               <span className="spin-anim" style={{ ...S.spinner, border:"3px solid #ccc", borderTopColor:T.text }} />
@@ -470,7 +446,6 @@ export default function App() {
   const [pushError, setPushError]   = useState("");
   const [notif, setNotif]           = useState(null);
   const [genError, setGenError]     = useState(null); // persistent error panel for generation failures
-  const [contradictionFlags, setContradictionFlags] = useState({}); // { [platformId]: "explanation" } — self-contradictions the model noticed (Handoff #22), never blocking, just surfaced for a human to decide
   const [hashtags, setHashtags]     = useState(null);
   const [hashLoading, setHashLoading] = useState(false);
 
@@ -626,8 +601,7 @@ IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
 Only include these platform ids: ${platforms.join(", ")}
-Format: {"platform_id": "message text"}
-If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
+Format: {"platform_id": "message text"}`;
     }
 
     // ── AZ MODE ──────────────────────────────────────────────────────────────
@@ -664,8 +638,7 @@ IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
 Only include these platform ids: ${platforms.join(", ")}
-Format: {"platform_id": "message text"}
-If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
+Format: {"platform_id": "message text"}`;
     }
 
     // ── NATIONAL MODE ─────────────────────────────────────────────────────────
@@ -717,8 +690,7 @@ IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
 Only include these platform ids: ${platforms.join(", ")}
-Format: {"platform_id": "message text"}
-If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
+Format: {"platform_id": "message text"}`;
   };
 
   const MM_DRAFT_KEY = "mm_draft_session";
@@ -782,8 +754,7 @@ ${formData.focalPoint ? `- Focal Point (mandatory — do not let ${regenOpt === 
 
 IMPORTANT: Do NOT include hashtags. Write clean prose only.
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation.
-Format: {"${platformId}": "rewritten message text"}
-If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_contradictionFlags": {"${platformId}": "one-sentence explanation of the contradiction"}} — omitted entirely if it doesn't apply.`;
+Format: {"${platformId}": "rewritten message text"}`;
   };
 
   const callAPI = async (prompt, maxTokens=1000) => {
@@ -896,9 +867,7 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     setGenerating(true); setShowLoader(true); setHashtags(null); setGenError(null);
     try {
       const r = await callAPI(buildPrompt(formData.platforms));
-      const { _contradictionFlags, ...textOnly } = r;
-      setMessages(textOnly);
-      setContradictionFlags(_contradictionFlags || {});
+      setMessages(r);
       setShowLoader(false);
       setView("results");
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -926,18 +895,7 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         ? buildRegenPrompt(platformId, currentText, regenOpt)
         : buildPrompt([platformId], regenOpt);
       const r = await callAPI(prompt, maxTok);
-      const { _contradictionFlags, ...textOnly } = r;
-      setMessages(p=>({...p,...textOnly}));
-      const note = _contradictionFlags && _contradictionFlags[platformId];
-      setContradictionFlags(p => {
-        if (!note) {
-          if (!(platformId in p)) return p;
-          const next = { ...p };
-          delete next[platformId];
-          return next;
-        }
-        return { ...p, [platformId]: note };
-      });
+      setMessages(p=>({...p,...r}));
     } catch(e) {
       if (e.type === "content_flagged") {
         setGenError("flagged");
@@ -951,14 +909,6 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
   };
 
   const copyText = async (text, name) => { await navigator.clipboard.writeText(text); notify(`${name} message copied!`); };
-
-  const dismissContradiction = (platformId) => {
-    setContradictionFlags(p => {
-      const next = { ...p };
-      delete next[platformId];
-      return next;
-    });
-  };
 
   const generateHashtags = async () => {
     setHashLoading(true); setHashtags(null);
@@ -1018,14 +968,6 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
     setPushLoading(false);
   };
 
-  const buildGenParams = () => {
-    const params = { mode: modeLabel(msgMode) };
-    if (formData.audience) params.audience = formData.audience;
-    if (formData.voice) params.voice = formData.voice;
-    if (formData.modifier) params.tone = formData.modifier;
-    return params;
-  };
-
   const pushToExistingStorm = async (storm) => {
     setPushLoading(true); setPushError("");
     try {
@@ -1035,7 +977,6 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
         mediaType: STORM_MEDIA_TYPES.VIDEO, // placeholder — no media at push time; staff adds it manually
         media: [],
         texts: { ...messages },
-        genParams: buildGenParams(),
         order: existingPosts.length,
       });
       setPushModal(false);
@@ -1051,7 +992,6 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
       localStorage.setItem(PUSH_TO_STORM_KEY, JSON.stringify({
         texts: { ...messages },
         title: derivedPostTitle(),
-        genParams: buildGenParams(),
         pushedAt: new Date().toISOString(),
       }));
       window.location.href = "/storms";
@@ -1227,7 +1167,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
           maxWidth: 520, width:"calc(100% - 48px)",
           background: genError === "flagged" ? "#7f1d1d" : genError === "ratelimit" ? "#4c1d95" : "#7a3820",
           color:"#fff",
-          border:`2px solid ${genError === "flagged" ? "#b91c1c" : genError === "ratelimit" ? "#7c3aed" : "#c1673a"}`,
+          border:`2px solid ${genError === "flagged" ? "#b91c1c" : genError === "ratelimit" ? "#7c3aed" : "var(--terracotta)"}`,
           borderRadius:12, padding:"14px 48px 14px 20px",
           boxShadow:"0 8px 32px rgba(0,0,0,0.45)",
         }}>
@@ -1305,7 +1245,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
             {genError === "connection" && (
               <div role="alert" style={{
-                background:"#fff8f0", border:`3px solid #c1673a`,
+                background:"var(--terracotta-light)", border:`3px solid var(--terracotta)`,
                 borderRadius:12, padding:"20px 24px", marginBottom:28,
                 position:"relative",
               }}>
@@ -1315,11 +1255,11 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   style={{
                     position:"absolute", top:14, right:16,
                     background:"none", border:"none", cursor:"pointer",
-                    fontSize:22, color:"#c1673a", fontWeight:900, lineHeight:1,
+                    fontSize:22, color:"var(--terracotta)", fontWeight:900, lineHeight:1,
                     fontFamily:"inherit",
                   }}
                 >✕</button>
-                <p style={{ fontSize:18, fontWeight:900, color:"#c1673a", marginBottom:10 }}>
+                <p style={{ fontSize:18, fontWeight:900, color:"var(--terracotta)", marginBottom:10 }}>
                   ⚠️ Generation failed
                 </p>
                 <p style={{ fontSize:16, color:T.textMid, lineHeight:1.6, marginBottom:10 }}>
@@ -1441,8 +1381,8 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               </section>
 
               {/* Focal Point */}
-              <section style={{...S.card, ...(fromResearch && !formData.focalPoint ? { border:"2px solid #F5C842", background:"#fffdf0" } : {})}}>
-                <label htmlFor="focal" style={{...S.label, ...(fromResearch && !formData.focalPoint ? { color:"#1D5C4A" } : {})}}>
+              <section style={{...S.card, ...(fromResearch && !formData.focalPoint ? { border:"2px solid var(--gold)", background:"var(--gold-light)" } : {})}}>
+                <label htmlFor="focal" style={{...S.label, ...(fromResearch && !formData.focalPoint ? { color:"var(--teal)" } : {})}}>
                   Focal Point{fromResearch && !formData.focalPoint ? " ← Add your key message here" : ""}
                 </label>
                 <input id="focal" type="text"
@@ -1795,7 +1735,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </button>
                 {canPushToStorm && (
                   <span style={{ display:"inline-flex", alignItems:"center" }}>
-                    <button onClick={openPushModal} style={{ ...S.btnSecondary, fontSize:15, padding:"9px 16px", borderColor:"#3ECFB2", color:"#1D5C4A" }}>
+                    <button onClick={openPushModal} style={{ ...S.btnSecondary, fontSize:15, padding:"9px 16px", borderColor:"var(--turquoise)", color:"var(--teal)" }}>
                       ⛈️ Push to Storm →
                     </button>
                     <HelpTooltip text={HELP.messageMachine.pushToStorm} label="Help: Push to Storm" />
@@ -1814,9 +1754,9 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
             <div style={{ display:"flex", flexDirection:"column", gap:22 }}>
               {/* Error panels in results view (from Expand/Shorten/Rephrase failures) */}
               {genError === "connection" && (
-                <div role="alert" style={{ background:"#fff8f0", border:`3px solid #c1673a`, borderRadius:12, padding:"18px 22px", position:"relative" }}>
-                  <button onClick={() => setGenError(null)} aria-label="Dismiss" style={{ position:"absolute", top:12, right:14, background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#c1673a", fontWeight:900, fontFamily:"inherit" }}>✕</button>
-                  <p style={{ fontSize:17, fontWeight:900, color:"#c1673a", marginBottom:8 }}>⚠️ Regeneration failed</p>
+                <div role="alert" style={{ background:"var(--terracotta-light)", border:`3px solid var(--terracotta)`, borderRadius:12, padding:"18px 22px", position:"relative" }}>
+                  <button onClick={() => setGenError(null)} aria-label="Dismiss" style={{ position:"absolute", top:12, right:14, background:"none", border:"none", cursor:"pointer", fontSize:20, color:"var(--terracotta)", fontWeight:900, fontFamily:"inherit" }}>✕</button>
+                  <p style={{ fontSize:17, fontWeight:900, color:"var(--terracotta)", marginBottom:8 }}>⚠️ Regeneration failed</p>
                   <p style={{ fontSize:15, color:T.textMid, lineHeight:1.6 }}>
                     The request timed out. With <strong style={{ color:T.text }}>Expand</strong>, try hitting the button again — it usually works on a retry. On slow connections, generate first without Expand, then use the per-platform Expand button.
                   </p>
@@ -1832,9 +1772,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               {PLATFORMS.filter(p=>messages[p.id]!==undefined).map(p => (
                 <PlatformCard key={p.id} platform={p} message={messages[p.id]}
                   onUpdate={(id,text)=>setMessages(prev=>({...prev,[id]:text}))}
-                  onCopy={copyText} onRegen={regenPlatform} loading={!!platLoad[p.id]}
-                  contradictionNote={contradictionFlags[p.id]}
-                  onDismissContradiction={() => dismissContradiction(p.id)} />
+                  onCopy={copyText} onRegen={regenPlatform} loading={!!platLoad[p.id]} />
               ))}
             </div>
 
