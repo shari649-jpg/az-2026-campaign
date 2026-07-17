@@ -3,17 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { auth } from '../../firebase';
 
 const B = {
-  teal:       '#1D5C4A',
-  gold:       '#F5C842',
-  turquoise:  '#3ECFB2',
-  terracotta: '#C1673A',
-  charcoal:   '#4A4558',
-  text:       '#111',
-  textMid:    '#444',
-  textMute:   '#777',
-  surface:    '#fff',
-  surfaceAlt: '#f3f4f6',
-  border:     '#ddd',
+  teal:       'var(--teal)',
+  gold:       'var(--gold)',
+  turquoise:  'var(--turquoise)',
+  terracotta: 'var(--terracotta)',
+  charcoal:   'var(--charcoal)',
+  text:       'var(--text)',
+  textMid:    'var(--text-mid)',
+  textMute:   'var(--text-mute)',
+  surface:    'var(--bg)',
+  surfaceAlt: 'var(--surface-alt)',
+  border:     'var(--border)',
 };
 
 function localStorageSafe(key, value) {
