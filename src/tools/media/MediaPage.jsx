@@ -3,16 +3,16 @@ import FileBrowser from "./FileBrowser";
 import GraphicsStudio from "./GraphicsStudio";
 
 const B = {
-  teal:        "#1D5C4A",
-  tealDark:    "#164437",
-  gold:        "#F5C842",
-  turquoise:   "#3ECFB2",
-  charcoal:    "#4A4558",
-  bg:          "#ffffff",
+  teal:        "var(--teal)",
+  tealDark:    "var(--teal-mid)",
+  gold:        "var(--gold)",
+  turquoise:   "var(--turquoise)",
+  charcoal:    "var(--charcoal)",
+  bg:          "var(--bg)",
   surfaceAlt:  "#f3f4f0",
-  border:      "#C8C4BC",
+  border:      "var(--border)",
   text:        "#1A1A1A",
-  textMid:     "#4A4558",
+  textMid:     "var(--text-mid)",
   textMute:    "#888580",
 };
 
@@ -34,11 +34,11 @@ export default function MediaPage() {
         @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap');
         *, *::before, *::after { box-sizing: border-box; }
         textarea:focus, input:focus, select:focus {
-          outline: 3px solid #3ECFB2 !important;
+          outline: 3px solid var(--turquoise) !important;
           outline-offset: 2px;
-          border-color: #1D5C4A !important;
+          border-color: var(--teal) !important;
         }
-        button:focus { outline: 3px solid #3ECFB2; outline-offset: 2px; }
+        button:focus { outline: 3px solid var(--turquoise); outline-offset: 2px; }
         button:active { transform: scale(0.97); }
         @media (max-width: 700px) {
           .media-grid { grid-template-columns: 1fr !important; }
