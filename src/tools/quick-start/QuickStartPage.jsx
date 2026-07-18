@@ -161,7 +161,7 @@ export default function QuickStartPage() {
 
           {/* Row 3: Message Machine centered */}
           <div style={{ display: "flex", justifyContent: "center" }}>
-            <div style={{ background: "var(--turquoise-light)", border: "2px solid var(--turquoise)", borderRadius: 12, padding: "12px 32px", fontSize: 15, fontWeight: 700, color: "#085041" }}>
+            <div style={{ background: "#E0FAF5", border: "2px solid #3ECFB2", borderRadius: 12, padding: "12px 32px", fontSize: 15, fontWeight: 700, color: "#085041" }}>
               Message Machine
             </div>
           </div>
@@ -201,7 +201,7 @@ export default function QuickStartPage() {
           ))}
         </div>
 
-        {/* Cross-link to the full Manual */}
+        {/* Cross-link to the full Guide */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <span style={{ fontSize: 14, color: "var(--text-mute)" }}>
             Want more detail on any of these tools?{" "}
@@ -210,7 +210,7 @@ export default function QuickStartPage() {
             onClick={() => navigate("/manual")}
             style={{ background: "none", border: "none", padding: 0, font: "inherit", fontWeight: 700, color: TEAL, textDecoration: "underline", cursor: "pointer" }}
           >
-            Read the full User Manual →
+            Read the full Comms Hub Guide →
           </button>
         </div>
 
