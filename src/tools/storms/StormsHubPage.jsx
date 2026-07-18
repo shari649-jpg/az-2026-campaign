@@ -641,7 +641,7 @@ function UserStormCard({ storm, isOpen, onToggle }) {
             <p style={{ color: "#999", fontSize: 14 }}>No posts in this storm yet.</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {posts.map(post => <PostDisplayCard key={post.id} post={post} hashtag={storm.hashtag} />)}
+              {posts.map(post => <PostDisplayCard key={post.id} post={post} hashtag={storm.hashtag} storm={storm} />)}
             </div>
           )}
         </div>
