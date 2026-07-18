@@ -14,7 +14,7 @@ const GOLD_DEEP  = "#8a6a10"; // Storm Chasers Hub — dark enough for text cont
 // Section metadata drives both the Table of Contents and each section's
 // colored header chip — kept in one place so the two can never drift apart.
 const SECTIONS = [
-  { id: "how-to-use",       num: null, title: "How to Use This Manual",              color: CHARCOAL,  bg: "#EEF1F8", bord: "#C5CDE8" },
+  { id: "how-to-use",       num: null, title: "How to Use This Guide",              color: CHARCOAL,  bg: "#EEF1F8", bord: "#C5CDE8" },
   { id: "getting-started",  num: "1",  title: "Getting Started",                     color: CHARCOAL,  bg: "#EEF1F8", bord: "#C5CDE8" },
   { id: "message-basics",   num: "2",  title: "Message Machine: Basic Message Creation", color: MM_TEAL, bg: "#E0FAF5", bord: "#9DD8CC" },
   { id: "rapid-response",   num: "3",  title: "Rapid Response",                      color: RR_BROWN,  bg: "#FDE8D8", bord: "#F0C4A8" },
@@ -103,36 +103,37 @@ function Section({ id, children }) {
 export default function ManualPage() {
   const navigate = useNavigate();
 
-  function handleDownloadPdf() {
-    const a = document.createElement("a");
-    a.href = "/AZ_Coalition_Comms_Hub_User_Manual.pdf";
-    a.download = "AZ_Coalition_Comms_Hub_User_Manual.pdf";
-    a.click();
-  }
-
   return (
     <ToolPage
       eyebrow="Help"
-      title="Comms Hub User Manual"
+      title="Comms Hub Guide"
       desc="A guided tour of every tool, from your first message to running a full multi-platform Storm."
       accentColor={TEAL}
     >
       <div style={{ maxWidth: 780, margin: "0 auto", padding: "36px 24px 64px" }}>
 
-        {/* Intro strip: Quick Start cross-link + PDF download */}
+        {/* Intro strip: Quick Start is the prominent, primary path in for new users */}
         <div style={{
-          border: "2px solid var(--border)", borderRadius: 14, padding: "16px 20px",
-          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16,
-          flexWrap: "wrap", background: "var(--surface)", marginBottom: 24,
+          border: "2px solid var(--teal)", borderRadius: 14, padding: "20px 24px",
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18,
+          flexWrap: "wrap", background: "var(--teal-light)", marginBottom: 24,
         }}>
-          <div style={{ fontSize: 14, color: "var(--text-mid)", lineHeight: 1.5 }}>
-            Just need the basics? Try the <button onClick={() => navigate("/quick-start")} style={linkButtonStyle}>Quick Start Guide</button> instead — this is the full reference behind it.
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: TEAL, marginBottom: 6 }}>
+              New here?
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", lineHeight: 1.5 }}>
+              Start with the Quick Start Guide — a fast walkthrough of the whole workflow.
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-mid)", marginTop: 4 }}>
+              This page is the full reference behind it, for when you want more detail on a specific tool.
+            </div>
           </div>
           <button
-            onClick={handleDownloadPdf}
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 20px", background: TEAL, color: WHITE, border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, fontFamily: "var(--font-body)", letterSpacing: "0.04em", cursor: "pointer", whiteSpace: "nowrap" }}
+            onClick={() => navigate("/quick-start")}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "12px 22px", background: TEAL, color: WHITE, border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, fontFamily: "var(--font-body)", letterSpacing: "0.03em", cursor: "pointer", whiteSpace: "nowrap" }}
           >
-            ↓ Download PDF
+            Open Quick Start →
           </button>
         </div>
 
@@ -154,11 +155,11 @@ export default function ManualPage() {
           </div>
         </div>
 
-        {/* ── How to Use This Manual ── */}
+        {/* ── How to Use This Guide ── */}
         <Section id="how-to-use">
-          <P>This manual is organized from easiest to most advanced. If you're brand new, start at the top and work down — each section builds on skills from the one before it. If you already know the basics, jump straight to the section you need using the Table of Contents above.</P>
+          <P>This guide is organized from easiest to most advanced. If you're brand new, start at the top and work down — each section builds on skills from the one before it. If you already know the basics, jump straight to the section you need using the Table of Contents above.</P>
           <Callout icon="🕵️‍♂️" title="Look for this icon" color={TEAL} bg="#E0F2EC">
-            Small help pop-ups marked with the detective icon are built into the tools themselves, so you can get a quick reminder without leaving the page you're on. This manual is the full reference behind those pop-ups.
+            Small help pop-ups marked with the detective icon are built into the tools themselves, so you can get a quick reminder without leaving the page you're on. This guide is the full reference behind those pop-ups.
           </Callout>
           <Callout icon="⚠️" title="AI-generated content is a draft" color={TERRA} bg="#FFF0E8">
             Every AI tool in the Comms Hub — Message Machine, Rapid Response, Rebuttal Generator, and Storm posts — produces a starting draft, not a finished, fact-checked product. Always read it over and verify names, dates, and claims before you publish anything publicly.
@@ -430,21 +431,10 @@ export default function ManualPage() {
           </div>
 
           <H3>What's Not Covered Yet</H3>
-          <P>BS Monitor and the Resources Hub are still being finalized and are intentionally left out of this manual for now. They'll be added in a future update once those tools are ready for general use.</P>
+          <P>BS Monitor and the Resources Hub are still being finalized and are intentionally left out of this guide for now. They'll be added in a future update once those tools are ready for general use.</P>
         </Section>
 
       </div>
     </ToolPage>
   );
 }
-
-const linkButtonStyle = {
-  background: "none",
-  border: "none",
-  padding: 0,
-  font: "inherit",
-  fontWeight: 700,
-  color: TEAL,
-  textDecoration: "underline",
-  cursor: "pointer",
-};
