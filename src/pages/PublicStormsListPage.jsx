@@ -13,10 +13,10 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 
-const TEAL      = "#1D5C4A";
-const TEAL_DARK = "#164437";
-const GOLD      = "#F5C842";
-const CHARCOAL  = "#4A4558";
+const TEAL      = "var(--teal)";
+const TEAL_DARK = "var(--teal-mid)";
+const GOLD      = "var(--gold)";
+const CHARCOAL  = "var(--charcoal)";
 
 export default function PublicStormsListPage() {
   const [state, setState] = useState("loading"); // "loading" | "ready" | "unavailable"
