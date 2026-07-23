@@ -20,13 +20,17 @@ const PLATFORMS = [
 ];
 
 // Split-call groups for generateAll — keeps each Netlify function call under the
-// 26s Pro-plan timeout when all 6 platforms are selected. Facebook is the only
-// heavy/long-form platform, so it's paired with the two shortest, hard-capped
-// platforms (BlueSky 300 / Twitter 280) to balance output length against the
-// other group (Instagram/Threads/TikTok, all medium-length). Both calls fire
-// in parallel via Promise.all — see generateAll.
-const PLATFORM_GROUP_A = ["facebook", "bluesky", "twitter"];
-const PLATFORM_GROUP_B = ["instagram", "threads", "tiktok"];
+// 26s Pro-plan timeout when all 6 platforms are selected, and (in the
+// Facebook-first derive flow) balances the two parallel derive calls against
+// each other, since total wait time is whichever of the two runs longer, not
+// their sum. Originally Threads was grouped with Instagram/TikTok, but real
+// timing showed that group running 15-17s against BlueSky/Twitter's 4.5-6s —
+// Threads' 500-char cap is actually much closer to BlueSky (300) and
+// Twitter (280) than to Instagram/TikTok (2,200 each), so it's grouped with
+// the short platforms instead. Both calls fire in parallel via Promise.all —
+// see generateAll.
+const PLATFORM_GROUP_A = ["facebook", "bluesky", "twitter", "threads"];
+const PLATFORM_GROUP_B = ["instagram", "tiktok"];
 
 // Shared platform-voice guidance for Neutral + AZ modes (identical in both).
 // Each platform gets a real baseline persona — who's talking, to whom — not
@@ -51,6 +55,25 @@ const PLATFORM_VOICE_GUIDE_NATIONAL = `PLATFORM VOICE — each platform below ha
 - BlueSky: Policy-literate, community-minded readers who reward nuance and depth. Thoughtful and substantive. Strict 300-char limit.
 - Twitter/X: Baseline snark and wit — sharp, a little irreverent, even on serious topics. One devastating specific fact. Or one contrast. Or one direct question. Never vague. Max 280 chars.
 - TikTok: Gen Z-adjacent, informal, "smart friend" energy. Open with the hook nobody expects a politician to say out loud. Authenticity and mild irreverence. The "wait, really?" moment.`;
+
+// Dynamic max_tokens for the Facebook-draft call (see generateAll). This is
+// the one call that reads the raw Issue/Content directly — a large pull-in
+// (e.g. 3 full candidate profiles) means Claude needs real room to finish
+// writing the post before hitting the ceiling and getting cut off mid-JSON
+// (confirmed via stop_reason: "max_tokens" during a 3-candidate test).
+// Scales with how much source material there actually is, on top of a safe
+// floor, capped so an unusually large pull doesn't run away on cost/latency.
+const FACEBOOK_MAX_TOKENS_FLOOR = 1200;
+const FACEBOOK_MAX_TOKENS_CAP = 3000;
+function computeFacebookMaxTokens(issueText) {
+  const chars = (issueText || "").length;
+  // Rough rule of thumb: every ~12 source characters buys another token of
+  // headroom for the draft to actually cover that material. Not an exact
+  // token count (that depends on the model's tokenizer) — just a buffer wide
+  // enough that ordinary pulls never brush the ceiling.
+  const scaled = FACEBOOK_MAX_TOKENS_FLOOR + Math.ceil(chars / 12);
+  return Math.min(scaled, FACEBOOK_MAX_TOKENS_CAP);
+}
 
 const AUDIENCES = ["Democrat","Independent","Persuadable Republican","Disillusioned Voter","Brand New Voter"];
 const STYLES = [
@@ -957,13 +980,13 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         // small and fast. See buildPrompt's sourceDraft handling — those calls
         // are explicitly told to take content/Focal Point from the draft only,
         // never its voice, so platform persona (PLATFORM_VOICE_GUIDE) still holds.
-        const fbResult = await callAPI(buildPrompt(["facebook"]));
+        const fbResult = await callAPI(buildPrompt(["facebook"]), computeFacebookMaxTokens(formData.issue));
         mergeResult(fbResult);
         const facebookDraft = textOnly.facebook || "";
 
         const others = selected.filter(p => p !== "facebook");
-        const groupA = others.filter(p => PLATFORM_GROUP_A.includes(p)); // bluesky, twitter
-        const groupB = others.filter(p => PLATFORM_GROUP_B.includes(p)); // instagram, threads, tiktok
+        const groupA = others.filter(p => PLATFORM_GROUP_A.includes(p)); // bluesky, twitter, threads
+        const groupB = others.filter(p => PLATFORM_GROUP_B.includes(p)); // instagram, tiktok
         const deriveCalls = [];
         if (groupA.length) deriveCalls.push(callAPI(buildPrompt(groupA, { sourceDraft: facebookDraft })));
         if (groupB.length) deriveCalls.push(callAPI(buildPrompt(groupB, { sourceDraft: facebookDraft })));
