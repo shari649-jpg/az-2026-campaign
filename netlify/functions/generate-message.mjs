@@ -4,11 +4,18 @@
 // Auth:       requires a valid Firebase ID token (any signed-in user)
 // Rate limit: 50/day (user), 100/day (manager), 200/day (administrator)
 //             Warning returned in response at 75% usage.
+// Model:      set via GENERATION_MODEL env var (Netlify dashboard → Site
+//             configuration → Environment variables). Defaults to Sonnet if
+//             unset. Lets the person A/B Sonnet vs. Haiku for message quality
+//             without a code redeploy — just change the env var and trigger
+//             a redeploy for it to take effect.
 
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
+
+const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-sonnet-4-5";
 
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
@@ -103,12 +110,12 @@ export default async function (req) {
     // Rough input size, logged before the call so it's visible in Netlify logs
     // even if the function gets killed by the 26s timeout mid-call.
     const inputChars = effectiveSystem.length + JSON.stringify(messages || []).length;
-    console.log(`[generate-message] timing: calling Claude, input_chars=${inputChars} max_tokens=${max_tokens || 1000}`);
+    console.log(`[generate-message] timing: calling Claude, model=${GENERATION_MODEL} input_chars=${inputChars} max_tokens=${max_tokens || 1000}`);
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: max_tokens || 1000, messages, system: effectiveSystem }),
+      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: max_tokens || 1000, messages, system: effectiveSystem }),
     });
     const tClaudeCall = Date.now();
     console.log(`[generate-message] timing: claude_call=${tClaudeCall - tRateLimit}ms status=${response.status}`);
