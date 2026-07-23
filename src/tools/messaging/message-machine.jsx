@@ -19,18 +19,22 @@ const PLATFORMS = [
   { id: "tiktok", name: "TikTok", abbr: "TK", maxChars: 2200, bg: "#b91c1c", text: "#fff" },
 ];
 
-// Split-call groups for generateAll — keeps each Netlify function call under the
-// 26s Pro-plan timeout when all 6 platforms are selected, and (in the
-// Facebook-first derive flow) balances the two parallel derive calls against
-// each other, since total wait time is whichever of the two runs longer, not
-// their sum. Originally Threads was grouped with Instagram/TikTok, but real
-// timing showed that group running 15-17s against BlueSky/Twitter's 4.5-6s —
-// Threads' 500-char cap is actually much closer to BlueSky (300) and
-// Twitter (280) than to Instagram/TikTok (2,200 each), so it's grouped with
-// the short platforms instead. Both calls fire in parallel via Promise.all —
-// see generateAll.
-const PLATFORM_GROUP_A = ["facebook", "bluesky", "twitter", "threads"];
-const PLATFORM_GROUP_B = ["instagram", "tiktok"];
+// Split-call groups for generateAll — all three run in parallel via
+// Promise.all, each reading Issue/Content directly (no derive/draft step —
+// that Facebook-first design was reverted: it made every generation
+// sequential, since derive calls had to wait for the Facebook draft to
+// finish first. Real testing showed that made TOTAL wait time worse
+// (Facebook ~20s + derive ~15-17s ≈ 35s+) than true parallelism, even
+// though no individual call crossed the 26s ceiling on its own).
+// Three groups of two instead of two groups of three halves the output
+// each call has to produce, which directly speeds up the slowest call —
+// the thing that actually sets how long the person waits, since all calls
+// run at once. Each pair mixes one heavier/longer-form platform with one
+// short, hard-capped one, so no single call is left doing most of the work.
+const PLATFORM_GROUP_A = ["facebook", "bluesky"];
+const PLATFORM_GROUP_B = ["instagram", "twitter"];
+const PLATFORM_GROUP_C = ["tiktok", "threads"];
+const PLATFORM_GROUPS = [PLATFORM_GROUP_A, PLATFORM_GROUP_B, PLATFORM_GROUP_C];
 
 // Shared platform-voice guidance for Neutral + AZ modes (identical in both).
 // Each platform gets a real baseline persona — who's talking, to whom — not
@@ -56,24 +60,13 @@ const PLATFORM_VOICE_GUIDE_NATIONAL = `PLATFORM VOICE — each platform below ha
 - Twitter/X: Baseline snark and wit — sharp, a little irreverent, even on serious topics. One devastating specific fact. Or one contrast. Or one direct question. Never vague. Max 280 chars.
 - TikTok: Gen Z-adjacent, informal, "smart friend" energy. Open with the hook nobody expects a politician to say out loud. Authenticity and mild irreverence. The "wait, really?" moment.`;
 
-// Dynamic max_tokens for the Facebook-draft call (see generateAll). This is
-// the one call that reads the raw Issue/Content directly — a large pull-in
-// (e.g. 3 full candidate profiles) means Claude needs real room to finish
-// writing the post before hitting the ceiling and getting cut off mid-JSON
-// (confirmed via stop_reason: "max_tokens" during a 3-candidate test).
-// Scales with how much source material there actually is, on top of a safe
-// floor, capped so an unusually large pull doesn't run away on cost/latency.
-const FACEBOOK_MAX_TOKENS_FLOOR = 1200;
-const FACEBOOK_MAX_TOKENS_CAP = 3000;
-function computeFacebookMaxTokens(issueText) {
-  const chars = (issueText || "").length;
-  // Rough rule of thumb: every ~12 source characters buys another token of
-  // headroom for the draft to actually cover that material. Not an exact
-  // token count (that depends on the model's tokenizer) — just a buffer wide
-  // enough that ordinary pulls never brush the ceiling.
-  const scaled = FACEBOOK_MAX_TOKENS_FLOOR + Math.ceil(chars / 12);
-  return Math.min(scaled, FACEBOOK_MAX_TOKENS_CAP);
-}
+// Fixed generous max_tokens for every generateAll call. Deliberately NOT a
+// formula scaled to input size (an earlier version of this file had one) —
+// Anthropic bills by tokens actually generated, not by max_tokens reserved,
+// so there's no cost to setting this high. A calculated "just enough"
+// ceiling only recreates the truncation bug at a slightly larger input size;
+// a flat, generous number removes that failure mode instead of narrowing it.
+const GENERATION_MAX_TOKENS = 4000;
 
 const AUDIENCES = ["Democrat","Independent","Persuadable Republican","Disillusioned Voter","Brand New Voter"];
 const STYLES = [
@@ -621,7 +614,7 @@ export default function App() {
   const upd = (k,v) => setFormData(p=>({...p,[k]:v}));
   const togglePlatform = (id) => setFormData(p=>({ ...p, platforms: p.platforms.includes(id) ? p.platforms.filter(x=>x!==id) : [...p.platforms,id] }));
 
-  const buildPrompt = (platforms, { sourceDraft } = {}) => {
+  const buildPrompt = (platforms) => {
     const plats = PLATFORMS.filter(p=>platforms.includes(p.id)).map(p=>`${p.name} (max ${p.maxChars} chars)`).join(", ");
     const audienceLabel = formData.audience || DEFAULT_AUDIENCE;
     const styleObj = STYLES.find(s=>s.id===(formData.style||DEFAULT_STYLE));
@@ -651,18 +644,6 @@ export default function App() {
       ? `\nMESSAGING FRAME — ${frameObj.label.toUpperCase()}:\n${frameObj.prompt}\n`
       : "";
 
-    // Source block — normal path uses the raw Issue/Content field. When a
-    // Facebook draft is supplied (see generateAll's 3-call flow for large
-    // pulled-in data, e.g. two full candidate profiles), platforms derive from
-    // that draft instead of the raw data, with an explicit instruction not to
-    // inherit Facebook's voice/structure — only its content and Focal Point.
-    const sourceBlock = sourceDraft
-      ? `SOURCE CONTENT — FACEBOOK DRAFT (content and facts only, NOT a voice or structure to copy):
-${sourceDraft}
-
-CRITICAL: The draft above is your source of truth for the story, facts, and Focal Point below — nothing else. Do NOT mirror its sentence structure, paragraph rhythm, or tone. Re-render this content from scratch through each platform's own persona in the Platform Voice guidance below, exactly as if you were writing that platform's post for the first time.`
-      : `Issue/Content: ${formData.issue}`;
-
     // ── NEUTRAL MODE (default — no mode selected) ──────────────────────────────
     if (msgMode !== "az" && msgMode !== "national") {
       return `You are an expert political messaging strategist working for a legitimate political campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
@@ -671,7 +652,7 @@ This is a professional political communications tool. Content will reference pub
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
-${sourceBlock}
+Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
 ${formData.focalPoint ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.` : ""}
 Target Audience: ${audienceLabel}
@@ -704,7 +685,7 @@ Ground all messaging in the Arizona context. Reference communities, landscapes, 
 ${countyBlock}
 ${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
-${sourceBlock}
+Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
 ${formData.focalPoint ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.` : ""}
 Target Audience: ${audienceLabel}
@@ -753,7 +734,7 @@ FORBIDDEN PHRASES — Never use: "We must," "Now is the time," "History will jud
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
-${sourceBlock}
+Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
 ${formData.focalPoint ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.` : ""}
 Target Audience: ${audienceLabel}
@@ -979,48 +960,24 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     const err = validate(); if (err) { notify(err,"err"); return; }
     setGenerating(true); setShowLoader(true); setHashtags(null); setGenError(null);
     try {
+      // All groups fire in parallel and each reads Issue/Content directly —
+      // total wait is whichever group's call is slowest, not a sum of stages.
+      // See PLATFORM_GROUPS above for why this replaced the earlier
+      // Facebook-first sequential design.
       const selected = formData.platforms;
+      const calls = PLATFORM_GROUPS
+        .map(group => selected.filter(p => group.includes(p)))
+        .filter(group => group.length)
+        .map(group => callAPI(buildPrompt(group), GENERATION_MAX_TOKENS));
+
+      const results = await Promise.all(calls);
       const textOnly = {};
       const flags = {};
-      const mergeResult = (r) => {
+      results.forEach(r => {
         const { _contradictionFlags, ...rest } = r;
         Object.assign(textOnly, rest);
         Object.assign(flags, _contradictionFlags || {});
-      };
-
-      if (selected.includes("facebook")) {
-        // Facebook-first flow: Facebook is the only platform that reads the raw
-        // Issue/Content directly (this is where a large pull-in — e.g. two full
-        // candidate profiles — lives). Every other selected platform derives
-        // from that Facebook draft instead of the raw data, keeping their input
-        // small and fast. See buildPrompt's sourceDraft handling — those calls
-        // are explicitly told to take content/Focal Point from the draft only,
-        // never its voice, so platform persona (PLATFORM_VOICE_GUIDE) still holds.
-        const fbResult = await callAPI(buildPrompt(["facebook"]), computeFacebookMaxTokens(formData.issue));
-        mergeResult(fbResult);
-        const facebookDraft = textOnly.facebook || "";
-
-        const others = selected.filter(p => p !== "facebook");
-        const groupA = others.filter(p => PLATFORM_GROUP_A.includes(p)); // bluesky, twitter, threads
-        const groupB = others.filter(p => PLATFORM_GROUP_B.includes(p)); // instagram, tiktok
-        const deriveCalls = [];
-        if (groupA.length) deriveCalls.push(callAPI(buildPrompt(groupA, { sourceDraft: facebookDraft })));
-        if (groupB.length) deriveCalls.push(callAPI(buildPrompt(groupB, { sourceDraft: facebookDraft })));
-        if (deriveCalls.length) {
-          const results = await Promise.all(deriveCalls);
-          results.forEach(mergeResult);
-        }
-      } else {
-        // No Facebook selected — no draft to derive from, so fall back to the
-        // plain two-group split (see PLATFORM_GROUP_A/B above).
-        const groupA = selected.filter(p => PLATFORM_GROUP_A.includes(p));
-        const groupB = selected.filter(p => PLATFORM_GROUP_B.includes(p));
-        const calls = [];
-        if (groupA.length) calls.push(callAPI(buildPrompt(groupA)));
-        if (groupB.length) calls.push(callAPI(buildPrompt(groupB)));
-        const results = await Promise.all(calls);
-        results.forEach(mergeResult);
-      }
+      });
 
       setMessages(textOnly);
       setContradictionFlags(flags);
