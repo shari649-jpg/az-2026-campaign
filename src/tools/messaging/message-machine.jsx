@@ -598,7 +598,7 @@ export default function App() {
   const upd = (k,v) => setFormData(p=>({...p,[k]:v}));
   const togglePlatform = (id) => setFormData(p=>({ ...p, platforms: p.platforms.includes(id) ? p.platforms.filter(x=>x!==id) : [...p.platforms,id] }));
 
-  const buildPrompt = (platforms) => {
+  const buildPrompt = (platforms, { sourceDraft } = {}) => {
     const plats = PLATFORMS.filter(p=>platforms.includes(p.id)).map(p=>`${p.name} (max ${p.maxChars} chars)`).join(", ");
     const audienceLabel = formData.audience || DEFAULT_AUDIENCE;
     const styleObj = STYLES.find(s=>s.id===(formData.style||DEFAULT_STYLE));
@@ -628,6 +628,18 @@ export default function App() {
       ? `\nMESSAGING FRAME — ${frameObj.label.toUpperCase()}:\n${frameObj.prompt}\n`
       : "";
 
+    // Source block — normal path uses the raw Issue/Content field. When a
+    // Facebook draft is supplied (see generateAll's 3-call flow for large
+    // pulled-in data, e.g. two full candidate profiles), platforms derive from
+    // that draft instead of the raw data, with an explicit instruction not to
+    // inherit Facebook's voice/structure — only its content and Focal Point.
+    const sourceBlock = sourceDraft
+      ? `SOURCE CONTENT — FACEBOOK DRAFT (content and facts only, NOT a voice or structure to copy):
+${sourceDraft}
+
+CRITICAL: The draft above is your source of truth for the story, facts, and Focal Point below — nothing else. Do NOT mirror its sentence structure, paragraph rhythm, or tone. Re-render this content from scratch through each platform's own persona in the Platform Voice guidance below, exactly as if you were writing that platform's post for the first time.`
+      : `Issue/Content: ${formData.issue}`;
+
     // ── NEUTRAL MODE (default — no mode selected) ──────────────────────────────
     if (msgMode !== "az" && msgMode !== "national") {
       return `You are an expert political messaging strategist working for a legitimate political campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
@@ -636,7 +648,7 @@ This is a professional political communications tool. Content will reference pub
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
-Issue/Content: ${formData.issue}
+${sourceBlock}
 Focal Point: ${formData.focalPoint || "Not specified"}
 ${formData.focalPoint ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.` : ""}
 Target Audience: ${audienceLabel}
@@ -668,7 +680,7 @@ Ground all messaging in the Arizona context. Reference communities, landscapes, 
 ${countyBlock}
 ${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
-Issue/Content: ${formData.issue}
+${sourceBlock}
 Focal Point: ${formData.focalPoint || "Not specified"}
 ${formData.focalPoint ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.` : ""}
 Target Audience: ${audienceLabel}
@@ -716,7 +728,7 @@ FORBIDDEN PHRASES — Never use: "We must," "Now is the time," "History will jud
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
 ${frameBlock}
-Issue/Content: ${formData.issue}
+${sourceBlock}
 Focal Point: ${formData.focalPoint || "Not specified"}
 ${formData.focalPoint ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.` : ""}
 Target Audience: ${audienceLabel}
@@ -911,23 +923,49 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     const err = validate(); if (err) { notify(err,"err"); return; }
     setGenerating(true); setShowLoader(true); setHashtags(null); setGenError(null);
     try {
-      // Split into up to two parallel calls (see PLATFORM_GROUP_A/B above) so a
-      // full 6-platform generation stays under the 26s Netlify function timeout.
-      // Each group only fires if the user actually selected a platform in it.
-      const groupA = formData.platforms.filter(p => PLATFORM_GROUP_A.includes(p));
-      const groupB = formData.platforms.filter(p => PLATFORM_GROUP_B.includes(p));
-      const calls = [];
-      if (groupA.length) calls.push(callAPI(buildPrompt(groupA)));
-      if (groupB.length) calls.push(callAPI(buildPrompt(groupB)));
-
-      const results = await Promise.all(calls);
+      const selected = formData.platforms;
       const textOnly = {};
       const flags = {};
-      for (const r of results) {
+      const mergeResult = (r) => {
         const { _contradictionFlags, ...rest } = r;
         Object.assign(textOnly, rest);
         Object.assign(flags, _contradictionFlags || {});
+      };
+
+      if (selected.includes("facebook")) {
+        // Facebook-first flow: Facebook is the only platform that reads the raw
+        // Issue/Content directly (this is where a large pull-in — e.g. two full
+        // candidate profiles — lives). Every other selected platform derives
+        // from that Facebook draft instead of the raw data, keeping their input
+        // small and fast. See buildPrompt's sourceDraft handling — those calls
+        // are explicitly told to take content/Focal Point from the draft only,
+        // never its voice, so platform persona (PLATFORM_VOICE_GUIDE) still holds.
+        const fbResult = await callAPI(buildPrompt(["facebook"]));
+        mergeResult(fbResult);
+        const facebookDraft = textOnly.facebook || "";
+
+        const others = selected.filter(p => p !== "facebook");
+        const groupA = others.filter(p => PLATFORM_GROUP_A.includes(p)); // bluesky, twitter
+        const groupB = others.filter(p => PLATFORM_GROUP_B.includes(p)); // instagram, threads, tiktok
+        const deriveCalls = [];
+        if (groupA.length) deriveCalls.push(callAPI(buildPrompt(groupA, { sourceDraft: facebookDraft })));
+        if (groupB.length) deriveCalls.push(callAPI(buildPrompt(groupB, { sourceDraft: facebookDraft })));
+        if (deriveCalls.length) {
+          const results = await Promise.all(deriveCalls);
+          results.forEach(mergeResult);
+        }
+      } else {
+        // No Facebook selected — no draft to derive from, so fall back to the
+        // plain two-group split (see PLATFORM_GROUP_A/B above).
+        const groupA = selected.filter(p => PLATFORM_GROUP_A.includes(p));
+        const groupB = selected.filter(p => PLATFORM_GROUP_B.includes(p));
+        const calls = [];
+        if (groupA.length) calls.push(callAPI(buildPrompt(groupA)));
+        if (groupB.length) calls.push(callAPI(buildPrompt(groupB)));
+        const results = await Promise.all(calls);
+        results.forEach(mergeResult);
       }
+
       setMessages(textOnly);
       setContradictionFlags(flags);
       setShowLoader(false);
