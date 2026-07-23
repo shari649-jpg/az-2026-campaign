@@ -687,6 +687,7 @@ ${PLATFORM_VOICE_GUIDE}
 IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
+CRITICAL — VALID JSON ESCAPING: If the generated text includes a direct quotation, use single quotes ('...') for the quoted material rather than double quotes. If a double quote inside a string value is unavoidable, it MUST be escaped as \" — a single unescaped " inside any string value breaks JSON parsing and fails the entire generation.
 Only include these platform ids: ${platforms.join(", ")}
 Format: {"platform_id": "message text"}
 If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
@@ -719,6 +720,7 @@ ${PLATFORM_VOICE_GUIDE}
 IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
+CRITICAL — VALID JSON ESCAPING: If the generated text includes a direct quotation, use single quotes ('...') for the quoted material rather than double quotes. If a double quote inside a string value is unavoidable, it MUST be escaped as \" — a single unescaped " inside any string value breaks JSON parsing and fails the entire generation.
 Only include these platform ids: ${platforms.join(", ")}
 Format: {"platform_id": "message text"}
 If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
@@ -767,6 +769,7 @@ ${PLATFORM_VOICE_GUIDE_NATIONAL}
 IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
+CRITICAL — VALID JSON ESCAPING: If the generated text includes a direct quotation, use single quotes ('...') for the quoted material rather than double quotes. If a double quote inside a string value is unavoidable, it MUST be escaped as \" — a single unescaped " inside any string value breaks JSON parsing and fails the entire generation.
 Only include these platform ids: ${platforms.join(", ")}
 Format: {"platform_id": "message text"}
 If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
@@ -833,6 +836,7 @@ ${formData.focalPoint ? `- Focal Point (mandatory — do not let ${regenOpt === 
 
 IMPORTANT: Do NOT include hashtags. Write clean prose only.
 YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation.
+CRITICAL — VALID JSON ESCAPING: If the rewritten text includes a direct quotation, use single quotes ('...') for the quoted material rather than double quotes. If a double quote inside a string value is unavoidable, it MUST be escaped as \" — a single unescaped " inside any string value breaks JSON parsing and fails the entire generation.
 Format: {"${platformId}": "rewritten message text"}
 If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_contradictionFlags": {"${platformId}": "one-sentence explanation of the contradiction"}} — omitted entirely if it doesn't apply.`;
   };
@@ -876,15 +880,27 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     try {
       return JSON.parse(cleaned);
     } catch (parseErr) {
-      // Diagnostic logging — see the 3-candidate "Generation failed" investigation.
-      // Claude's own stop_reason tells us definitively whether the response was
-      // cut off before max_tokens vs. something else producing malformed JSON.
+      // Diagnostic logging — see the "Generation failed" investigations
+      // (3-candidate truncation, then a separate unescaped-quote JSON bug).
+      // Claude's stop_reason distinguishes "cut off before max_tokens" from
+      // "finished normally but produced malformed JSON" (e.g. an unescaped
+      // quote inside a quoted phrase breaking the string early) — and since
+      // the second kind usually fails much earlier than the response's end,
+      // we log the text AROUND the parser's reported position, not the tail.
+      const posMatch = parseErr.message.match(/position (\d+)/);
+      const errPos = posMatch ? parseInt(posMatch[1], 10) : null;
       console.error("[Message Machine] JSON.parse failed on Claude's response.");
       console.error("  stop_reason:", data.stop_reason);
       console.error("  max_tokens requested:", maxTokens);
       console.error("  raw response length:", cleaned.length, "chars");
-      console.error("  raw response (last 300 chars):", cleaned.slice(-300));
       console.error("  parse error:", parseErr.message);
+      if (errPos !== null) {
+        const start = Math.max(0, errPos - 150);
+        const end = Math.min(cleaned.length, errPos + 150);
+        console.error(`  text around error position ${errPos} (chars ${start}-${end}):`, cleaned.slice(start, end));
+      } else {
+        console.error("  raw response (last 300 chars):", cleaned.slice(-300));
+      }
       const truncated = data.stop_reason === "max_tokens";
       const err = new Error(truncated ? "response_truncated" : "parse_error");
       err.type = truncated ? "truncated" : "connection";
