@@ -44,6 +44,7 @@ async function requireSignedIn(app, idToken) {
 }
 
 export default async function (req) {
+  const t0 = Date.now();
   if (req.method === "OPTIONS") {
     return new Response("", {
       status: 200,
@@ -57,6 +58,8 @@ export default async function (req) {
     console.error("[generate-message] admin init:", err.message);
     return new Response(JSON.stringify({ error: "Server configuration error." }), { status: 500, headers: corsHeaders(req) });
   }
+  const tAdminInit = Date.now();
+  console.log(`[generate-message] timing: admin_init=${tAdminInit - t0}ms`);
 
   const authHeader = req.headers.get("authorization") || "";
   const headerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -72,12 +75,16 @@ export default async function (req) {
     } catch {
       return new Response(JSON.stringify({ error: "You must be signed in to use this tool." }), { status: 401, headers: corsHeaders(req) });
     }
+    const tAuth = Date.now();
+    console.log(`[generate-message] timing: auth=${tAuth - tAdminInit}ms uid=${uid}`);
 
     // ── Rate limit ──────────────────────────────────────────────────────────
     const usage = await checkAndIncrementRateLimit(app, uid);
     if (usage.blocked) {
       return new Response(JSON.stringify(usage.blockedPayload), { status: 429, headers: corsHeaders(req) });
     }
+    const tRateLimit = Date.now();
+    console.log(`[generate-message] timing: rate_limit=${tRateLimit - tAuth}ms`);
 
     // ── Claude call ─────────────────────────────────────────────────────────
     const { max_tokens, messages, system } = body;
@@ -93,13 +100,22 @@ export default async function (req) {
       ? clientSystem
       : [clientSystem, FACTUAL_ACCURACY_GUARDRAIL].filter(Boolean).join("\n\n");
 
+    // Rough input size, logged before the call so it's visible in Netlify logs
+    // even if the function gets killed by the 26s timeout mid-call.
+    const inputChars = effectiveSystem.length + JSON.stringify(messages || []).length;
+    console.log(`[generate-message] timing: calling Claude, input_chars=${inputChars} max_tokens=${max_tokens || 1000}`);
+
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: max_tokens || 1000, messages, system: effectiveSystem }),
     });
+    const tClaudeCall = Date.now();
+    console.log(`[generate-message] timing: claude_call=${tClaudeCall - tRateLimit}ms status=${response.status}`);
 
     const data = await response.json();
+    const tParse = Date.now();
+    console.log(`[generate-message] timing: json_parse=${tParse - tClaudeCall}ms TOTAL=${tParse - t0}ms`);
 
     // Attach usage warning if approaching limit
     if (usage.warning) {
@@ -108,6 +124,7 @@ export default async function (req) {
 
     return new Response(JSON.stringify(data), { status: 200, headers: corsHeaders(req) });
   } catch (err) {
+    console.error(`[generate-message] timing: FAILED at ${Date.now() - t0}ms —`, err.message);
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders(req) });
   }
 }
