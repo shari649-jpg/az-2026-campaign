@@ -850,7 +850,24 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
       err.raw = cleaned;
       throw err;
     }
-    return JSON.parse(cleaned);
+    try {
+      return JSON.parse(cleaned);
+    } catch (parseErr) {
+      // Diagnostic logging — see the 3-candidate "Generation failed" investigation.
+      // Claude's own stop_reason tells us definitively whether the response was
+      // cut off before max_tokens vs. something else producing malformed JSON.
+      console.error("[Message Machine] JSON.parse failed on Claude's response.");
+      console.error("  stop_reason:", data.stop_reason);
+      console.error("  max_tokens requested:", maxTokens);
+      console.error("  raw response length:", cleaned.length, "chars");
+      console.error("  raw response (last 300 chars):", cleaned.slice(-300));
+      console.error("  parse error:", parseErr.message);
+      const truncated = data.stop_reason === "max_tokens";
+      const err = new Error(truncated ? "response_truncated" : "parse_error");
+      err.type = truncated ? "truncated" : "connection";
+      err.raw = cleaned;
+      throw err;
+    }
   };
 
   // ── URL-aware ingestion: pull an article straight into Issue/Content ──
@@ -977,6 +994,8 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         setGenError("flagged");
       } else if (e.type === "rate_limit_exceeded") {
         setGenError("ratelimit");
+      } else if (e.type === "truncated") {
+        setGenError("truncated");
       } else {
         setGenError("connection");
       }
@@ -1012,6 +1031,8 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         setGenError("flagged");
       } else if (e.type === "rate_limit_exceeded") {
         setGenError("ratelimit");
+      } else if (e.type === "truncated") {
+        setGenError("truncated");
       } else {
         setGenError("connection");
       }
@@ -1294,9 +1315,9 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
         <div className="slide-down" role="alert" aria-live="assertive" style={{
           position:"fixed", bottom: 24, left:"50%", transform:"translateX(-50%)", zIndex:150,
           maxWidth: 520, width:"calc(100% - 48px)",
-          background: genError === "flagged" ? "#7f1d1d" : genError === "ratelimit" ? "#4c1d95" : "#7a3820",
+          background: genError === "flagged" ? "#7f1d1d" : genError === "ratelimit" ? "#4c1d95" : genError === "truncated" ? "#92400e" : "#7a3820",
           color:"#fff",
-          border:`2px solid ${genError === "flagged" ? "#b91c1c" : genError === "ratelimit" ? "#7c3aed" : "var(--terracotta)"}`,
+          border:`2px solid ${genError === "flagged" ? "#b91c1c" : genError === "ratelimit" ? "#7c3aed" : genError === "truncated" ? "#c2670a" : "var(--terracotta)"}`,
           borderRadius:12, padding:"14px 48px 14px 20px",
           boxShadow:"0 8px 32px rgba(0,0,0,0.45)",
         }}>
@@ -1306,13 +1327,15 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
             fontSize:20, color:"rgba(255,255,255,0.8)", fontWeight:900, fontFamily:"inherit", lineHeight:1,
           }}>✕</button>
           <p style={{ fontSize:16, fontWeight:900, marginBottom:4 }}>
-            {genError === "flagged" ? "⚠️ Generation blocked" : genError === "ratelimit" ? "🚦 Daily limit reached" : "⚠️ Generation failed"}
+            {genError === "flagged" ? "⚠️ Generation blocked" : genError === "ratelimit" ? "🚦 Daily limit reached" : genError === "truncated" ? "✂️ Response cut off" : "⚠️ Generation failed"}
           </p>
           <p style={{ fontSize:14, color:"rgba(255,255,255,0.85)", lineHeight:1.5 }}>
             {genError === "flagged"
               ? "The AI declined this request. Edit the Issue / Content field and try again."
               : genError === "ratelimit"
               ? "You've used all your AI calls for today. Resets at midnight UTC. Contact an admin for more access."
+              : genError === "truncated"
+              ? "Claude's reply was cut off before it finished — usually from a lot of source content. Try fewer platforms at once, or trim what's in Issue/Content."
               : "Request timed out. Try again — or generate without Expand first, then expand per platform."}
           </p>
         </div>
@@ -1368,6 +1391,34 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </ul>
                 <p style={{ fontSize:15, color:T.textMid, marginTop:14, lineHeight:1.6 }}>
                   <strong>Try:</strong> Rephrase using factual, policy-focused language. Instead of characterizing intent, describe documented actions. You can name officials and cite their record — just keep the framing grounded in fact.
+                </p>
+              </div>
+            )}
+
+            {genError === "truncated" && (
+              <div role="alert" style={{
+                background:"#fffbeb", border:`3px solid #c2670a`,
+                borderRadius:12, padding:"20px 24px", marginBottom:28,
+                position:"relative",
+              }}>
+                <button
+                  onClick={() => setGenError(null)}
+                  aria-label="Dismiss error"
+                  style={{
+                    position:"absolute", top:14, right:16,
+                    background:"none", border:"none", cursor:"pointer",
+                    fontSize:22, color:"#c2670a", fontWeight:900, lineHeight:1,
+                    fontFamily:"inherit",
+                  }}
+                >✕</button>
+                <p style={{ fontSize:18, fontWeight:900, color:"#92400e", marginBottom:10 }}>
+                  ✂️ Claude's response was cut off
+                </p>
+                <p style={{ fontSize:16, color:T.textMid, lineHeight:1.6, marginBottom:10 }}>
+                  This isn't a timeout — Claude finished writing but the reply was longer than it had room for, usually because there's a lot of source content in <strong style={{ color:T.text }}>Issue / Content</strong> (e.g. multiple full candidate profiles).
+                </p>
+                <p style={{ fontSize:15, color:T.textMid, lineHeight:1.6 }}>
+                  <strong>Try:</strong> Generate with fewer platforms selected at once, or trim the Issue / Content field down to what's actually relevant.
                 </p>
               </div>
             )}
@@ -1882,6 +1933,15 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
             <div style={{ display:"flex", flexDirection:"column", gap:22 }}>
               {/* Error panels in results view (from Expand/Shorten/Rephrase failures) */}
+              {genError === "truncated" && (
+                <div role="alert" style={{ background:"#fffbeb", border:`3px solid #c2670a`, borderRadius:12, padding:"18px 22px", position:"relative" }}>
+                  <button onClick={() => setGenError(null)} aria-label="Dismiss" style={{ position:"absolute", top:12, right:14, background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#c2670a", fontWeight:900, fontFamily:"inherit" }}>✕</button>
+                  <p style={{ fontSize:17, fontWeight:900, color:"#92400e", marginBottom:8 }}>✂️ Response cut off</p>
+                  <p style={{ fontSize:15, color:T.textMid, lineHeight:1.6 }}>
+                    Claude's reply was longer than it had room for — this isn't a timeout. Try again, or use <strong style={{ color:T.text }}>Shorten</strong> instead of Expand if the source content is long.
+                  </p>
+                </div>
+              )}
               {genError === "connection" && (
                 <div role="alert" style={{ background:"var(--terracotta-light)", border:`3px solid var(--terracotta)`, borderRadius:12, padding:"18px 22px", position:"relative" }}>
                   <button onClick={() => setGenError(null)} aria-label="Dismiss" style={{ position:"absolute", top:12, right:14, background:"none", border:"none", cursor:"pointer", fontSize:20, color:"var(--terracotta)", fontWeight:900, fontFamily:"inherit" }}>✕</button>
