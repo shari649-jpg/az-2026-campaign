@@ -19,6 +19,39 @@ const PLATFORMS = [
   { id: "tiktok", name: "TikTok", abbr: "TK", maxChars: 2200, bg: "#b91c1c", text: "#fff" },
 ];
 
+// Split-call groups for generateAll — keeps each Netlify function call under the
+// 26s Pro-plan timeout when all 6 platforms are selected. Facebook is the only
+// heavy/long-form platform, so it's paired with the two shortest, hard-capped
+// platforms (BlueSky 300 / Twitter 280) to balance output length against the
+// other group (Instagram/Threads/TikTok, all medium-length). Both calls fire
+// in parallel via Promise.all — see generateAll.
+const PLATFORM_GROUP_A = ["facebook", "bluesky", "twitter"];
+const PLATFORM_GROUP_B = ["instagram", "threads", "tiktok"];
+
+// Shared platform-voice guidance for Neutral + AZ modes (identical in both).
+// Each platform gets a real baseline persona — who's talking, to whom — not
+// just formatting rules. The priority-rule paragraph up top ensures Tone/Style/
+// Voice settings modulate that persona rather than flattening it (e.g. a
+// "Professional" tone should still read sharper on Twitter/X than on Facebook).
+const PLATFORM_VOICE_GUIDE = `PLATFORM VOICE — each platform below has its own fixed baseline personality; the Tone, Style, and Voice/Persona settings above modulate HOW that personality delivers the message, they never flatten or replace it. A "Professional" tone on Twitter/X should still read sharper and more clipped than the same "Professional" tone on Facebook; a "Sarcastic" tone on Facebook should still read warmer and more explanatory than the same "Sarcastic" tone on Twitter/X.
+
+- Facebook: Older-skewing, community- and family-oriented readers. Warm, explanatory register — take the time to walk through context, like a longtime neighbor at a town meeting. Detailed storytelling, clear call to action, 2–5 paragraphs.
+- Instagram: Younger-adult, millennial-leaning readers. Visual, punchy, values-driven — write like a real feed post, not a press release. Emotional hook at start.
+- Threads: Conversational middle ground between Instagram and Twitter/X — casual, in-the-moment, like joining a conversation already happening. 2–4 sentences.
+- BlueSky: Policy-literate, community-minded readers who reward nuance and depth over punchlines. Thoughtful and substantive. Strict 300-char limit.
+- Twitter/X: Baseline snark and wit — sharp, a little irreverent, even when the underlying topic is serious. This is Twitter's inherent voice and should come through regardless of tone. Punchy headline style, max 280 chars.
+- TikTok: Gen Z-adjacent, informal, "smart friend" energy. Trendy hook in first line, energetic language.`;
+
+// National mode's platform-voice guidance — same persona layer, laid over the
+// National Messaging Style Guide's own per-platform structural notes.
+const PLATFORM_VOICE_GUIDE_NATIONAL = `PLATFORM VOICE — each platform below has its own fixed baseline personality on top of the National Style Guide above; the Tone, Style, and Voice/Persona settings modulate HOW that personality delivers the message, they never flatten or replace it. A "Professional" tone on Twitter/X should still read sharper and more clipped than the same "Professional" tone on Facebook; the same tone on Facebook should still read warmer and more explanatory than on Twitter/X.
+
+- Facebook: Older-skewing, community- and family-oriented readers. Richardson letter format — full story with history and context, 3–4 paragraphs, start with the cost a real person is paying, end with one specific action.
+- Instagram/Threads: Younger-adult, millennial-leaning readers. Lead with the most visceral, concrete version of the cost. Make the first sentence hit. Keep it human and visual.
+- BlueSky: Policy-literate, community-minded readers who reward nuance and depth. Thoughtful and substantive. Strict 300-char limit.
+- Twitter/X: Baseline snark and wit — sharp, a little irreverent, even on serious topics. One devastating specific fact. Or one contrast. Or one direct question. Never vague. Max 280 chars.
+- TikTok: Gen Z-adjacent, informal, "smart friend" energy. Open with the hook nobody expects a politician to say out loud. Authenticity and mild irreverence. The "wait, really?" moment.`;
+
 const AUDIENCES = ["Democrat","Independent","Persuadable Republican","Disillusioned Voter","Brand New Voter"];
 const STYLES = [
   { id: "neutral", label: "Neutral" },
@@ -614,13 +647,7 @@ ${perspLine}
 
 Generate compelling social media posts for: ${plats}
 
-Platform guidance:
-- Facebook: Detailed storytelling, clear call to action, 2–5 paragraphs
-- Instagram: Visual-focused language, emotional hook at start
-- Threads: Conversational, 2–4 sentences, engaging or thought-provoking
-- BlueSky: Thoughtful, community-focused, strict 300-char limit
-- Twitter/X: Punchy headline style, max 280 chars
-- TikTok: Trendy hook in first line, energetic language
+${PLATFORM_VOICE_GUIDE}
 
 IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
@@ -652,13 +679,7 @@ ${perspLine}
 
 Generate compelling social media posts for: ${plats}
 
-Platform guidance:
-- Facebook: Detailed storytelling, clear call to action, 2–5 paragraphs
-- Instagram: Visual-focused language, emotional hook at start
-- Threads: Conversational, 2–4 sentences, engaging or thought-provoking
-- BlueSky: Thoughtful, community-focused, strict 300-char limit
-- Twitter/X: Punchy headline style, max 280 chars
-- TikTok: Trendy hook in first line, energetic language
+${PLATFORM_VOICE_GUIDE}
 
 IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
@@ -706,12 +727,7 @@ ${perspLine}
 
 Generate compelling social media posts for: ${plats}
 
-Platform guidance (from the National Messaging Style Guide):
-- Facebook: Richardson letter format — full story with history and context, 3–4 paragraphs, start with the cost a real person is paying, end with one specific action.
-- Instagram/Threads: Lead with the most visceral, concrete version of the cost. Make the first sentence hit. Keep it human and visual.
-- BlueSky: Thoughtful, community-oriented. Rewards depth and nuance. Strict 300-char limit.
-- Twitter/X: One devastating specific fact. Or one contrast. Or one direct question. Never vague. Max 280 chars.
-- TikTok: Open with the hook nobody expects a politician to say out loud. Authenticity and mild irreverence. Explain something in plain terms like a smart friend. The "wait, really?" moment.
+${PLATFORM_VOICE_GUIDE_NATIONAL}
 
 IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
 
@@ -895,10 +911,25 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     const err = validate(); if (err) { notify(err,"err"); return; }
     setGenerating(true); setShowLoader(true); setHashtags(null); setGenError(null);
     try {
-      const r = await callAPI(buildPrompt(formData.platforms));
-      const { _contradictionFlags, ...textOnly } = r;
+      // Split into up to two parallel calls (see PLATFORM_GROUP_A/B above) so a
+      // full 6-platform generation stays under the 26s Netlify function timeout.
+      // Each group only fires if the user actually selected a platform in it.
+      const groupA = formData.platforms.filter(p => PLATFORM_GROUP_A.includes(p));
+      const groupB = formData.platforms.filter(p => PLATFORM_GROUP_B.includes(p));
+      const calls = [];
+      if (groupA.length) calls.push(callAPI(buildPrompt(groupA)));
+      if (groupB.length) calls.push(callAPI(buildPrompt(groupB)));
+
+      const results = await Promise.all(calls);
+      const textOnly = {};
+      const flags = {};
+      for (const r of results) {
+        const { _contradictionFlags, ...rest } = r;
+        Object.assign(textOnly, rest);
+        Object.assign(flags, _contradictionFlags || {});
+      }
       setMessages(textOnly);
-      setContradictionFlags(_contradictionFlags || {});
+      setContradictionFlags(flags);
       setShowLoader(false);
       setView("results");
       window.scrollTo({ top: 0, behavior: "smooth" });
