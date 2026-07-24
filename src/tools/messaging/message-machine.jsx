@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { saveCampaign as fbSave, loadAllCampaigns, deleteCampaign as fbDelete } from "../../lib/campaignLibrary";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
+import { AI_TELL_PHRASING_BAN, detectBannedStructures } from "../../lib/messageRules";
 import {
   loadAllStorms, loadPosts as loadStormPosts, createPost as createStormPost,
   MEDIA_TYPES as STORM_MEDIA_TYPES, STORM_STATUS, PUSH_TO_STORM_KEY,
@@ -418,6 +419,7 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
   const [expanded, setExpanded] = useState(false);
   const charCount = (message || "").length;
   const over = charCount > p.maxChars;
+  const phrasingFlags = detectBannedStructures(message || "");
 
   const handleQuick = (opt) => {
     const next = localOpt === opt ? "" : opt;
@@ -448,6 +450,14 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
             ⚠️ Check this
           </span>
         )}
+        {phrasingFlags.length > 0 && (
+          <span title="Possible AI-sounding phrasing — expand to review" style={{
+            fontSize: 10.5, fontWeight: 800, color: "#8a1f3a", background: "#fde8ec",
+            border: "1px solid #eab3c0", borderRadius: 999, padding: "2px 8px",
+          }}>
+            🤖 Sounds AI-ish
+          </span>
+        )}
         <span style={{ marginLeft: 'auto', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: over ? '#fca5a5' : 'rgba(255,255,255,0.7)', marginRight: 10 }}>
           {charCount.toLocaleString()} / {p.maxChars.toLocaleString()}
         </span>
@@ -461,6 +471,12 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
               <button onClick={onDismissContradiction} aria-label="Dismiss" style={{ position: "absolute", top: 10, right: 12, background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#8a6215", fontWeight: 900 }}>✕</button>
               <p style={{ fontSize: 14, fontWeight: 800, color: "#8a6215", marginBottom: 4 }}>⚠️ Possible self-contradiction</p>
               <p style={{ fontSize: 13.5, color: "#6b4f14", lineHeight: 1.5, paddingRight: 20 }}>{contradictionNote} Was this intentional?</p>
+            </div>
+          )}
+          {phrasingFlags.length > 0 && (
+            <div style={{ background: "#fde8ec", border: "2px solid #eab3c0", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+              <p style={{ fontSize: 14, fontWeight: 800, color: "#8a1f3a", marginBottom: 4 }}>🤖 Possible AI-sounding phrasing</p>
+              <p style={{ fontSize: 13.5, color: "#7a1a33", lineHeight: 1.5 }}>Matches {phrasingFlags.join(", ")} — worth a manual reword before this goes out.</p>
             </div>
           )}
           {loading ? (
@@ -651,6 +667,7 @@ export default function App() {
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
+${AI_TELL_PHRASING_BAN}
 ${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
@@ -684,6 +701,7 @@ ARIZONA CONTEXT — GROUND ALL MESSAGING HERE:
 Ground all messaging in the Arizona context. Reference communities, landscapes, and values familiar to Arizona voters — urban centers like Phoenix and Tucson, rural and tribal communities, the border, the desert. Reflect issues as they affect Arizonans specifically. When referencing costs, use Arizona examples where possible (utility bills, housing, healthcare, water, education). Write for an Arizona audience, not a generic national one.
 ${countyBlock}
 ${FACTUAL_ACCURACY_GUARDRAIL}
+${AI_TELL_PHRASING_BAN}
 ${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
@@ -733,6 +751,7 @@ SPECIFICITY RULE — Every abstract claim needs a concrete anchor: a price, a pl
 FORBIDDEN PHRASES — Never use: "We must," "Now is the time," "History will judge," "a lot of us feel," "most people I know," "out here," "systemic inequities," "corporate accountability mechanisms," "electoral integrity." Replace with specific, grounded alternatives.
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
+${AI_TELL_PHRASING_BAN}
 ${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
@@ -798,6 +817,7 @@ function detectArrivalSource() {
     return `You are an expert political messaging strategist for a legitimate ${modeLabel}.
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
+${AI_TELL_PHRASING_BAN}
 ${frameBlock}
 Your task is to rewrite the following existing ${platform?.name} post.
 
