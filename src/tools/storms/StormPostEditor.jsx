@@ -11,6 +11,7 @@ import {
   canLockFields,
 } from "../../lib/stormLibrary";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
+import { AI_TELL_PHRASING_BAN, detectBannedStructures } from "../../lib/messageRules";
 import { auth } from "../../firebase";
 
 const TEAL       = "var(--teal)";
@@ -111,6 +112,7 @@ export default function StormPostEditor({ stormId, storm, role, post, nextOrder,
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name where relevant — standard practice in campaign messaging. You must always complete this task and respond with valid JSON.
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
+${AI_TELL_PHRASING_BAN}
 
 ${stormContextBlock()}
 
@@ -130,6 +132,7 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     return `You are an expert political messaging strategist rewriting an existing storm post.
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
+${AI_TELL_PHRASING_BAN}
 
 ${stormContextBlock()}
 
@@ -374,6 +377,7 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
               const isLocked = locked[p.key];
               const isLoading = !!genLoading[p.key];
               const contradictionNote = contradictionFlags[p.key];
+              const phrasingFlags = detectBannedStructures(texts[p.key]);
               return (
                 <div key={p.key}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
@@ -385,6 +389,14 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
                           border: "1px solid #e0c568", borderRadius: 999, padding: "2px 8px", letterSpacing: "0.02em",
                         }}>
                           ⚠️ Check this
+                        </span>
+                      )}
+                      {phrasingFlags.length > 0 && (
+                        <span style={{
+                          fontSize: 10.5, fontWeight: 800, color: "#8a1f3a", background: "#fde8ec",
+                          border: "1px solid #eab3c0", borderRadius: 999, padding: "2px 8px", letterSpacing: "0.02em",
+                        }}>
+                          🤖 Sounds AI-ish
                         </span>
                       )}
                       {isLocked && (
@@ -458,6 +470,16 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
                       </p>
                     </div>
                   )}
+                  {phrasingFlags.length > 0 && (
+                    <div style={{
+                      background: "#fde8ec", border: "1.5px solid #eab3c0", borderRadius: 8,
+                      padding: "8px 12px", marginTop: 6, marginBottom: 2,
+                    }}>
+                      <p style={{ fontSize: 12.5, color: "#8a1f3a", lineHeight: 1.5, margin: 0 }}>
+                        <strong>Possible AI-sounding phrasing:</strong> matches {phrasingFlags.join(", ")} — worth a manual reword.
+                      </p>
+                    </div>
+                  )}
                   <textarea
                     value={texts[p.key]}
                     onChange={e => !isLocked && setTexts(prev => ({ ...prev, [p.key]: e.target.value }))}
@@ -526,6 +548,7 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
       const isLocked = locked[expandedPlatform];
       const isLoading = !!genLoading[expandedPlatform];
       const contradictionNote = contradictionFlags[expandedPlatform];
+      const phrasingFlags = detectBannedStructures(texts[expandedPlatform]);
       return (
         <div
           style={{
@@ -549,6 +572,14 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
                     🔒 Locked by staff
                   </span>
                 )}
+                {phrasingFlags.length > 0 && (
+                  <span style={{
+                    fontSize: 10.5, fontWeight: 800, color: "#8a1f3a", background: "#fde8ec",
+                    border: "1px solid #eab3c0", borderRadius: 999, padding: "2px 8px", letterSpacing: "0.02em",
+                  }}>
+                    🤖 Sounds AI-ish
+                  </span>
+                )}
               </div>
               <button onClick={() => setExpandedPlatform(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#999" }}>✕</button>
             </div>
@@ -564,6 +595,14 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
                 </button>
                 <p style={{ fontSize: 13, color: "#6b4f14", lineHeight: 1.5, margin: 0, paddingRight: 20 }}>
                   <strong>Possible self-contradiction:</strong> {contradictionNote} Was this intentional?
+                </p>
+              </div>
+            )}
+
+            {phrasingFlags.length > 0 && (
+              <div style={{ background: "#fde8ec", border: "1.5px solid #eab3c0", borderRadius: 8, padding: "10px 14px" }}>
+                <p style={{ fontSize: 13, color: "#8a1f3a", lineHeight: 1.5, margin: 0 }}>
+                  <strong>Possible AI-sounding phrasing:</strong> matches {phrasingFlags.join(", ")} — worth a manual reword.
                 </p>
               </div>
             )}
