@@ -69,36 +69,42 @@ export function lengthTargetHint(min, max) {
 // places deliberately, the same reasoning as the factual-accuracy guardrail
 // having both a prompt rule and a self-contradiction check.
 //
-// REVISED after a second round of real testing (Handoff #26 follow-up):
-// the original wording only named the comma-joined "X, not Y" phrasing.
-// The model satisfied that literally by splitting the same construction
-// into two short sentences instead ("That's not governing. That's a
-// shakedown...") — same tell, technically outside the old wording. The
-// actual problem is bigger than one phrasing: real output was ending
-// EVERY post on a short "verdict" sentence that just labels what was
-// already described ("That's a shakedown dressed up in a suit," "This is
-// looting in broad daylight," "It's right there in 113 pages of
-// paperwork"). That's the tell — a real person doesn't narrate the moral
-// of their own point as a closing line. This instruction now targets the
-// underlying move instead of one punctuation pattern, and detection below
-// checks the closing sentence specifically, not just a contrastive phrase.
+// REVISED after a THIRD round of real testing (Handoff #26 follow-up #2):
+// broadening comma→period didn't cover every dodge either. Real output
+// swapped the subject from a demonstrative ("that's/this is") to a
+// personal pronoun instead: "He's not governing, he's day-trading the
+// entire country." / "He's not making policy. He's front-running the
+// market..." Same exact contrast, same tell, just a different subject
+// word — outside the old this/that/it-only wording. The instruction and
+// detection below now name the construction generically (any repeated
+// subject, not a fixed list of demonstratives) so the next dodge is a
+// smaller surface area, and detection adds a backreference-based pattern
+// that catches "[he/she/they/you] is not X, [same subject] is Y" the same
+// way it already caught the demonstrative forms.
 export const AI_TELL_PHRASING_BAN = `AVOID AI-SOUNDING PHRASING: Never end a post by summarizing or labeling what you just described in a short standalone "verdict" sentence — this is the single most common AI tell in political social copy, and it shows up in more than one form:
-- Contrastive reframing: "This is not X, it is Y," "That's not X, that's Y," "It isn't X, it is Y" — whether joined by a comma OR split into two short sentences ("That's not governing. That's a shakedown."). Splitting it into two sentences is the same tell, not a workaround.
+- Contrastive reframing, where the SAME subject is negated then re-asserted: "This is not X, it is Y," "That's not X, that's Y," "It isn't X, it is Y," "He's not X, he's Y," "They're not X, they're Y" — with ANY subject (a demonstrative like this/that/it, OR a personal pronoun like he/she/they/you), joined by a comma OR split into two short sentences ("He's not governing. He's day-trading the entire country."). Changing the subject word or the punctuation is not a workaround — it's the identical construction.
 - A closing sentence that just names the offense in the abstract, with no new information: "This is corruption." "That's a scandal." "That's looting in broad daylight." "It's right there in the paperwork."
 Real anger doesn't explain its own punchline. End on the concrete detail itself, a specific consequence, a real question, or what should happen next — not a sentence that restates the point as a label. Test: if a post's last sentence could be swapped into a completely different post about a different scandal and still make sense, it's a label, not an ending. Cut it, or replace it with something specific to this post's own facts.`;
 
 // ── Banned sentence-structure detection (revised — see comment above) ──────
-// Two layers now: (1) the contrastive-reframe patterns, broadened to match
-// across a period as well as a comma, since that's exactly how the banned
-// structure slipped past the original comma-only regex; (2) a check on the
-// post's actual closing sentence for the broader "verdict label" tell,
-// since that's what real output kept doing even in posts that never used
-// the literal contrastive phrasing at all. Both are heuristics, not proof —
-// they catch the patterns seen in real testing, not every paraphrase.
+// Two layers now: (1) the contrastive-reframe patterns — three fixed
+// demonstrative-pronoun forms (this/that/it, matching how those specific
+// mismatches actually showed up), PLUS a general backreference pattern for
+// a personal-pronoun subject repeated on both sides (he/she/they/you) —
+// added after real output dodged the fixed forms by swapping in "he's"
+// where "that's" used to be. Broadened to match across a period as well
+// as a comma, since that's exactly how the banned structure slipped past
+// the original comma-only regex. (2) a check on the post's actual closing
+// sentence for the broader "verdict label" tell, since that's what real
+// output kept doing even in posts that never used the literal contrastive
+// phrasing at all. All of these are heuristics, not proof — they catch
+// the patterns seen in real testing, not every possible paraphrase, and
+// the next dodge may still need another round like this one.
 const BANNED_STRUCTURE_PATTERNS = [
   { label: `"this is not X, it is Y" structure`, regex: /\bthis\s+is\s*n['’]?t?\b[^.?!]{0,80}[,.]\s*(it['’]?s|it\s+is)\b/i },
   { label: `"that's not X, that's Y" structure`, regex: /\bthat['’]?s\s+not\b[^.?!]{0,80}[,.]\s*that['’]?s\b/i },
   { label: `"it isn't X, it is Y" structure`,     regex: /\bit\s+is\s*n['’]?t\b[^.?!]{0,80}[,.]\s*it(['’]?s|\s+is)\b/i },
+  { label: `"[he/she/they/you] is not X, [same subject] is Y" structure`, regex: /\b(he|she|they|you)\b(?:['’]s)?\s*(?:is\s+|are\s+)?(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.]\s*\1\b(?:['’]s)?\s+/i },
 ];
 
 // Flags a post whose LAST sentence is a short demonstrative "verdict" —
