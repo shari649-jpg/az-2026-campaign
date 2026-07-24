@@ -363,6 +363,7 @@ export default function PromptSandboxPage() {
         structureFlags: detectBannedStructures(t),
         judgeFlag: useJudge ? (judgeResults[i]?.violates ? (judgeResults[i].reason || "Flagged by AI check.") : null) : null,
         judgeUnavailable: useJudge && judgeResults[i] === null,
+        hashtag: hashtag ? hashtag.replace(/^#/, "") : null, // captured at generation time — see copyPost note below on why this can't just read the live field
       })));
       if (parsed._contradictionFlags) setContradictionFlags(parsed._contradictionFlags);
       setCallCount(calls);
@@ -379,8 +380,14 @@ export default function PromptSandboxPage() {
     setGenerating(false);
   }
 
-  function copyPost(idx, text) {
-    const withTag = hashtag ? `${text} #${hashtag.replace(/^#/, "")}` : text;
+  function copyPost(idx, r) {
+    // Uses r.hashtag — the value captured at generation time (see
+    // setResults above) — deliberately not the live `hashtag` field state.
+    // Reading the live field here was the original bug: editing or
+    // clearing the Hashtag input after generating a batch silently changed
+    // what every earlier post's Copy button would append, with nothing on
+    // screen showing that had happened.
+    const withTag = r.hashtag ? `${r.text} #${r.hashtag}` : r.text;
     navigator.clipboard.writeText(withTag);
     setCopiedIdx(idx);
     setTimeout(() => setCopiedIdx(null), 1500);
@@ -543,8 +550,9 @@ export default function PromptSandboxPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: r.valid ? TEAL : TERRACOTTA }}>
                     {r.text.length} characters{!r.valid && " — outside range"}
+                    {r.hashtag && <span style={{ color: "#8A7F92", fontWeight: 400 }}> · #{r.hashtag} added on copy</span>}
                   </span>
-                  <button onClick={() => copyPost(idx, r.text)} style={{
+                  <button onClick={() => copyPost(idx, r)} style={{
                     background: "none", border: `1px solid ${PURPLE}`, color: PURPLE,
                     borderRadius: 6, padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
                   }}>
