@@ -17,6 +17,7 @@ import { useAuth } from "../../context/AuthContext";
 import { auth } from "../../firebase";
 import {
   savePreset, loadPresets, updatePreset, deletePreset, PLATFORMS, CHAR_LIMITS,
+  uploadTranscriptSource, MAX_TRANSCRIPT_SOURCE_MB,
 } from "../../lib/sandboxLibrary";
 import {
   JSON_ONLY_INSTRUCTION, JSON_ESCAPING_INSTRUCTION, HASHTAG_BODY_BAN, contradictionFlagFormat,
@@ -202,6 +203,36 @@ async function shortenPost(text, min, max, structureFlags) {
   }
 }
 
+// ── Video/audio-to-transcript (new) ─────────────────────────────────────
+// Two-step async pattern matching AssemblyAI's own API shape: submit a
+// job, get an id back immediately, then poll separately for the result.
+// Neither call holds a connection open for the length of the actual
+// transcription — that's what keeps both functions well under Netlify's
+// 26-second synchronous limit regardless of how long the source video is.
+async function requestTranscriptionJob(audioUrl) {
+  const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+  const res = await fetch("/.netlify/functions/start-transcription", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}) },
+    body: JSON.stringify({ audioUrl }),
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || "Couldn't start transcription.");
+  return data.id;
+}
+
+async function pollTranscriptionJob(transcriptId) {
+  const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+  const res = await fetch("/.netlify/functions/check-transcription", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}) },
+    body: JSON.stringify({ transcriptId }),
+  });
+  const data = await res.json();
+  if (!res.ok || (data.error && data.status !== "error")) throw new Error(data.error || "Couldn't check transcription status.");
+  return data; // { status, text, error }
+}
+
 
 export default function PromptSandboxPage() {
   const { user, isManager } = useAuth();
@@ -213,6 +244,11 @@ export default function PromptSandboxPage() {
   const [platform, setPlatform]     = useState("");
   const [postCount, setPostCount]   = useState(3);
   const [useJudge, setUseJudge]     = useState(false); // opt-in second-pass AI check — off by default so cost is a deliberate choice, not a default
+
+  // Video/audio-to-transcript (new)
+  const [transcribing, setTranscribing]     = useState(false);
+  const [transcribeStatus, setTranscribeStatus] = useState(""); // human-readable status shown while uploading/transcribing
+  const [transcribeError, setTranscribeError]   = useState("");
 
   const [presets, setPresets]           = useState([]);
   const [presetsLoading, setPresetsLoading] = useState(true);
@@ -298,6 +334,67 @@ export default function PromptSandboxPage() {
     } catch {
       setNotice({ type: "error", msg: "Couldn't delete the preset." });
     }
+  }
+
+  // Video/audio-to-transcript (new). Uploads directly to Firebase Storage
+  // (bypassing any function body-size limit), submits the resulting URL
+  // to AssemblyAI, then polls every 4 seconds until done. On success, the
+  // transcript is prepended into the freeform prompt box — per the
+  // person's own framing, this is meant to be dumped in and built on top
+  // of, not routed through a separate "reference material" field.
+  async function handleFileSelected(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+
+    const sizeMB = file.size / (1024 * 1024);
+    if (sizeMB > MAX_TRANSCRIPT_SOURCE_MB) {
+      setTranscribeError(`"${file.name}" is ${sizeMB.toFixed(0)}MB — must be under ${MAX_TRANSCRIPT_SOURCE_MB}MB.`);
+      return;
+    }
+    if (!file.type.startsWith("video/") && !file.type.startsWith("audio/")) {
+      setTranscribeError(`"${file.name}" doesn't look like a video or audio file.`);
+      return;
+    }
+
+    setTranscribing(true);
+    setTranscribeError("");
+    setTranscribeStatus("Uploading…");
+
+    try {
+      const { url } = await uploadTranscriptSource(user.uid, file, (progress) => {
+        setTranscribeStatus(`Uploading… ${Math.round(progress * 100)}%`);
+      });
+
+      setTranscribeStatus("Starting transcription…");
+      const transcriptId = await requestTranscriptionJob(url);
+
+      // Poll every 4s. No hard cap on attempts here deliberately — a long
+      // rally speech or town hall recording can genuinely take several
+      // minutes, and stopping early would just strand the person with a
+      // job that's still running server-side with no way to check back in
+      // from this UI. The person can navigate away if they don't want to
+      // wait; the job itself isn't cancelled by leaving the page.
+      let result = await pollTranscriptionJob(transcriptId);
+      while (result.status === "queued" || result.status === "processing") {
+        setTranscribeStatus(result.status === "queued" ? "Queued…" : "Transcribing…");
+        await new Promise(r => setTimeout(r, 4000));
+        result = await pollTranscriptionJob(transcriptId);
+      }
+
+      if (result.status === "error") {
+        setTranscribeError(result.error || "Transcription failed.");
+        setTranscribing(false);
+        return;
+      }
+
+      const block = `TRANSCRIPT (from "${file.name}" — edit or trim as needed):\n"""\n${result.text}\n"""\n\n`;
+      setPromptText(prev => block + prev);
+      setTranscribeStatus("Done — transcript added above your prompt.");
+    } catch (err) {
+      setTranscribeError(err.message || "Something went wrong during transcription.");
+    }
+    setTranscribing(false);
   }
 
   async function handleGenerate() {
@@ -514,6 +611,37 @@ export default function PromptSandboxPage() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* Video/audio-to-transcript */}
+      <div style={{ background: "var(--surface)", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
+        <label style={labelStyle}>Build from a video or audio recording</label>
+        <p style={{ fontSize: 13, color: CHARCOAL, marginBottom: 12 }}>
+          Upload a speech, interview, or town hall recording — it'll be transcribed and dropped into the freeform prompt below, ready to write instructions around. Longer recordings can take several minutes.
+        </p>
+        <label style={{
+          display: "inline-block", padding: "10px 18px", borderRadius: 8,
+          background: transcribing ? "#aaa" : PURPLE, color: "#fff", fontWeight: 700, fontSize: 14,
+          cursor: transcribing ? "not-allowed" : "pointer",
+        }}>
+          {transcribing ? "Working…" : "Choose video/audio file"}
+          <input
+            type="file"
+            accept="video/*,audio/*"
+            onChange={handleFileSelected}
+            disabled={transcribing}
+            style={{ display: "none" }}
+          />
+        </label>
+        {transcribing && transcribeStatus && (
+          <p style={{ marginTop: 10, fontSize: 13, color: TEAL, fontWeight: 700 }}>{transcribeStatus}</p>
+        )}
+        {!transcribing && transcribeStatus && !transcribeError && (
+          <p style={{ marginTop: 10, fontSize: 13, color: TEAL, fontWeight: 700 }}>✓ {transcribeStatus}</p>
+        )}
+        {transcribeError && (
+          <p style={{ marginTop: 10, fontSize: 13, color: TERRACOTTA }}>{transcribeError}</p>
+        )}
       </div>
 
       {/* Freeform prompt */}
