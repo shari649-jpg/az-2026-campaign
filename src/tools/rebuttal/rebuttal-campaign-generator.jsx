@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { saveCampaign, loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
+import { AI_TELL_PHRASING_BAN, detectBannedStructures } from "../../lib/messageRules";
 import { auth } from "../../firebase";
 
 // ── 9 activist profile choices ────────────────────────────────────────────
@@ -86,6 +87,7 @@ Only include this section at all if the SELF-CONTRADICTION rule below applies to
 [Platform name]: [one specific sentence naming the contradiction between that post's own stated evidence and its own conclusion]
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
+${AI_TELL_PHRASING_BAN}
 
 RULES:
 - Write ALL posts and first comments in the third person. Never use "I" or "my". Write as if observing and reporting — "Communities are being silenced," not "I am outraged."
@@ -325,6 +327,7 @@ function CampaignOutput({ output, onCopy, onSave, onPushToMachine, onEdit, copie
         const abbr = PLAT_ABBR[name] || name.slice(0, 2).toUpperCase();
         const fullText = `POST:\n${post}${comment ? `\n\nFIRST COMMENT:\n${comment}` : ""}`;
         const contradictionNote = !dismissedContradictions[name] ? parsed.contradictions[name] : null;
+        const phrasingFlags = detectBannedStructures(post);
         return (
           <div key={name} style={{ border: `2px solid ${BORDER}`, borderRadius: "4px", overflow: "hidden" }}>
             {/* Platform header */}
@@ -337,6 +340,14 @@ function CampaignOutput({ output, onCopy, onSave, onPushToMachine, onEdit, copie
                   border: "1px solid #e0c568", borderRadius: "999px", padding: "2px 8px",
                 }}>
                   ⚠️ Check this
+                </span>
+              )}
+              {phrasingFlags.length > 0 && (
+                <span title="Possible AI-sounding phrasing — see below" style={{
+                  fontSize: "10px", fontWeight: "800", color: "#8a1f3a", background: "#fde8ec",
+                  border: "1px solid #eab3c0", borderRadius: "999px", padding: "2px 8px",
+                }}>
+                  🤖 Sounds AI-ish
                 </span>
               )}
               <button
@@ -357,6 +368,13 @@ function CampaignOutput({ output, onCopy, onSave, onPushToMachine, onEdit, copie
                 </button>
                 <p style={{ fontSize: "12.5px", color: "#6b4f14", lineHeight: "1.5", margin: 0, paddingRight: "20px" }}>
                   <strong>Possible self-contradiction:</strong> {contradictionNote} Was this intentional?
+                </p>
+              </div>
+            )}
+            {phrasingFlags.length > 0 && (
+              <div style={{ background: "#fde8ec", border: "none", borderBottom: `1.5px solid #eab3c0`, padding: "10px 16px" }}>
+                <p style={{ fontSize: "12.5px", color: "#8a1f3a", lineHeight: "1.5", margin: 0 }}>
+                  <strong>Possible AI-sounding phrasing:</strong> matches {phrasingFlags.join(", ")} — worth a manual reword.
                 </p>
               </div>
             )}
