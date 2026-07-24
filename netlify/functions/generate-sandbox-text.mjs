@@ -25,7 +25,7 @@ import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
-import { ORG_IDENTITY_PREAMBLE, TOPIC_SCOPE_GUARDRAIL } from "../../src/lib/messageRules.js";
+import { ORG_IDENTITY_PREAMBLE, TOPIC_SCOPE_GUARDRAIL, AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
@@ -104,7 +104,7 @@ export default async function (req) {
 
     // Unconditional injection — see file header for why this doesn't use
     // the "already present" dedup pattern the other generate functions use.
-    const effectiveSystem = [ORG_IDENTITY_PREAMBLE, TOPIC_SCOPE_GUARDRAIL, FACTUAL_ACCURACY_GUARDRAIL].join("\n\n");
+    const effectiveSystem = [ORG_IDENTITY_PREAMBLE, TOPIC_SCOPE_GUARDRAIL, FACTUAL_ACCURACY_GUARDRAIL, AI_TELL_PHRASING_BAN].join("\n\n");
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
