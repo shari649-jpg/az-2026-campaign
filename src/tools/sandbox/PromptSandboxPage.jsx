@@ -20,6 +20,7 @@ import {
 } from "../../lib/sandboxLibrary";
 import {
   JSON_ONLY_INSTRUCTION, JSON_ESCAPING_INSTRUCTION, HASHTAG_BODY_BAN, contradictionFlagFormat,
+  lengthTargetHint, detectBannedStructures, AI_TELL_PHRASING_BAN,
 } from "../../lib/messageRules";
 
 const PURPLE      = "var(--purple)";
@@ -41,10 +42,7 @@ function buildSandboxPrompt({ promptText, charMin, charMax, hashtag, platform, p
 
   const constraints = [];
   if (charMin || charMax) {
-    const range = charMin && charMax ? `between ${charMin} and ${charMax} characters`
-      : charMax ? `no more than ${charMax} characters`
-      : `at least ${charMin} characters`;
-    constraints.push(`Each post must be ${range} (including spaces, excluding the hashtag below).`);
+    constraints.push(`${lengthTargetHint(charMin, charMax)} (counting spaces, excluding the hashtag below.)`);
   }
   if (platformDef) {
     const platformLimit = CHAR_LIMITS[platform];
@@ -58,12 +56,107 @@ function buildSandboxPrompt({ promptText, charMin, charMax, hashtag, platform, p
   constraints.push(`Generate ${postCount} distinct post${postCount === 1 ? "" : "s"} — no two should feel formulaic or reuse the same structure.`);
 
   lines.push(...constraints, "");
+
+  // Placed last, right before the JSON contract, deliberately — instructions
+  // near the end of a prompt get more consistent adherence than the same
+  // instruction stated once earlier and buried under everything after it.
+  // This doesn't replace the freeform prompt's own rules; it re-surfaces
+  // the two failure modes real testing actually produced (undershooting
+  // length, and the banned "X, not Y" framing slipping through) right
+  // before generation.
+  const reminders = [`Before finalizing, silently re-check each post against every rule stated above — including any banned sentence structures or phrasing rules — and revise any post that violates one.`];
+  if (charMin || charMax) reminders.push(lengthTargetHint(charMin, charMax));
+  lines.push("FINAL CHECK:", ...reminders, "");
+
   lines.push(JSON_ESCAPING_INSTRUCTION);
   lines.push(JSON_ONLY_INSTRUCTION);
   lines.push(`Format: {"posts": ["post text", "post text", ...]}`);
   lines.push(contradictionFlagFormat("posts"));
 
   return lines.filter(Boolean).join("\n");
+}
+
+// One retry pass for any post that came back under the minimum. Real
+// testing showed models reliably undershoot a character-count target
+// (every post short, none over), so this isn't an edge case worth just
+// flagging — it's the expected outcome often enough that the app should
+// try to fix it once automatically before falling back to a visible flag.
+async function expandPost(text, min, max, hashtagContext) {
+  const prompt = [
+    `Rewrite the post below so it lands ${max ? `between ${min} and ${max}` : `at least ${min}`} characters (counting spaces, excluding any hashtag). It currently runs short. Keep the same meaning, tone, and voice — add one more concrete detail or consequence to reach length rather than padding with filler or hedging.`,
+    "",
+    `CURRENT POST (${text.length} characters):`,
+    text,
+    "",
+    hashtagContext ? HASHTAG_BODY_BAN : "",
+    JSON_ESCAPING_INSTRUCTION,
+    JSON_ONLY_INSTRUCTION,
+    `Format: {"post": "rewritten post text"}`,
+  ].filter(Boolean).join("\n");
+
+  const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+  const res = await fetch("/.netlify/functions/generate-sandbox-text", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}) },
+    body: JSON.stringify({ max_tokens: 700, messages: [{ role: "user", content: prompt }] }),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.error || !data.content) return null;
+  const raw = data.content.map(i => i.text || "").join("");
+  const cleaned = raw.replace(/```json|```/g, "").trim();
+  if (!cleaned.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(cleaned);
+    return typeof parsed.post === "string" ? parsed.post : null;
+  } catch {
+    return null;
+  }
+}
+
+// Second-pass AI judge (opt-in, Sandbox-only for now — see "verify with a
+// second AI check" toggle below). The regex in detectBannedStructures is
+// fast and free but only catches phrasings someone has actually seen and
+// encoded; a model asked directly "does this violate the rule?" leans on
+// what models are actually good at — recognizing a pattern on request —
+// instead of what they're bad at, which is never producing it unprompted.
+// This costs one extra API call per post, which is exactly the tradeoff
+// being tested here before deciding whether it's worth wiring in
+// everywhere else. Kept intentionally simple: it flags, it doesn't
+// rewrite — an auto-rewrite step would be a second cost decision on top
+// of this one.
+async function judgePost(text) {
+  const prompt = [
+    "You are reviewing a single political social media post for a phrasing quality check. Be direct and honest — the goal is catching real instances a writer would want to fix, not being lenient or hedging.",
+    "",
+    AI_TELL_PHRASING_BAN,
+    "",
+    "POST TO REVIEW:",
+    text,
+    "",
+    "Does this specific post violate the rule above?",
+    JSON_ONLY_INSTRUCTION,
+    `Format: {"violates": true or false, "reason": "one-sentence explanation naming the exact phrase, or empty string if it does not violate"}`,
+  ].join("\n");
+
+  const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+  const res = await fetch("/.netlify/functions/generate-sandbox-text", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}) },
+    body: JSON.stringify({ max_tokens: 300, messages: [{ role: "user", content: prompt }] }),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.error || !data.content) return null;
+  const raw = data.content.map(i => i.text || "").join("");
+  const cleaned = raw.replace(/```json|```/g, "").trim();
+  if (!cleaned.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(cleaned);
+    return typeof parsed.violates === "boolean" ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export default function PromptSandboxPage() {
@@ -75,6 +168,7 @@ export default function PromptSandboxPage() {
   const [hashtag, setHashtag]       = useState("");
   const [platform, setPlatform]     = useState("");
   const [postCount, setPostCount]   = useState(3);
+  const [useJudge, setUseJudge]     = useState(false); // opt-in second-pass AI check — off by default so cost is a deliberate choice, not a default
 
   const [presets, setPresets]           = useState([]);
   const [presetsLoading, setPresetsLoading] = useState(true);
@@ -83,6 +177,7 @@ export default function PromptSandboxPage() {
   const [savingPreset, setSavingPreset] = useState(false);
 
   const [results, setResults]           = useState([]); // [{text, valid}]
+  const [callCount, setCallCount]       = useState(null); // total API calls this run (generate + expand retries + judge), shown so the cost tradeoff is visible
   const [contradictionFlags, setContradictionFlags] = useState({});
   const [scopeDeclined, setScopeDeclined] = useState("");
   const [generating, setGenerating]     = useState(false);
@@ -171,6 +266,8 @@ export default function PromptSandboxPage() {
     setResults([]);
     setContradictionFlags({});
     setScopeDeclined("");
+    setCallCount(null);
+    let calls = 0; // total API calls this run — generate + expand retries + judge — surfaced at the end so the cost tradeoff of the judge toggle is visible, not assumed
 
     const prompt = buildSandboxPrompt({ promptText, charMin, charMax, hashtag, platform, postCount });
 
@@ -181,6 +278,7 @@ export default function PromptSandboxPage() {
         headers: { "Content-Type": "application/json", ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}) },
         body: JSON.stringify({ max_tokens: 4000, messages: [{ role: "user", content: prompt }] }),
       });
+      calls++;
 
       if (res.status === 429) {
         const limitData = await res.json();
@@ -201,9 +299,11 @@ export default function PromptSandboxPage() {
         setGenerating(false);
         return;
       }
+      let usageMsg = null;
       if (data.usageWarning) {
         const { used, limit, remaining } = data.usageWarning;
-        setNotice({ type: "warning", msg: `${used}/${limit} daily AI calls used — ${remaining} remaining.` });
+        usageMsg = `${used}/${limit} daily AI calls used — ${remaining} remaining.`;
+        setNotice({ type: "warning", msg: usageMsg });
       }
 
       const text = data.content.map(i => i.text || "").join("");
@@ -224,11 +324,55 @@ export default function PromptSandboxPage() {
       const posts = Array.isArray(parsed.posts) ? parsed.posts : [];
       const max = charMax ? parseInt(charMax, 10) : null;
       const min = charMin ? parseInt(charMin, 10) : null;
-      setResults(posts.map(t => ({
+
+      // Real testing showed the model reliably undershoots length targets
+      // rather than occasionally missing — worth one automatic retry per
+      // short post before just flagging it. Sequential, not parallel, so
+      // this doesn't burn through rate limit any faster than necessary.
+      let expandedCount = 0;
+      const finalTexts = [];
+      for (const t of posts) {
+        if (min && t.length < min) {
+          setNotice({ type: "warning", msg: `Expanding a post that came back short (${t.length}/${min} min)…` });
+          const expanded = await expandPost(t, min, max, !!hashtag);
+          calls++;
+          if (expanded) { finalTexts.push(expanded); expandedCount++; }
+          else finalTexts.push(t);
+        } else {
+          finalTexts.push(t);
+        }
+      }
+
+      // Opt-in second-pass AI judge — one extra call PER POST, sequential
+      // so a slow/failed judge call doesn't fan out into a burst. This is
+      // the actual cost being tested: turning this on roughly doubles the
+      // API calls (and daily-limit usage) this button press consumes.
+      const judgeResults = [];
+      if (useJudge) {
+        for (let i = 0; i < finalTexts.length; i++) {
+          setNotice({ type: "warning", msg: `Running AI verification check (${i + 1}/${finalTexts.length})…` });
+          const verdict = await judgePost(finalTexts[i]);
+          calls++;
+          judgeResults.push(verdict);
+        }
+      }
+
+      setResults(finalTexts.map((t, i) => ({
         text: t,
         valid: (!max || t.length <= max) && (!min || t.length >= min),
+        structureFlags: detectBannedStructures(t),
+        judgeFlag: useJudge ? (judgeResults[i]?.violates ? (judgeResults[i].reason || "Flagged by AI check.") : null) : null,
+        judgeUnavailable: useJudge && judgeResults[i] === null,
       })));
       if (parsed._contradictionFlags) setContradictionFlags(parsed._contradictionFlags);
+      setCallCount(calls);
+      if (expandedCount > 0) {
+        setNotice({ type: "success", msg: `${expandedCount} post${expandedCount === 1 ? "" : "s"} auto-expanded to meet the minimum — still worth a read before using.${usageMsg ? ` (${usageMsg})` : ""}` });
+      } else if (usageMsg) {
+        setNotice({ type: "warning", msg: usageMsg });
+      } else {
+        setNotice(null);
+      }
     } catch (err) {
       setNotice({ type: "error", msg: "Generation failed — try again." });
     }
@@ -337,17 +481,34 @@ export default function PromptSandboxPage() {
         </div>
       </div>
 
+      <label style={{
+        display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 20,
+        padding: "12px 16px", background: SURFACE_ALT, borderRadius: 10, cursor: "pointer",
+      }}>
+        <input type="checkbox" checked={useJudge} onChange={e => setUseJudge(e.target.checked)} style={{ marginTop: 3 }} />
+        <span style={{ fontSize: 13, color: CHARCOAL, lineHeight: 1.5 }}>
+          <strong style={{ color: PURPLE }}>Also verify each post with a second AI check</strong> — asks Claude directly whether each post violates the phrasing rules, in addition to the regex check. Catches paraphrases the regex misses, but costs <strong>one extra API call per post</strong> (counts against the daily limit). Off by default so the cost is a choice, not a default.
+        </span>
+      </label>
+
       <button
         onClick={handleGenerate}
         disabled={generating}
         style={{
           background: generating ? "#aaa" : PURPLE, color: "#fff", border: "none", borderRadius: 10,
           padding: "14px 28px", fontWeight: 700, fontSize: 15, cursor: generating ? "not-allowed" : "pointer",
-          marginBottom: 24,
+          marginBottom: 12,
         }}
       >
         {generating ? "Generating…" : "Generate"}
       </button>
+
+      {callCount !== null && (
+        <p style={{ fontSize: 12.5, color: "#8A7F92", marginBottom: 20 }}>
+          This run used <strong>{callCount}</strong> API call{callCount === 1 ? "" : "s"} total
+          {useJudge ? " (generation + expand retries, if any + 1 verification check per post)" : " (generation + expand retries, if any)"} — each counts against your daily limit.
+        </p>
+      )}
 
       {notice && (
         <div style={{
@@ -369,30 +530,50 @@ export default function PromptSandboxPage() {
       {/* Results */}
       {results.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {results.map((r, idx) => (
-            <div key={idx} style={{
-              background: "#fff", border: `1px solid ${r.valid ? BORDER : TERRACOTTA}`,
-              borderRadius: 10, padding: 16,
-            }}>
-              <p style={{ color: CHARCOAL, whiteSpace: "pre-wrap", marginBottom: 10, lineHeight: 1.6 }}>{r.text}</p>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: r.valid ? TEAL : TERRACOTTA }}>
-                  {r.text.length} characters{!r.valid && " — outside range"}
-                </span>
-                <button onClick={() => copyPost(idx, r.text)} style={{
-                  background: "none", border: `1px solid ${PURPLE}`, color: PURPLE,
-                  borderRadius: 6, padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
-                }}>
-                  {copiedIdx === idx ? "Copied!" : "Copy"}
-                </button>
+          {results.map((r, idx) => {
+            const hasStructureFlag = r.structureFlags && r.structureFlags.length > 0;
+            const hasJudgeFlag = !!r.judgeFlag;
+            const flagged = !r.valid || hasStructureFlag || hasJudgeFlag;
+            return (
+              <div key={idx} style={{
+                background: "#fff", border: `1px solid ${flagged ? TERRACOTTA : BORDER}`,
+                borderRadius: 10, padding: 16,
+              }}>
+                <p style={{ color: CHARCOAL, whiteSpace: "pre-wrap", marginBottom: 10, lineHeight: 1.6 }}>{r.text}</p>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: r.valid ? TEAL : TERRACOTTA }}>
+                    {r.text.length} characters{!r.valid && " — outside range"}
+                  </span>
+                  <button onClick={() => copyPost(idx, r.text)} style={{
+                    background: "none", border: `1px solid ${PURPLE}`, color: PURPLE,
+                    borderRadius: 6, padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                  }}>
+                    {copiedIdx === idx ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+                {hasStructureFlag && (
+                  <p style={{ marginTop: 10, fontSize: 13, color: TERRACOTTA }}>
+                    <strong>Regex flag:</strong> matches {r.structureFlags.join(", ")} — worth a manual reword.
+                  </p>
+                )}
+                {hasJudgeFlag && (
+                  <p style={{ marginTop: 10, fontSize: 13, color: PURPLE }}>
+                    <strong>🧑‍⚖️ AI check flag:</strong> {r.judgeFlag}
+                  </p>
+                )}
+                {r.judgeUnavailable && (
+                  <p style={{ marginTop: 10, fontSize: 12, color: "#8A7F92", fontStyle: "italic" }}>
+                    AI verification check didn't return a usable answer for this post — not flagged, but not confirmed clean either.
+                  </p>
+                )}
+                {contradictionFlags.posts && idx === 0 && (
+                  <p style={{ marginTop: 10, fontSize: 13, color: TERRACOTTA }}>
+                    <strong>Possible self-contradiction:</strong> {contradictionFlags.posts}
+                  </p>
+                )}
               </div>
-              {contradictionFlags.posts && idx === 0 && (
-                <p style={{ marginTop: 10, fontSize: 13, color: TERRACOTTA }}>
-                  <strong>Possible self-contradiction:</strong> {contradictionFlags.posts}
-                </p>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
