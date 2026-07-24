@@ -1,0 +1,199 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper: is the requesting user an administrator?
+    // Reads their OWN users doc to check role — this is what makes the
+    // AdminPage gate (and role-change protection below) actually enforced
+    // server-side, not just hidden in the UI.
+    function isAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "administrator";
+    }
+    // Matches AuthContext.jsx's isManager: role === "manager" || "administrator"
+    function isManager() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ["manager", "administrator"];
+    }
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    // Fields on users/{uid} that only an admin may change. The owner can
+    // still edit their own profile (name, handles, org, etc.), but never
+    // their own role, and never the server-computed rate-limit bookkeeping
+    // fields. Without this, a signed-in user could write directly to their
+    // own Firestore doc (bypassing the Netlify functions and
+    // rateLimitHelper.mjs entirely) and set dailyLimitOverride /
+    // dailyLimitOverrideDate to grant themselves unlimited AI calls, or
+    // reset dailyCalls / dailyCallsDate early. Fixed July 2026 security pass.
+    function ownerProtectedFieldsUnchanged() {
+      let protectedFields = ['role', 'dailyCalls', 'dailyCallsDate', 'dailyLimitOverride', 'dailyLimitOverrideDate'];
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(protectedFields);
+    }
+    // ── users/{uid} ──────────────────────────────────────────────────────
+    // Each person can read/create their own profile (registration, Google
+    // sign-in first-time doc creation, AuthContext's own-profile read).
+    // Admins can read everyone (Admin panel user list) and change role.
+    // Nobody — including the owner — can change their OWN role or their
+    // OWN rate-limit fields; only an admin can do that, and only on
+    // someone else's doc.
+    match /users/{uid} {
+      allow get:    if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow list:   if isAdmin();
+      allow create: if isSignedIn() && request.auth.uid == uid
+                    && request.resource.data.role == "user"; // can't self-assign a higher role
+      allow update: if isSignedIn() && (
+                      // Owner may update their own profile fields, but never
+                      // `role` or the rate-limit bookkeeping fields.
+                      (request.auth.uid == uid && ownerProtectedFieldsUnchanged())
+                      ||
+                      // Admin may update anyone else's doc (role changes, edits)
+                      (isAdmin() && request.auth.uid != uid)
+                    );
+      allow delete: if false; // deletions only happen via manage-user.mjs (Admin SDK, bypasses rules)
+    }
+    // ── waitlist/{doc} ───────────────────────────────────────────────────
+    // Public form submission needs unauthenticated create.
+    // The public "does this email already exist" (WaitlistPage.jsx) and
+    // "is this Google account invited" (LoginPage.jsx) checks used to run
+    // as direct client-side `list` queries with `limit(1)`. A `limit(1)`
+    // allowance on `list` is enumerable: an attacker can page through the
+    // entire waitlist one document at a time via repeated cursored
+    // queries, extracting every applicant's name, email, organization,
+    // and social handle. Both checks now go through server-side Netlify
+    // functions (check-waitlist-email.mjs, check-waitlist-invite.mjs)
+    // using the Admin SDK, which bypasses these rules entirely and
+    // returns only the minimal fields each flow actually needs. `get` and
+    // `list` are now admin-only — the only remaining client read path
+    // (AdminPage.jsx's waitlist tab) is already gated behind isAdmin in
+    // the UI, and this rule now enforces that server-side too.
+    // Fixed July 2026 security pass.
+    match /waitlist/{id} {
+      allow get:    if isAdmin();
+      allow list:   if isAdmin();
+      allow create: if request.resource.data.status == "pending"; // public signup always starts as pending
+      allow update: if isAdmin() ||
+                      // RegisterPage.jsx / LoginPage.jsx marking an invited entry "registered" after successful signup
+                      (isSignedIn() &&
+                        resource.data.status == "invited" &&
+                        request.resource.data.status == "registered");
+      allow delete: if isAdmin();
+    }
+    // ── saved_campaigns/{doc} ────────────────────────────────────────────
+    // Shared team Library — any logged-in coalition member can read, save,
+    // or remove items. No public access. Matches LibraryPage.jsx's canDelete:
+    // owner OR manager/admin can delete; there is no update path in the app.
+    match /saved_campaigns/{doc} {
+      allow read, create: if isSignedIn();
+      allow delete: if isSignedIn() &&
+                      (("savedBy" in resource.data) && resource.data.savedBy != null && resource.data.savedBy.uid == request.auth.uid || isManager());
+      allow update: if false;
+    }
+    // ── saved_articles/{doc} ─────────────────────────────────────────────
+    match /saved_articles/{doc} {
+      allow read, create: if isSignedIn();
+      allow delete: if isSignedIn() &&
+                      (("savedBy" in resource.data) && resource.data.savedBy != null && resource.data.savedBy.uid == request.auth.uid || isManager());
+      allow update: if false;
+    }
+    // ══════════════════════════════════════════════════════════════════
+    // ▼▼▼  NEW — added for Storm Chasers Hub (July 2026)  ▼▼▼
+    // ══════════════════════════════════════════════════════════════════
+    // ── storms/{stormId} ─────────────────────────────────────────────────
+    // Matches stormLibrary.js's canReview/canArchive (isManager — manager
+    // OR administrator) and canDelete (isAdmin — administrator only).
+    // Members can create (always forced to "draft") and edit only their
+    // own draft; everything else requires Manager or Administrator.
+    match /storms/{stormId} {
+      // Any signed-in coalition member can read all storms. The app's own
+      // tab/filter UI is what limits what a Member sees by default; the
+      // real security boundary here is on write, not read.
+      allow read: if isSignedIn();
+      // Create: must be creating as yourself. Non-staff members are
+      // forced into "draft" regardless of what the client sends; Managers
+      // and Admins may create with any status.
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy.uid == request.auth.uid
+        && (
+          isManager()
+          || request.resource.data.status == "draft"
+        );
+      // Update: Managers/Admins can change anything, any time. A Member
+      // may only edit their OWN storm, only while it is still a draft,
+      // and only if it's STILL a draft after their edit — they cannot use
+      // an update to move themselves into pending_review/active; that
+      // transition only happens through the Manager/Admin-gated path above.
+      allow update: if isSignedIn() && (
+        isManager()
+        ||
+        (
+          resource.data.createdBy.uid == request.auth.uid
+          && resource.data.status == "draft"
+          && request.resource.data.status == "draft"
+        )
+      );
+      // Delete: administrators only. Managers archive instead of deleting
+      // (matches canDelete in stormLibrary.js).
+      allow delete: if isAdmin();
+    }
+    match /storms/{stormId}/posts/{postId} {
+      allow read: if isSignedIn();
+      // A storm's creator may only create/update/delete its posts while
+      // the PARENT storm is still a draft. Previously this rule checked
+      // only who the creator was, not the parent storm's status — so a
+      // creator could keep editing posts inside a storm they had already
+      // submitted for review (pending_review/active), bypassing the same
+      // "locked once submitted" protection enforced on the
+      // storms/{stormId} doc itself. Fixed July 2026 security pass.
+      allow create, update, delete: if isSignedIn() && (
+        isManager()
+        || (
+          get(/databases/$(database)/documents/storms/$(stormId)).data.createdBy.uid == request.auth.uid
+          && get(/databases/$(database)/documents/storms/$(stormId)).data.status == "draft"
+        )
+      );
+    }
+    // ══════════════════════════════════════════════════════════════════
+    // ▲▲▲  END new storms block  ▲▲▲
+    // ══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+    // ▼▼▼  NEW — added for Header Announcements (July 2026, Handoff #16 follow-up)  ▼▼▼
+    // ══════════════════════════════════════════════════════════════════
+    // ── announcements/{id} ───────────────────────────────────────────────
+    // Matches announcementLibrary.js's canManageAnnouncements (isManager —
+    // manager OR administrator). Any signed-in member needs read access
+    // since AppShell.jsx polls this collection to show the header ticker
+    // to everyone, not just staff. Only Manager/Admin can write.
+    match /announcements/{id} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isManager();
+    }
+    // ══════════════════════════════════════════════════════════════════
+    // ▲▲▲  END new announcements block  ▲▲▲
+    // ══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+    // ▼▼▼  NEW — added for Prompt Sandbox (July 2026, Handoff #26 follow-up)  ▼▼▼
+    // ══════════════════════════════════════════════════════════════════
+    // ── sandboxPresets/{uid}/presets/{presetId} ──────────────────────────
+    // The Prompt Sandbox tool itself is Manager/Administrator-only (see
+    // PromptSandboxPage.jsx's own isManager gate and
+    // generate-sandbox-text.mjs's server-side role check). These rules
+    // enforce the same boundary at the data layer, plus a stricter
+    // ownership check: a preset lives under its owner's own uid segment,
+    // and only that same signed-in uid may read, create, update, or
+    // delete it — a Manager cannot read or edit a different Manager's
+    // saved presets, even though both are equally privileged to use the
+    // tool itself. request.auth.uid == uid is checked directly from the
+    // path segment, so there's no need for a separate ownership field on
+    // the document the way saved_campaigns/saved_articles use `savedBy`.
+    match /sandboxPresets/{uid}/presets/{presetId} {
+      allow read, create, update, delete: if isSignedIn()
+        && request.auth.uid == uid
+        && isManager();
+    }
+    // ══════════════════════════════════════════════════════════════════
+    // ▲▲▲  END new sandboxPresets block  ▲▲▲
+    // ══════════════════════════════════════════════════════════════════
+  }
+}
