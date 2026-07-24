@@ -15,6 +15,7 @@ import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
+import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
@@ -102,14 +103,23 @@ export default async function (req) {
     // and Storms started sending a system param it didn't have before.
     // Fixed: check the actual message content too, and only add a system
     // field when the guardrail isn't already present anywhere in the request.
+    //
+    // AI_TELL_PHRASING_BAN (added this session) follows the exact same
+    // already-present check, for the same reason — StormPostEditor.jsx now
+    // bakes it into buildGeneratePrompt/buildRephrasePrompt directly, so
+    // this only needs to add it via `system` for a caller that skipped it
+    // (a modified client, or a direct call to this endpoint).
     const clientSystem = typeof system === "string" ? system : "";
     const messagesText = Array.isArray(messages)
       ? messages.map(m => (typeof m.content === "string" ? m.content : "")).join("\n")
       : "";
-    const alreadyGuarded = clientSystem.includes("FACTUAL ACCURACY:") || messagesText.includes("FACTUAL ACCURACY:");
-    const effectiveSystem = alreadyGuarded
-      ? clientSystem
-      : [clientSystem, FACTUAL_ACCURACY_GUARDRAIL].filter(Boolean).join("\n\n");
+    const missingPieces = [
+      (!clientSystem.includes("FACTUAL ACCURACY:") && !messagesText.includes("FACTUAL ACCURACY:")) ? FACTUAL_ACCURACY_GUARDRAIL : null,
+      (!clientSystem.includes("AVOID AI-SOUNDING PHRASING:") && !messagesText.includes("AVOID AI-SOUNDING PHRASING:")) ? AI_TELL_PHRASING_BAN : null,
+    ].filter(Boolean);
+    const effectiveSystem = missingPieces.length
+      ? [clientSystem, ...missingPieces].filter(Boolean).join("\n\n")
+      : clientSystem;
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
