@@ -22,6 +22,7 @@ import MisinfoMonitorPage from "./tools/misinfo-monitor/MisinfoMonitorPage";
 import StormsHubPage from "./tools/storms/StormsHubPage";
 import PublicStormPage from "./pages/PublicStormPage";
 import PublicStormsListPage from "./pages/PublicStormsListPage";
+import PromptSandboxPage from "./tools/sandbox/PromptSandboxPage";
 
 export default function App() {
   return (
@@ -56,6 +57,7 @@ export default function App() {
             <Route path="/manual"          element={<ManualPage />} />
             <Route path="/misinfo-monitor" element={<MisinfoMonitorPage />} />
             <Route path="/storms"          element={<StormsHubPage />} />
+            <Route path="/sandbox"         element={<PromptSandboxPage />} />
           </Route>
         </Routes>
       </AuthProvider>
