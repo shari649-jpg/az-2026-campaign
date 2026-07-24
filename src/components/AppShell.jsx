@@ -407,6 +407,18 @@ export default function AppShell() {
                         📢 Announcements
                       </NavLink>
                     )}
+                    {/* Prompt Sandbox link (Manager + Admin) — Handoff #26 follow-up */}
+                    {isManager && (
+                      <NavLink
+                        to="/sandbox"
+                        onClick={() => setUserMenuOpen(false)}
+                        style={{ display: "block", padding: "12px 16px", fontSize: 14, fontWeight: 700, color: "var(--teal)", textDecoration: "none", borderBottom: "1px solid var(--surface-alt)", background: "none" }}
+                        onMouseEnter={e => e.currentTarget.style.background = "var(--teal-light)"}
+                        onMouseLeave={e => e.currentTarget.style.background = "none"}
+                      >
+                        🧪 Prompt Sandbox
+                      </NavLink>
+                    )}
                     {/* Admin link */}
                     {isAdmin && (
                       <NavLink
@@ -533,6 +545,16 @@ export default function AppShell() {
             className={({ isActive }) => "mobile-nav-link" + (isActive ? " active" : "")}
           >
             📢 Announcements
+          </NavLink>
+        )}
+        {/* Mobile sandbox link (Manager + Admin) — Handoff #26 follow-up */}
+        {isManager && (
+          <NavLink
+            to="/sandbox"
+            onClick={() => setMenuOpen(false)}
+            className={({ isActive }) => "mobile-nav-link" + (isActive ? " active" : "")}
+          >
+            🧪 Prompt Sandbox
           </NavLink>
         )}
         {/* Mobile admin link */}
