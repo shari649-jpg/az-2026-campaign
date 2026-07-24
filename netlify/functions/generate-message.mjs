@@ -4,14 +4,16 @@
 // Auth:       requires a valid Firebase ID token (any signed-in user)
 // Rate limit: 50/day (user), 100/day (manager), 200/day (administrator)
 //             Warning returned in response at 75% usage.
-// Model:      Defaults to Haiku 4.5 (set via GENERATION_MODEL env var —
+// Model:      Defaults to Sonnet 4.5 (set via GENERATION_MODEL env var —
 //             Netlify dashboard → Project configuration → Environment
-//             variables). Switched from Sonnet after a real side-by-side
-//             quality comparison showed no meaningful difference in message
-//             quality for this use case, at 1/3 the cost and faster
-//             generation. If a future comparison shows Haiku falling short
-//             on quality, revert by setting GENERATION_MODEL to
-//             "claude-sonnet-4-5" in Netlify and triggering a redeploy —
+//             variables). Briefly defaulted to Haiku 4.5 for cost/speed —
+//             reverted after real production use surfaced a factual/political
+//             framing error (attributing inflation blame incorrectly),
+//             which an initial side-by-side comparison hadn't caught. If
+//             Haiku is reconsidered later, it needs a broader accuracy
+//             review, not just a style comparison, before defaulting to it
+//             again. To test it, set GENERATION_MODEL to
+//             "claude-haiku-4-5-20251001" in Netlify and trigger a redeploy —
 //             no code change needed either way.
 
 import admin from "firebase-admin";
@@ -19,7 +21,7 @@ import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 
-const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-haiku-4-5-20251001";
+const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-sonnet-4-5";
 
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
