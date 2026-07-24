@@ -20,6 +20,7 @@ import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
+import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
 const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-sonnet-4-5";
 
@@ -108,10 +109,17 @@ export default async function (req) {
     // or a direct call to this endpoint could skip it entirely. If the
     // client's system prompt already contains it, don't duplicate; otherwise
     // append it so it's always enforced regardless of caller.
+    //
+    // AI_TELL_PHRASING_BAN enforced the same way as of this session — real
+    // output was still landing on an obvious "this is not X, it is Y"
+    // construction, so this needs the same client-can't-skip-it guarantee
+    // the factual-accuracy rule already has.
     const clientSystem = typeof system === "string" ? system : "";
-    const effectiveSystem = clientSystem.includes("FACTUAL ACCURACY:")
-      ? clientSystem
-      : [clientSystem, FACTUAL_ACCURACY_GUARDRAIL].filter(Boolean).join("\n\n");
+    const missingPieces = [
+      !clientSystem.includes("FACTUAL ACCURACY:") ? FACTUAL_ACCURACY_GUARDRAIL : null,
+      !clientSystem.includes("AVOID AI-SOUNDING PHRASING:") ? AI_TELL_PHRASING_BAN : null,
+    ].filter(Boolean);
+    const effectiveSystem = [clientSystem, ...missingPieces].filter(Boolean).join("\n\n");
 
     // Rough input size, logged before the call so it's visible in Netlify logs
     // even if the function gets killed by the 26s timeout mid-call.
