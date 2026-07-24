@@ -159,6 +159,50 @@ async function judgePost(text) {
   }
 }
 
+// One retry pass for any post that came back OVER the maximum — the
+// overshoot counterpart to expandPost above. Added after real testing
+// showed fixing undershoot swung the other way: posts landing 500+
+// against a 250-300 target, and in at least one case still containing a
+// flagged banned-phrasing sentence with extra content padded around it
+// rather than that sentence being cut. This explicitly tells the model to
+// CUT — including removing the flagged construction outright — rather
+// than compress everything down to fit, which tends to produce a denser
+// but still-too-long post or a rewrite that loses the original point.
+async function shortenPost(text, min, max, structureFlags) {
+  const hasStructureIssue = structureFlags && structureFlags.length > 0;
+  const prompt = [
+    `Rewrite the post below so it lands ${min ? `between ${min} and ${max}` : `no more than ${max}`} characters (counting spaces, excluding any hashtag). It currently runs long. CUT content to fit — remove a clause, a sentence, or an example. Do not just compress the wording of everything to squeeze it in; it's better to say less clearly than to cram the same amount of content into fewer characters.`,
+    hasStructureIssue ? `This post also contains a flagged construction (${structureFlags.join(", ")}) — remove that sentence or phrase entirely as part of the cut, don't just shorten around it while leaving it in place.` : "",
+    "",
+    `CURRENT POST (${text.length} characters):`,
+    text,
+    "",
+    JSON_ESCAPING_INSTRUCTION,
+    JSON_ONLY_INSTRUCTION,
+    `Format: {"post": "rewritten post text"}`,
+  ].filter(Boolean).join("\n");
+
+  const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+  const res = await fetch("/.netlify/functions/generate-sandbox-text", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}) },
+    body: JSON.stringify({ max_tokens: 700, messages: [{ role: "user", content: prompt }] }),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.error || !data.content) return null;
+  const raw = data.content.map(i => i.text || "").join("");
+  const cleaned = raw.replace(/```json|```/g, "").trim();
+  if (!cleaned.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(cleaned);
+    return typeof parsed.post === "string" ? parsed.post : null;
+  } catch {
+    return null;
+  }
+}
+
+
 export default function PromptSandboxPage() {
   const { user, isManager } = useAuth();
 
@@ -343,6 +387,24 @@ export default function PromptSandboxPage() {
         }
       }
 
+      // Overshoot counterpart to the expand pass above — added after real
+      // testing showed the length fix swung the other way (posts landing
+      // 500+ against a 250-300 target). Runs after expand so an expanded
+      // post that overshot in the other direction still gets caught.
+      // Passes along any detected banned-phrasing structure so shortenPost
+      // knows to cut that sentence specifically, not just trim length
+      // from wherever's convenient.
+      let shortenedCount = 0;
+      for (let i = 0; i < finalTexts.length; i++) {
+        if (max && finalTexts[i].length > max) {
+          const flagsBeforeShorten = detectBannedStructures(finalTexts[i]);
+          setNotice({ type: "warning", msg: `Shortening a post that came back long (${finalTexts[i].length}/${max} max)…` });
+          const shortened = await shortenPost(finalTexts[i], min, max, flagsBeforeShorten);
+          calls++;
+          if (shortened) { finalTexts[i] = shortened; shortenedCount++; }
+        }
+      }
+
       // Opt-in second-pass AI judge — one extra call PER POST, sequential
       // so a slow/failed judge call doesn't fan out into a burst. This is
       // the actual cost being tested: turning this on roughly doubles the
@@ -367,8 +429,11 @@ export default function PromptSandboxPage() {
       })));
       if (parsed._contradictionFlags) setContradictionFlags(parsed._contradictionFlags);
       setCallCount(calls);
-      if (expandedCount > 0) {
-        setNotice({ type: "success", msg: `${expandedCount} post${expandedCount === 1 ? "" : "s"} auto-expanded to meet the minimum — still worth a read before using.${usageMsg ? ` (${usageMsg})` : ""}` });
+      const fixNotes = [];
+      if (expandedCount > 0) fixNotes.push(`${expandedCount} auto-expanded (too short)`);
+      if (shortenedCount > 0) fixNotes.push(`${shortenedCount} auto-shortened (too long)`);
+      if (fixNotes.length > 0) {
+        setNotice({ type: "success", msg: `${fixNotes.join(", ")} — still worth a read before using.${usageMsg ? ` (${usageMsg})` : ""}` });
       } else if (usageMsg) {
         setNotice({ type: "warning", msg: usageMsg });
       } else {
