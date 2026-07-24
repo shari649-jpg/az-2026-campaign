@@ -51,12 +51,28 @@ export function contradictionFlagFormat(key) {
 // against a 250-300 requirement, every post short, none over. Telling the
 // model to aim at the ceiling rather than the floor is a cheap partial
 // mitigation; the actual fix is the client-side expand-retry in
-// PromptSandboxPage.jsx (buildExpandPrompt/expandPost), which catches and
-// corrects whatever this instruction alone doesn't.
+// PromptSandboxPage.jsx (expandPost), which catches and corrects whatever
+// this instruction alone doesn't.
+//
+// REVISED after a second real-testing round: fixing the undershoot swung
+// the other way — posts started coming back 500+ against a 250-300 target,
+// consistently over, none under. Two likely causes, both addressed below:
+// (1) the original wording spent several sentences hammering the floor and
+// only a half-sentence on the ceiling, so the two didn't carry equal
+// weight; (2) in at least one case the model was visibly padding extra
+// sentences around a post that still contained a banned phrasing
+// construction, rather than cutting the flagged sentence — worth an
+// explicit rule since "keep length up" and "fix the ending" were pulling
+// in the same padding-friendly direction with nothing telling it cutting
+// is allowed. This version states both bounds with matching emphasis and
+// explicitly permits cutting content to fit. The other half of the actual
+// fix is the shorten-retry in PromptSandboxPage.jsx (shortenPost), which
+// mirrors the expand-retry the same way the min side already has one.
 export function lengthTargetHint(min, max) {
   if (!min && !max) return "";
   const range = min && max ? `${min}-${max}` : max ? `up to ${max}` : `at least ${min}`;
-  return `LENGTH: target character count ${range}. Models systematically undershoot character targets — write toward the TOP of this range, not the bottom. A post below the minimum is as much a failure as a post over the maximum. If a post feels done before it's long enough, add another concrete detail or consequence rather than stopping short.`;
+  const both = min && max;
+  return `LENGTH: target character count ${range}. Both ends of this range are equally real requirements — a post under the minimum is exactly as much a failure as a post over the maximum, not a smaller mistake.${both ? ` Models tend to drift toward one end or the other rather than landing inside the range — check the actual count, don't just estimate.` : ""} If a post feels done before it's long enough, add another concrete detail or consequence rather than stopping short. If a post runs long, CUT content to fit — remove a clause, a sentence, or an example. Never pad a post with extra sentences to keep it long, and never leave a flagged or problematic sentence in place while padding around it with more text — if something needs to go, delete it rather than burying it.`;
 }
 
 // ── AI-tell phrasing ban (new — flagged across the whole system) ───────────
