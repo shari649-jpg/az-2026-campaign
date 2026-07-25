@@ -27,6 +27,14 @@ import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 import { ORG_IDENTITY_PREAMBLE, TOPIC_SCOPE_GUARDRAIL, AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
+// COST FIX (this session) — see generate-message.mjs for the full
+// reasoning: max_tokens was entirely client-controlled with no upper
+// bound. Capped well above this app's own default (4000, the highest of
+// any tool) rather than tightened toward it, preserving the deliberate
+// "generous ceiling avoids truncation" design while closing the
+// unbounded-client-value gap.
+const MAX_TOKENS_CEILING = 8000;
+
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
   "https://az-coalition-2026-election.netlify.app",
@@ -111,7 +119,7 @@ export default async function (req) {
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
         model: "claude-sonnet-4-5",
-        max_tokens: max_tokens || 4000,
+        max_tokens: Math.min(max_tokens || 4000, MAX_TOKENS_CEILING),
         system: effectiveSystem,
         messages,
       }),
