@@ -8,10 +8,69 @@
 // same as check-waitlist-email.mjs / check-waitlist-invite.mjs. Every
 // applicant-supplied field is escaped before being interpolated into the
 // email HTML (see send-welcome.mjs's July 2026 fix for why that matters).
+//
+// COST FIX (this session): this endpoint had no rate limiting at all —
+// public, unauthenticated, and every successful call sends a real,
+// Resend-billed email. Nothing stopped a script from POSTing here directly
+// (this function doesn't even require a corresponding waitlist doc to
+// exist) thousands of times, running up Resend costs and flooding staff's
+// inbox with fabricated signups. Added the same atomic IP + sitewide daily
+// cap pattern already used in public-storm-regenerate.mjs and
+// start-transcription.mjs — a real applicant only ever submits this once.
+
+import admin from "firebase-admin";
+import { readFileSync } from "node:fs";
 
 const STAFF_EMAIL = "shari@arizonacoalition.net";
 const FROM_EMAIL  = "noreply@arizonacoalition.net";
 const FROM_NAME   = "Arizona Coalition Comms Hub";
+const RATE_LIMITS = { ip: 5, sitewide: 200 }; // submissions/day
+
+function getAdminApp() {
+  if (admin.apps.length) return admin.app();
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(readFileSync(new URL("./firebase-service-account.json", import.meta.url), "utf8"));
+  } catch {
+    throw new Error("firebase-service-account.json not found — run `npm run build` to regenerate via scripts/inject-secrets.mjs.");
+  }
+  return admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+}
+
+function getClientIp(req) {
+  return (
+    req.headers.get("x-nf-client-connection-ip") ||
+    (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() ||
+    "unknown"
+  );
+}
+
+function todayUTC() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Atomic (transaction-based) check-and-increment — same reasoning as
+// rateLimitHelper.mjs's fix: a plain read-then-write would let concurrent
+// requests all slip past the check before any of them commit.
+async function checkAndIncrementLimit(app, ip) {
+  const db = admin.firestore(app);
+  const today = todayUTC();
+  const ipRef = db.doc(`waitlistNotifyLimits/ip_${today}_${ip}`);
+  const sitewideRef = db.doc(`waitlistNotifyLimits/sitewide_${today}`);
+
+  return db.runTransaction(async (tx) => {
+    const [ipSnap, sitewideSnap] = await Promise.all([tx.get(ipRef), tx.get(sitewideRef)]);
+    const ipCount = ipSnap.exists ? (ipSnap.data().count || 0) : 0;
+    const sitewideCount = sitewideSnap.exists ? (sitewideSnap.data().count || 0) : 0;
+
+    if (ipCount >= RATE_LIMITS.ip) return { blocked: true };
+    if (sitewideCount >= RATE_LIMITS.sitewide) return { blocked: true };
+
+    tx.set(ipRef, { count: admin.firestore.FieldValue.increment(1) }, { merge: true });
+    tx.set(sitewideRef, { count: admin.firestore.FieldValue.increment(1) }, { merge: true });
+    return { blocked: false };
+  });
+}
 
 // CORS: transition period, both the new custom domain and the legacy
 // Netlify subdomain are accepted as request origins. Browsers only honor a
@@ -118,6 +177,21 @@ export default async function (req) {
     if (!fullName || !email) {
       return new Response(JSON.stringify({ success: false, error: "Missing fullName or email." }), {
         status: 400, headers: corsHeaders(req),
+      });
+    }
+
+    // Rate limit before spending anything on the actual Resend send.
+    // Blocked requests still return success: true — this mirrors the
+    // existing "never surface a backend failure to the applicant" behavior
+    // below, and there's no legitimate reason to tell a script it got
+    // throttled rather than just quietly not sending.
+    const app = getAdminApp();
+    const ip = getClientIp(req);
+    const limitResult = await checkAndIncrementLimit(app, ip);
+    if (limitResult.blocked) {
+      console.warn(`[notify-waitlist-signup] rate limit tripped for ip=${ip}`);
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200, headers: corsHeaders(req),
       });
     }
 
