@@ -343,12 +343,19 @@ export async function createPost(stormId, data) {
 // storm cards. Returns null if the post has none (native Storms posts, or
 // posts pushed before this field existed) so callers can skip rendering
 // entirely rather than showing an empty row.
+//
+// Deliberately Audience + Tone ONLY (not Mode or Voice) — this same
+// function renders on the public, unauthenticated storm page via
+// PostDisplayCard.jsx, not just the internal member view. Voice stores the
+// full persona/prompt-engineering text (e.g. "Bro Code voice: casual —
+// advice from a trusted buddy..."), which is proprietary messaging-design
+// detail, not something meant for public display. Matches the fields
+// already shown on Message Machine's saved-campaign library cards
+// (audience + modifier/tone pills only, no mode or voice text).
 export function formatGenParams(genParams) {
   if (!genParams) return null;
   const parts = [];
-  if (genParams.mode) parts.push(`Mode: ${genParams.mode}`);
   if (genParams.audience) parts.push(`Audience: ${genParams.audience}`);
-  if (genParams.voice) parts.push(`Voice: ${genParams.voice}`);
   if (genParams.tone) parts.push(`Tone: ${genParams.tone}`);
   return parts.length ? parts.join(" · ") : null;
 }
