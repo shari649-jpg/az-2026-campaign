@@ -70,34 +70,34 @@ function signupEmailHtml({ fullName, email, organization, reason, platform, hand
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>New Waitlist Signup</title></head>
-<body style="margin:0;padding:0;background:#f4f4f0;font-family:'Helvetica Neue',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f0;padding:40px 20px;">
+<body style="margin:0;padding:0;background:#E1E7F0;font-family:'Helvetica Neue',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#E1E7F0;padding:40px 20px;">
     <tr><td align="center">
       <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
         <tr>
-          <td style="background:#1D5C4A;padding:28px 40px;text-align:center;">
+          <td style="background:#4A3163;padding:28px 40px;text-align:center;">
             <div style="font-size:13px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#F5C842;margin-bottom:8px;">Arizona Coalition · Comms Hub</div>
             <h1 style="margin:0;font-size:22px;font-weight:700;color:#fff;line-height:1.2;">New Waitlist Signup</h1>
           </td>
         </tr>
         <tr>
           <td style="padding:32px 40px;">
-            <table cellpadding="0" cellspacing="0" width="100%" style="font-size:14px;color:#4A4558;">
-              <tr><td style="padding:8px 0;border-bottom:1px solid #f0f0ec;width:120px;color:#999;font-weight:700;">Name</td><td style="padding:8px 0;border-bottom:1px solid #f0f0ec;">${safeName}</td></tr>
-              <tr><td style="padding:8px 0;border-bottom:1px solid #f0f0ec;color:#999;font-weight:700;">Email</td><td style="padding:8px 0;border-bottom:1px solid #f0f0ec;">${safeEmail}</td></tr>
-              <tr><td style="padding:8px 0;border-bottom:1px solid #f0f0ec;color:#999;font-weight:700;">Organization</td><td style="padding:8px 0;border-bottom:1px solid #f0f0ec;">${safeOrg}</td></tr>
-              <tr><td style="padding:8px 0;border-bottom:1px solid #f0f0ec;color:#999;font-weight:700;">Social</td><td style="padding:8px 0;border-bottom:1px solid #f0f0ec;">${safePlatform} — ${safeHandle}</td></tr>
+            <table cellpadding="0" cellspacing="0" width="100%" style="font-size:14px;color:#362A44;">
+              <tr><td style="padding:8px 0;border-bottom:1px solid #E1E7F0;width:120px;color:#999;font-weight:700;">Name</td><td style="padding:8px 0;border-bottom:1px solid #E1E7F0;">${safeName}</td></tr>
+              <tr><td style="padding:8px 0;border-bottom:1px solid #E1E7F0;color:#999;font-weight:700;">Email</td><td style="padding:8px 0;border-bottom:1px solid #E1E7F0;">${safeEmail}</td></tr>
+              <tr><td style="padding:8px 0;border-bottom:1px solid #E1E7F0;color:#999;font-weight:700;">Organization</td><td style="padding:8px 0;border-bottom:1px solid #E1E7F0;">${safeOrg}</td></tr>
+              <tr><td style="padding:8px 0;border-bottom:1px solid #E1E7F0;color:#999;font-weight:700;">Social</td><td style="padding:8px 0;border-bottom:1px solid #E1E7F0;">${safePlatform} — ${safeHandle}</td></tr>
               <tr><td style="padding:8px 0;color:#999;font-weight:700;vertical-align:top;">Reason</td><td style="padding:8px 0;">${safeReason}</td></tr>
             </table>
             <table cellpadding="0" cellspacing="0" width="100%">
               <tr><td align="center" style="padding:28px 0 8px;">
-                <a href="https://arizonacoalition.net/admin" style="display:inline-block;background:#1D5C4A;color:#fff;text-decoration:none;font-size:15px;font-weight:700;padding:14px 32px;border-radius:8px;letter-spacing:0.04em;">Review in Admin →</a>
+                <a href="https://arizonacoalition.net/admin" style="display:inline-block;background:#4A3163;color:#fff;text-decoration:none;font-size:15px;font-weight:700;padding:14px 32px;border-radius:8px;letter-spacing:0.04em;">Review in Admin →</a>
               </td></tr>
             </table>
           </td>
         </tr>
         <tr>
-          <td style="background:#f8f8f6;padding:16px 40px;border-top:1px solid #e8e8e4;">
+          <td style="background:#E1E7F0;padding:16px 40px;border-top:1px solid #E1E7F0;">
             <p style="margin:0;font-size:12px;color:#aaa;text-align:center;">Arizona Coalition · Comms Hub 2026 · Internal use only</p>
           </td>
         </tr>
