@@ -118,6 +118,12 @@ export default function RegisterPage() {
         role:            "user",
         emailVerified:   false,
         socialAccounts,
+        // Required by firestore.rules' referencesValidInvite() check — the
+        // rule verifies this points to a real waitlist doc still in status
+        // "invited" with a matching email, which is what actually ties
+        // account creation to a real approved invite server-side, not just
+        // to this page's own client-side token check above.
+        waitlistId:      inviteData?.waitlistId || null,
         // Keep legacy fields for backward compat with AdminPage display
         primarySocial:   socialAccounts[0] || { platform: "", handle: "" },
         ...(socialAccounts[1] ? { secondarySocial: socialAccounts[1] } : {}),
