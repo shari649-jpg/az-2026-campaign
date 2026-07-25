@@ -730,15 +730,14 @@ export default function RapidResponseReader() {
   };
 
   const tabStyle = (active) => ({
-    padding: "10px 20px",
-    borderRadius: 8,
-    fontSize: 15,
+    padding: "7px 14px",
+    borderRadius: 6,
+    fontSize: 13,
     fontWeight: 700,
     cursor: "pointer",
-    border: active ? "2px solid #fff" : "1.5px solid transparent",
-    background: active ? "#fff" : "transparent",
-    color: active ? B.teal : "rgba(255,255,255,0.8)",
-    transition: "all 0.15s",
+    border: active ? `1px solid ${B.teal}` : `1px solid ${B.border}`,
+    background: active ? B.teal : "transparent",
+    color: active ? "#fff" : B.textMid,
     fontFamily: "inherit",
   });
 
@@ -746,38 +745,24 @@ export default function RapidResponseReader() {
     <div style={{ minHeight: "100vh", background: B.pageBg, color: B.text, fontFamily: "'Atkinson Hyperlegible', Georgia, serif" }}>
       <style>{globalCSS}</style>
 
-      {/* HEADER — matches Media/Shared Library's bold teal panel (July 2026
-          consistency pass); this used to be its own bespoke white header,
-          the one tool page that never went through ToolPage.jsx at all. */}
-      <header style={{ background: B.teal, borderBottom: "4px solid var(--gold)", position: "sticky", top: 0, zIndex: 40 }}>
-        <div style={{ maxWidth: 860, margin: "0 auto", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{ width: 44, height: 44, background: "var(--gold)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📡</div>
-            <div>
-              <h1 style={{ fontSize: 20, fontWeight: 700, color: "#fff", lineHeight: 1.1, fontFamily: "'DM Serif Display', Georgia, serif" }}>Rapid Response</h1>
-              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>Article Reader & Analyzer</p>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-            {article && (
-              <button onClick={reset} style={{ ...S.btnSmall, marginRight: 8, color: "#fff", borderColor: "rgba(255,255,255,0.5)" }}>+ New Article</button>
-            )}
-            <button onClick={() => setView("search")} style={tabStyle(view === "search")}>
-              🔎 Search
-            </button>
-            <button onClick={() => setView("library")} style={tabStyle(view === "library")}>
-              Library ({library.length})
-            </button>
-          </div>
-        </div>
-      </header>
-
       {/* AI DISCLAIMER */}
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "16px 20px 0" }}>
         <div style={{ background: "rgba(29,92,74,0.08)", border: `2px solid ${B.teal}`, borderRadius: 8, padding: "14px 20px", fontSize: 17, fontWeight: 700, color: B.teal, display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 20 }}>⚠️</span> AI-generated content — always verify facts and claims before publishing.
         </div>
+      </div>
+
+      {/* Secondary action row — Search/New Article moved here now that the
+          header is the shared ToolPage banner (no room for interactive
+          controls there). Matches the pattern Rebuttal already uses for its
+          own Library/New Campaign row right below the same disclaimer. */}
+      <div style={{ maxWidth: 860, margin: "0 auto", padding: "12px 20px 0", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
+        {article && (
+          <button onClick={reset} style={S.btnSmall}>+ New Article</button>
+        )}
+        <button onClick={() => setView("search")} style={tabStyle(view === "search")}>
+          🔎 Search
+        </button>
       </div>
 
       {/* TOAST */}
