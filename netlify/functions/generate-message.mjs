@@ -23,6 +23,17 @@ import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
 const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-sonnet-4-5";
+// COST FIX (this session): max_tokens was previously entirely client-
+// controlled with no upper bound — only a default if omitted. Billing is
+// by tokens actually generated, not by max_tokens reserved, so this isn't
+// a guaranteed-cost exploit, but it does remove any ceiling on how
+// expensive a single call can be made to run, independent of the 50/100/
+// 200-per-day call-count limit. This app's own generous default here is
+// 1000; capping well above that (not tightening toward it) preserves the
+// existing "generous ceiling avoids truncation bugs" design while still
+// closing the fact that a client could otherwise request an arbitrarily
+// large one.
+const MAX_TOKENS_CEILING = 8000;
 
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
@@ -129,7 +140,7 @@ export default async function (req) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: max_tokens || 1000, messages, system: effectiveSystem }),
+      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: Math.min(max_tokens || 1000, MAX_TOKENS_CEILING), messages, system: effectiveSystem }),
     });
     const tClaudeCall = Date.now();
     console.log(`[generate-message] timing: claude_call=${tClaudeCall - tRateLimit}ms status=${response.status}`);
