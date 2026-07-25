@@ -49,7 +49,7 @@ function getAdminApp() {
 async function requireSignedIn(app, idToken) {
   if (!idToken) throw new Error("unauthenticated");
   const decoded = await admin.auth(app).verifyIdToken(idToken);
-  return decoded.uid;
+  return { uid: decoded.uid, email: decoded.email };
 }
 
 // Minimal HTML-escaping for the one user-supplied value (fullName) that
@@ -192,26 +192,37 @@ export default async function (req) {
   const headerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
   try {
-    const { email, fullName, idToken: bodyToken } = await req.json();
+    const { fullName, idToken: bodyToken } = await req.json();
     const idToken = headerToken || bodyToken;
 
     // ── Auth ──────────────────────────────────────────────────────────────
+    // The send target is bound to the verified token's own email claim, not
+    // to a client-submitted `email` field. Previously this function trusted
+    // whatever `email` the request body contained as the recipient, checking
+    // only that *some* valid signed-in user made the call — any authenticated
+    // Member could have POSTed an arbitrary recipient address and had this
+    // function send to it, unlimited, with no rate limit. Since this is
+    // meant to be a self-service "email myself once, right after verifying"
+    // trigger (see AuthContext.jsx), binding to decoded.email closes that
+    // gap without changing the intended behavior at all.
+    let verifiedEmail;
     try {
-      await requireSignedIn(app, idToken);
+      const decoded = await requireSignedIn(app, idToken);
+      verifiedEmail = decoded.email;
     } catch {
       return new Response(JSON.stringify({ success: false, error: "You must be signed in to use this tool." }), {
         status: 401, headers: corsHeaders(req),
       });
     }
 
-    if (!email || !fullName) {
+    if (!verifiedEmail || !fullName) {
       return new Response(JSON.stringify({ error: "Missing email or fullName." }), {
         status: 400, headers: corsHeaders(req),
       });
     }
 
     await sendEmail({
-      to:      email,
+      to:      verifiedEmail,
       subject: "Welcome to the Arizona Coalition Comms Hub 🌵",
       html:    welcomeEmailHtml({ fullName }),
     });
