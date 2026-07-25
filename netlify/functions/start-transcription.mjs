@@ -16,12 +16,17 @@
 // Rate limit: NOT wired into checkAndIncrementRateLimit — that counter
 //             tracks Claude API calls specifically (a token-cost meter),
 //             and this hits a separate service with its own per-minute
-//             cost model. Left unmetered for now; a manager repeatedly
-//             uploading large files has no daily cap yet. Flagged as a
-//             known gap, not an oversight — worth a real decision (a
-//             separate counter? a per-file duration cap?) before this
-//             sees heavy use, not silently bolted onto the Claude counter
-//             where it would misrepresent what's actually being spent.
+//             cost model, so it gets its own counter below
+//             (checkAndIncrementTranscriptionLimit) rather than muddying
+//             what the Claude counter represents. FIXED this session —
+//             this was flagged as a known gap across several earlier
+//             handoffs (no daily cap on transcription usage) and never
+//             actually built until now. Per-user AND sitewide caps, same
+//             two-tier shape as public-storm-regenerate.mjs's breakers,
+//             built as a transaction from the start rather than a
+//             read-then-write (see that file's own fix this session for
+//             why a plain read+write here would be a real race/cost risk
+//             under concurrent requests).
 //
 // audioUrl validation (new — added alongside Sandbox's "paste a link"
 // input): this function used to only ever receive a Firebase Storage URL
@@ -110,6 +115,40 @@ async function assertPublicHttpsMediaUrl(rawUrl) {
   }
 }
 
+const TRANSCRIPTION_LIMITS = { perUser: 20, sitewide: 100 }; // submissions/day — not duration-based, but bounds worst case to a known multiple of the existing 500MB per-file cap rather than leaving it fully open
+
+function todayUTC() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Atomic (transaction-based) check-and-increment, same reasoning as the
+// fix applied to rateLimitHelper.mjs and public-storm-regenerate.mjs this
+// session — built this way from the start here since a plain read+write
+// would carry the identical concurrent-request race.
+async function checkAndIncrementTranscriptionLimit(app, uid) {
+  const db = admin.firestore(app);
+  const today = todayUTC();
+  const userRef = db.doc(`transcriptionLimits/user_${today}_${uid}`);
+  const sitewideRef = db.doc(`transcriptionLimits/sitewide_${today}`);
+
+  return db.runTransaction(async (tx) => {
+    const [userSnap, sitewideSnap] = await Promise.all([tx.get(userRef), tx.get(sitewideRef)]);
+    const userCount = userSnap.exists ? (userSnap.data().count || 0) : 0;
+    const sitewideCount = sitewideSnap.exists ? (sitewideSnap.data().count || 0) : 0;
+
+    if (userCount >= TRANSCRIPTION_LIMITS.perUser) {
+      return { blocked: true, message: `You've reached today's limit of ${TRANSCRIPTION_LIMITS.perUser} transcriptions. Resets at midnight UTC.` };
+    }
+    if (sitewideCount >= TRANSCRIPTION_LIMITS.sitewide) {
+      return { blocked: true, message: `The site-wide daily transcription limit (${TRANSCRIPTION_LIMITS.sitewide}) has been reached. Resets at midnight UTC. Contact an administrator if this needs to be raised.` };
+    }
+
+    tx.set(userRef, { count: admin.firestore.FieldValue.increment(1) }, { merge: true });
+    tx.set(sitewideRef, { count: admin.firestore.FieldValue.increment(1) }, { merge: true });
+    return { blocked: false };
+  });
+}
+
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
   "https://az-coalition-2026-election.netlify.app",
@@ -164,14 +203,20 @@ export default async function (req) {
     const body = await req.json();
     const idToken = headerToken || body.idToken;
 
+    let uid;
     try {
-      await requireManagerOrAdmin(app, idToken);
+      uid = await requireManagerOrAdmin(app, idToken);
     } catch (err) {
       const status = err.message === "forbidden" ? 403 : 401;
       const msg = err.message === "forbidden"
         ? "Video/audio transcription is limited to Managers and Administrators."
         : "You must be signed in to use this tool.";
       return new Response(JSON.stringify({ error: msg }), { status, headers: corsHeaders(req) });
+    }
+
+    const limitResult = await checkAndIncrementTranscriptionLimit(app, uid);
+    if (limitResult.blocked) {
+      return new Response(JSON.stringify({ error: limitResult.message }), { status: 429, headers: corsHeaders(req) });
     }
 
     const { audioUrl } = body;
