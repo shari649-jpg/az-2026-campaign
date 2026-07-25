@@ -48,7 +48,6 @@ export function AuthProvider({ children }) {
                   "Authorization": `Bearer ${idToken}`,
                 },
                 body: JSON.stringify({
-                  email: firebaseUser.email,
                   fullName: profileData.fullName || firebaseUser.displayName || "",
                 }),
               });
