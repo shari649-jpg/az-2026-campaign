@@ -47,70 +47,86 @@ function todayUTC() {
  *   result.blockedPayload - ready-made 429 response body if blocked
  *   result.role           - the user's role ("user" | "manager" | "administrator"), for callers that need it without a second Firestore read
  */
+// SECURITY/COST FIX (this session): previously this did a plain read
+// (ref.get()) followed by a separate write (ref.update()), with no
+// atomicity between them. Multiple concurrent requests from the same uid —
+// trivially producible by opening several tabs, or by anyone scripting
+// parallel calls — could all read the SAME storedCalls value before any of
+// their updates landed, so all of them would pass the "storedCalls >=
+// limit" check simultaneously and each proceed to a real, billed Claude
+// call. That's a direct cost-overrun vector, not just a theoretical race:
+// the effective daily limit for a burst of N concurrent requests was N
+// calls higher than the stated limit, not "at most the limit." Wrapping
+// the read+check+write in a single db.runTransaction() makes Firestore
+// serialize concurrent attempts against the same document — each one
+// re-reads the latest committed count, so the limit is now actually the
+// limit regardless of how many requests arrive at once.
 export async function checkAndIncrementRateLimit(app, uid) {
   const db     = admin.firestore(app);
   const ref    = db.doc(`users/${uid}`);
   const today  = todayUTC();
 
-  // Read current state
-  const snap = await ref.get();
-  const data = snap.exists ? snap.data() : {};
+  return db.runTransaction(async (tx) => {
+    // Read current state
+    const snap = await tx.get(ref);
+    const data = snap.exists ? snap.data() : {};
 
-  const role        = data.role || "user";
-  const baseLimit   = LIMITS[role] ?? LIMITS.user;
-  const storedDate  = data.dailyCallsDate || "";
-  const storedCalls = storedDate === today ? (data.dailyCalls || 0) : 0;
+    const role        = data.role || "user";
+    const baseLimit   = LIMITS[role] ?? LIMITS.user;
+    const storedDate  = data.dailyCallsDate || "";
+    const storedCalls = storedDate === today ? (data.dailyCalls || 0) : 0;
 
-  // Same-day override only counts if it was granted today; otherwise it's
-  // stale from a previous day and gets wiped out in the update below.
-  const hasFreshOverride = data.dailyLimitOverrideDate === today;
-  const override = hasFreshOverride ? (data.dailyLimitOverride || 0) : 0;
-  const limit = baseLimit + override;
-  const staleOverrideFields = (!hasFreshOverride && (data.dailyLimitOverride || data.dailyLimitOverrideDate))
-    ? { dailyLimitOverride: 0, dailyLimitOverrideDate: "" }
-    : {};
+    // Same-day override only counts if it was granted today; otherwise it's
+    // stale from a previous day and gets wiped out in the update below.
+    const hasFreshOverride = data.dailyLimitOverrideDate === today;
+    const override = hasFreshOverride ? (data.dailyLimitOverride || 0) : 0;
+    const limit = baseLimit + override;
+    const staleOverrideFields = (!hasFreshOverride && (data.dailyLimitOverride || data.dailyLimitOverrideDate))
+      ? { dailyLimitOverride: 0, dailyLimitOverrideDate: "" }
+      : {};
 
-  // Check BEFORE incrementing — block if already at or over limit
-  if (storedCalls >= limit) {
-    if (Object.keys(staleOverrideFields).length) await ref.update(staleOverrideFields).catch(() => {});
-    return {
-      blocked: true,
-      used:    storedCalls,
-      limit,
-      remaining: 0,
-      warning: false,
-      role,
-      blockedPayload: {
-        error:     "rate_limit_exceeded",
-        used:      storedCalls,
+    // Check BEFORE incrementing — block if already at or over limit
+    if (storedCalls >= limit) {
+      if (Object.keys(staleOverrideFields).length) tx.update(ref, staleOverrideFields);
+      return {
+        blocked: true,
+        used:    storedCalls,
         limit,
         remaining: 0,
-        message:   `You've reached your daily limit of ${limit} AI calls. Your limit resets at midnight UTC. Contact an administrator if you need more access today.`,
-      },
+        warning: false,
+        role,
+        blockedPayload: {
+          error:     "rate_limit_exceeded",
+          used:      storedCalls,
+          limit,
+          remaining: 0,
+          message:   `You've reached your daily limit of ${limit} AI calls. Your limit resets at midnight UTC. Contact an administrator if you need more access today.`,
+        },
+      };
+    }
+
+    // Increment
+    const newCount = storedCalls + 1;
+    const updateData = {
+      ...staleOverrideFields,
+      ...(storedDate === today
+        ? { dailyCalls: admin.firestore.FieldValue.increment(1) }
+        : { dailyCalls: 1, dailyCallsDate: today }),
     };
-  }
 
-  // Increment
-  const newCount = storedCalls + 1;
-  const updateData = {
-    ...staleOverrideFields,
-    ...(storedDate === today
-      ? { dailyCalls: admin.firestore.FieldValue.increment(1) }
-      : { dailyCalls: 1, dailyCallsDate: today }),
-  };
+    tx.update(ref, updateData);
 
-  await ref.update(updateData);
+    const remaining = limit - newCount;
+    const warning   = newCount >= Math.floor(limit * WARNING_THRESHOLD);
 
-  const remaining = limit - newCount;
-  const warning   = newCount >= Math.floor(limit * WARNING_THRESHOLD);
-
-  return {
-    blocked:  false,
-    used:     newCount,
-    limit,
-    remaining,
-    warning,
-    role,
-    blockedPayload: null,
-  };
+    return {
+      blocked:  false,
+      used:     newCount,
+      limit,
+      remaining,
+      warning,
+      role,
+      blockedPayload: null,
+    };
+  });
 }
