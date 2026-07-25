@@ -88,6 +88,9 @@ export default function LoginPage() {
         organization: inviteData.organization || "",
         createdAt: serverTimestamp(),
         googleSignIn: true,
+        // Required by firestore.rules' referencesValidInvite() check — see
+        // RegisterPage.jsx for the matching email/password-flow fix.
+        waitlistId: inviteData.waitlistId || null,
       });
 
       // Mark the waitlist entry as registered so it isn't reused.
