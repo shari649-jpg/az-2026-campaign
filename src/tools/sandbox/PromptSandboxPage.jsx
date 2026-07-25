@@ -285,19 +285,8 @@ function getMediaDuration(file) {
   });
 }
 
-function isPlausibleHttpsMediaUrl(str) {
-  try {
-    const u = new URL(str);
-    return u.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-// Shared by both the file-upload path and the paste-a-link path: submits
-// the job, polls until done, and prepends the result into Source Material.
-// The only difference between the two callers is what produced audioUrl —
-// a Firebase Storage download URL after upload, or a URL pasted directly.
+// Used by the file-upload path only, submits the job and polls until done,
+// then prepends the result into Source Material.
 async function runTranscription(audioUrl, sourceLabel, setTranscribeStatus, setSourceMaterial) {
   setTranscribeStatus("Starting transcription…");
   const transcriptId = await requestTranscriptionJob(audioUrl);
@@ -339,7 +328,6 @@ export default function PromptSandboxPage() {
   const [transcribing, setTranscribing]     = useState(false);
   const [transcribeStatus, setTranscribeStatus] = useState(""); // human-readable status shown while uploading/transcribing
   const [transcribeError, setTranscribeError]   = useState("");
-  const [transcriptUrl, setTranscriptUrl]   = useState(""); // paste-a-link input, separate from the file-upload path
   const [pendingFile, setPendingFile]       = useState(null); // file held back pending the long-duration confirmation below
   const [pendingDurationMinutes, setPendingDurationMinutes] = useState(null);
 
@@ -501,32 +489,6 @@ export default function PromptSandboxPage() {
   function cancelPendingFile() {
     setPendingFile(null);
     setPendingDurationMinutes(null);
-  }
-
-  // Paste-a-link path (new). No duration check available here — a HEAD
-  // request only exposes content-type/length, never duration — so this
-  // skips straight to submission after a basic https:// sanity check;
-  // real validation (protocol, private-address blocking, content-type)
-  // happens server-side in start-transcription.mjs before AssemblyAI ever
-  // sees the URL.
-  async function handleTranscribeUrl() {
-    const url = transcriptUrl.trim();
-    if (!url) return;
-    if (!isPlausibleHttpsMediaUrl(url)) {
-      setTranscribeError("Enter a valid https:// link that points directly to a video or audio file.");
-      return;
-    }
-
-    setTranscribing(true);
-    setTranscribeError("");
-    setTranscribeStatus("");
-    try {
-      await runTranscription(url, "pasted link", setTranscribeStatus, setSourceMaterial);
-      setTranscriptUrl("");
-    } catch (err) {
-      setTranscribeError(err.message || "Something went wrong during transcription. Double-check the link points directly to a video/audio file, not a webpage.");
-    }
-    setTranscribing(false);
   }
 
   async function handleGenerate() {
@@ -775,54 +737,20 @@ export default function PromptSandboxPage() {
             </div>
           </div>
         ) : (
-          <>
-            <label style={{
-              display: "inline-block", padding: "10px 18px", borderRadius: 8,
-              background: transcribing ? "#aaa" : PURPLE, color: "#fff", fontWeight: 700, fontSize: 14,
-              cursor: transcribing ? "not-allowed" : "pointer",
-            }}>
-              {transcribing ? "Working…" : "Choose video/audio file"}
-              <input
-                type="file"
-                accept="video/*,audio/*"
-                onChange={handleFileSelected}
-                disabled={transcribing}
-                style={{ display: "none" }}
-              />
-            </label>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "14px 0 4px" }}>
-              <div style={{ flex: 1, height: 1, background: BORDER }} />
-              <span style={{ fontSize: 12, color: "#8A7F92", fontWeight: 700 }}>OR</span>
-              <div style={{ flex: 1, height: 1, background: BORDER }} />
-            </div>
-            <label style={{ fontSize: 13, color: CHARCOAL, marginBottom: 6, display: "block" }}>
-              Paste a direct link to a video/audio file
-            </label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <input
-                value={transcriptUrl}
-                onChange={e => setTranscriptUrl(e.target.value)}
-                placeholder="https://example.com/recording.mp4"
-                disabled={transcribing}
-                style={{ ...inputStyle, flex: "1 1 260px" }}
-              />
-              <button
-                onClick={handleTranscribeUrl}
-                disabled={transcribing || !transcriptUrl.trim()}
-                style={{
-                  background: transcribing || !transcriptUrl.trim() ? "#aaa" : PURPLE, color: "#fff", border: "none",
-                  borderRadius: 8, padding: "10px 18px", fontWeight: 700, fontSize: 14,
-                  cursor: transcribing || !transcriptUrl.trim() ? "not-allowed" : "pointer",
-                }}
-              >
-                Transcribe link
-              </button>
-            </div>
-            <p style={{ fontSize: 12, color: "#8A7F92", marginTop: 6 }}>
-              Must link directly to the file itself (not a webpage or a share page). Duration can't be previewed for a pasted link the way it can for an upload — very long recordings can still produce more generic drafts.
-            </p>
-          </>
+          <label style={{
+            display: "inline-block", padding: "10px 18px", borderRadius: 8,
+            background: transcribing ? "#aaa" : PURPLE, color: "#fff", fontWeight: 700, fontSize: 14,
+            cursor: transcribing ? "not-allowed" : "pointer",
+          }}>
+            {transcribing ? "Working…" : "Choose video/audio file"}
+            <input
+              type="file"
+              accept="video/*,audio/*"
+              onChange={handleFileSelected}
+              disabled={transcribing}
+              style={{ display: "none" }}
+            />
+          </label>
         )}
 
         {transcribing && transcribeStatus && (
