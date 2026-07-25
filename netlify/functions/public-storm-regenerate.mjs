@@ -118,37 +118,53 @@ async function sendBreakerAlert(db, breaker, detail) {
   }
 }
 
-// Checks all three breakers and increments all three counters together if
-// none are tripped. Returns { blocked: false } or { blocked: true, breaker }.
+// SECURITY/COST FIX (this session): previously read all three counters,
+// checked them, then wrote all three increments as separate steps — no
+// atomicity. Since this endpoint takes no authentication at all, a burst
+// of concurrent requests (trivial to script, no login required) could
+// each read the same pre-increment counts and all pass the check before
+// any increment landed, multiplying the effective 20/200/1000 daily caps
+// by however many requests arrived in that window — a direct cost-
+// overrun vector on the one function in this app designed to be public.
+// Wrapped in db.runTransaction() so Firestore serializes concurrent
+// attempts against these counters the same way the main rate limiter now
+// does. The breaker-alert email is sent AFTER the transaction resolves,
+// not inside it — a transaction body can run more than once if Firestore
+// detects contention and retries it, and an email send is not something
+// that should risk firing twice for one real trip. sendBreakerAlert's own
+// per-day dedup doc makes this safe to call once per blocked call anyway.
 async function checkAndIncrementLimits(db, ip, stormId) {
   const today = todayUTC();
   const ipRef       = db.doc(`publicRegenLimits/ip_${today}_${ip}`);
   const stormRef     = db.doc(`publicRegenLimits/storm_${today}_${stormId}`);
   const sitewideRef = db.doc(`publicRegenLimits/sitewide_${today}`);
 
-  const [ipSnap, stormSnap, sitewideSnap] = await Promise.all([ipRef.get(), stormRef.get(), sitewideRef.get()]);
-  const ipCount       = ipSnap.exists ? (ipSnap.data().count || 0) : 0;
-  const stormCount     = stormSnap.exists ? (stormSnap.data().count || 0) : 0;
-  const sitewideCount = sitewideSnap.exists ? (sitewideSnap.data().count || 0) : 0;
+  const result = await db.runTransaction(async (tx) => {
+    const [ipSnap, stormSnap, sitewideSnap] = await Promise.all([tx.get(ipRef), tx.get(stormRef), tx.get(sitewideRef)]);
+    const ipCount       = ipSnap.exists ? (ipSnap.data().count || 0) : 0;
+    const stormCount     = stormSnap.exists ? (stormSnap.data().count || 0) : 0;
+    const sitewideCount = sitewideSnap.exists ? (sitewideSnap.data().count || 0) : 0;
 
-  if (ipCount >= RATE_LIMITS.ip) {
-    await sendBreakerAlert(db, "ip", `IP ${ip} reached ${RATE_LIMITS.ip}/day.`);
-    return { blocked: true, breaker: "ip" };
-  }
-  if (stormCount >= RATE_LIMITS.storm) {
-    await sendBreakerAlert(db, "storm", `Storm ${stormId} reached ${RATE_LIMITS.storm}/day.`);
-    return { blocked: true, breaker: "storm" };
-  }
-  if (sitewideCount >= RATE_LIMITS.sitewide) {
-    await sendBreakerAlert(db, "sitewide", `Sitewide total reached ${RATE_LIMITS.sitewide}/day.`);
-    return { blocked: true, breaker: "sitewide" };
-  }
+    if (ipCount >= RATE_LIMITS.ip) {
+      return { blocked: true, breaker: "ip", detail: `IP ${ip} reached ${RATE_LIMITS.ip}/day.` };
+    }
+    if (stormCount >= RATE_LIMITS.storm) {
+      return { blocked: true, breaker: "storm", detail: `Storm ${stormId} reached ${RATE_LIMITS.storm}/day.` };
+    }
+    if (sitewideCount >= RATE_LIMITS.sitewide) {
+      return { blocked: true, breaker: "sitewide", detail: `Sitewide total reached ${RATE_LIMITS.sitewide}/day.` };
+    }
 
-  await Promise.all([
-    ipRef.set({ count: admin.firestore.FieldValue.increment(1) }, { merge: true }),
-    stormRef.set({ count: admin.firestore.FieldValue.increment(1) }, { merge: true }),
-    sitewideRef.set({ count: admin.firestore.FieldValue.increment(1) }, { merge: true }),
-  ]);
+    tx.set(ipRef, { count: admin.firestore.FieldValue.increment(1) }, { merge: true });
+    tx.set(stormRef, { count: admin.firestore.FieldValue.increment(1) }, { merge: true });
+    tx.set(sitewideRef, { count: admin.firestore.FieldValue.increment(1) }, { merge: true });
+    return { blocked: false };
+  });
+
+  if (result.blocked) {
+    await sendBreakerAlert(db, result.breaker, result.detail);
+    return { blocked: true, breaker: result.breaker };
+  }
   return { blocked: false };
 }
 
