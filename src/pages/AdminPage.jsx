@@ -51,7 +51,7 @@ function isAtDailyLimit(u) {
 }
 
 export default function AdminPage() {
-  const { isAdmin, user: currentUser } = useAuth();
+  const { isManager, user: currentUser } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab]   = useState("users"); // "users" | "waitlist"
@@ -87,8 +87,8 @@ export default function AdminPage() {
   const [pubRegenLoaded, setPubRegenLoaded] = useState(false);
   const [pubRegenSaving, setPubRegenSaving] = useState(false);
 
-  useEffect(() => { if (!isAdmin) navigate("/"); }, [isAdmin]);
-  useEffect(() => { if (isAdmin) { fetchUsers(); fetchWaitlist(); } }, [isAdmin]);
+  useEffect(() => { if (!isManager) navigate("/"); }, [isManager]);
+  useEffect(() => { if (isManager) { fetchUsers(); fetchWaitlist(); } }, [isManager]);
   useEffect(() => { if (activeTab === "settings" && !pubRegenLoaded) fetchPubRegenSetting(); }, [activeTab]);
 
   const fetchPubRegenSetting = async () => {
@@ -808,7 +808,7 @@ export default function AdminPage() {
     setCnUploading(false);
   }
 
-  if (!isAdmin) return null;
+  if (!isManager) return null;
 
   return (
     <div style={{ minHeight: "100vh", background: "#f8f8f6", fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: CHARCOAL }}>
