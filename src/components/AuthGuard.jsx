@@ -5,7 +5,7 @@ import { auth } from "../firebase";
 import { useState } from "react";
 
 export default function AuthGuard({ children }) {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const location = useLocation();
   const [resending, setResending]       = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -18,12 +18,70 @@ export default function AuthGuard({ children }) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Block access until email is verified.
-  // Grace period: accounts created before June 14 2026 (existing members) are let through.
-  // Google Sign-In users are always pre-verified by Google.
+  // Shared account-age calculation — used by both grace periods below.
   const createdAt = user.metadata?.creationTime
     ? new Date(user.metadata.creationTime)
     : new Date();
+
+  // Defense-in-depth alongside the firestore.rules fix on users/{uid}'s
+  // create rule: a signed-in Firebase Auth user with no Firestore profile
+  // doc is exactly the shape a bypass attempt (or a broken registration
+  // that failed partway through) would produce. Previously this component
+  // never checked profile existence at all — it only checked `user` and
+  // emailVerified — so a request that got this far would have reached
+  // every non-role-gated tool with zero enforcement at this layer.
+  //
+  // Grace period, same pattern as the emailVerified check below: this app
+  // has been through several account-creation eras (no login → simple
+  // login → Google sign-in → full waitlist/invite registration), and
+  // earlier eras didn't necessarily produce the same Firestore profile
+  // shape this check now expects. Rather than assume every existing
+  // account has a matching profile doc, accounts created before this fix
+  // shipped are grandfathered through entirely — this check only applies
+  // going forward, to accounts created from this date on, which is what
+  // actually matters for closing the invite-bypass gap (a newly-created
+  // rogue account necessarily has a creation time after today).
+  const profileRequiredCutoff = new Date("2026-07-25T00:00:00Z");
+  const predatesProfileRequirement = createdAt < profileRequiredCutoff;
+
+  if (!profile && !predatesProfileRequirement) {
+    return (
+      <div style={{
+        minHeight: "100vh", background: "var(--teal)",
+        display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center",
+        padding: "32px 20px", fontFamily: "var(--font-body)", textAlign: "center",
+      }}>
+        <div style={{
+          background: "#fff", borderRadius: 16, padding: "40px 36px",
+          width: "100%", maxWidth: 440, boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
+        }}>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--teal)", marginBottom: 10, marginTop: 0 }}>
+            Account setup incomplete
+          </h2>
+          <p style={{ fontSize: 15, color: "var(--charcoal)", lineHeight: 1.7, marginBottom: 24 }}>
+            We couldn't find a profile for this account. If you just registered, contact{" "}
+            <a href="mailto:info@arizonacoalition.net" style={{ color: "var(--teal)" }}>info@arizonacoalition.net</a>{" "}
+            for help.
+          </p>
+          <button
+            onClick={() => auth.signOut()}
+            style={{
+              background: "none", border: "2px solid var(--teal)", color: "var(--teal)",
+              borderRadius: 8, padding: "11px 24px", fontSize: 14, fontWeight: 700,
+              fontFamily: "var(--font-body)", cursor: "pointer", width: "100%",
+            }}
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Block access until email is verified.
+  // Grace period: accounts created before June 14 2026 (existing members) are let through.
+  // Google Sign-In users are always pre-verified by Google.
   const graceCutoff = new Date("2026-06-14T00:00:00Z");
   const isExistingUser = createdAt < graceCutoff;
 
