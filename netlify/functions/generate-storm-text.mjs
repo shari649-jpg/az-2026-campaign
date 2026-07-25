@@ -17,6 +17,13 @@ import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
+// COST FIX (this session) — see generate-message.mjs for the full
+// reasoning: max_tokens was entirely client-controlled with no upper
+// bound. Capped well above this app's own default (700) rather than
+// tightened toward it, preserving the deliberate "generous ceiling avoids
+// truncation" design while closing the unbounded-client-value gap.
+const MAX_TOKENS_CEILING = 8000;
+
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
 // in this header (no comma lists, no wildcarding with credentials), so we
@@ -124,7 +131,7 @@ export default async function (req) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: max_tokens || 700, messages, ...(effectiveSystem && { system: effectiveSystem }) }),
+      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: Math.min(max_tokens || 700, MAX_TOKENS_CEILING), messages, ...(effectiveSystem && { system: effectiveSystem }) }),
     });
 
     const data = await response.json();
