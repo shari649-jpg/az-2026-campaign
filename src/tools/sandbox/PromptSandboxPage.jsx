@@ -32,7 +32,7 @@ const GOLD        = "var(--gold)";
 const BORDER      = "var(--border)";
 const SURFACE_ALT = "var(--surface-alt)";
 
-function buildSandboxPrompt({ promptText, sourceMaterial, charMin, charMax, hashtag, platform, postCount }) {
+function buildSandboxPrompt({ promptText, sourceMaterial, charMin, charMax, hashtag, platform, postCount, genTitle }) {
   const platformDef = PLATFORMS.find(p => p.key === platform);
   const lines = [
     "You are an expert political messaging strategist working for a legitimate political campaign coalition's internal content sandbox.",
@@ -86,9 +86,13 @@ function buildSandboxPrompt({ promptText, sourceMaterial, charMin, charMax, hash
   if (charMin || charMax) reminders.push(lengthTargetHint(charMin, charMax));
   lines.push("FINAL CHECK:", ...reminders, "");
 
+  if (genTitle) {
+    lines.push(`Also write ONE short, snarky/sarcastic/witty headline-style title, 50 characters or fewer, capturing the subject of the source material/prompt above — a punchy label for this whole batch, not a summary of any single post and not a repeat of the AI-tell rule above (a witty title is meant to sound like a person being clever, not the generic "verdict" phrasing already banned for the posts themselves).`);
+  }
+
   lines.push(JSON_ESCAPING_INSTRUCTION);
   lines.push(JSON_ONLY_INSTRUCTION);
-  lines.push(`Format: {"posts": ["post text", "post text", ...]}`);
+  lines.push(`Format: {"posts": ["post text", "post text", ...]${genTitle ? `, "title": "short witty title, 50 characters or fewer"` : ""}}`);
   lines.push(contradictionFlagFormat("posts"));
 
   return lines.filter(Boolean).join("\n");
@@ -250,6 +254,74 @@ async function pollTranscriptionJob(transcriptId) {
   return data; // { status, text, error }
 }
 
+// Soft warning threshold, not a hard cap — a manager may genuinely want to
+// pull one message out of a full-length town hall recording, so this never
+// blocks the upload outright. It exists because very long source material
+// tends to make the model summarize across the whole thing rather than
+// draw on one focused excerpt, which is the actual quality problem for the
+// posts that come out the other end, not a technical limit.
+const DURATION_WARN_SECONDS = 5 * 60;
+
+// Reads a local file's duration entirely client-side, before any upload —
+// the browser can decode media metadata from the file on disk directly, no
+// network call and no AssemblyAI cost involved. Only available for
+// uploaded files; a pasted URL has no equivalent (a HEAD request gives
+// content-type/length, never duration), which is why the UI below only
+// shows a duration warning for the upload path, not the paste-a-link path.
+function getMediaDuration(file) {
+  return new Promise((resolve) => {
+    const el = document.createElement(file.type.startsWith("video/") ? "video" : "audio");
+    el.preload = "metadata";
+    const objectUrl = URL.createObjectURL(file);
+    el.onloadedmetadata = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(Number.isFinite(el.duration) ? el.duration : null);
+    };
+    el.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(null); // duration just unavailable — never block the upload over this
+    };
+    el.src = objectUrl;
+  });
+}
+
+function isPlausibleHttpsMediaUrl(str) {
+  try {
+    const u = new URL(str);
+    return u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+// Shared by both the file-upload path and the paste-a-link path: submits
+// the job, polls until done, and prepends the result into Source Material.
+// The only difference between the two callers is what produced audioUrl —
+// a Firebase Storage download URL after upload, or a URL pasted directly.
+async function runTranscription(audioUrl, sourceLabel, setTranscribeStatus, setSourceMaterial) {
+  setTranscribeStatus("Starting transcription…");
+  const transcriptId = await requestTranscriptionJob(audioUrl);
+
+  // No hard cap on polling attempts, deliberately — a long recording can
+  // genuinely take several minutes, and stopping early would just strand
+  // the person with a job still running server-side with no way to check
+  // back in from this UI.
+  let result = await pollTranscriptionJob(transcriptId);
+  while (result.status === "queued" || result.status === "processing") {
+    setTranscribeStatus(result.status === "queued" ? "Queued…" : "Transcribing…");
+    await new Promise(r => setTimeout(r, 4000));
+    result = await pollTranscriptionJob(transcriptId);
+  }
+
+  if (result.status === "error") {
+    throw new Error(result.error || "Transcription failed.");
+  }
+
+  const block = `Transcript from ${sourceLabel} (edit or trim as needed):\n\n${result.text}\n\n`;
+  setSourceMaterial(prev => block + prev);
+  setTranscribeStatus("Done — transcript added to Source Material below.");
+}
+
 
 export default function PromptSandboxPage() {
   const { user, isManager } = useAuth();
@@ -267,6 +339,15 @@ export default function PromptSandboxPage() {
   const [transcribing, setTranscribing]     = useState(false);
   const [transcribeStatus, setTranscribeStatus] = useState(""); // human-readable status shown while uploading/transcribing
   const [transcribeError, setTranscribeError]   = useState("");
+  const [transcriptUrl, setTranscriptUrl]   = useState(""); // paste-a-link input, separate from the file-upload path
+  const [pendingFile, setPendingFile]       = useState(null); // file held back pending the long-duration confirmation below
+  const [pendingDurationMinutes, setPendingDurationMinutes] = useState(null);
+
+  // Sandbox-only "snarky title" toggle (new) — bundled into the same
+  // generate call rather than a separate API request, since it's just one
+  // more field in the same JSON response.
+  const [genTitle, setGenTitle]         = useState(false);
+  const [batchTitle, setBatchTitle]     = useState("");
 
   const [presets, setPresets]           = useState([]);
   const [presetsLoading, setPresetsLoading] = useState(true);
@@ -363,9 +444,24 @@ export default function PromptSandboxPage() {
   // Video/audio-to-transcript (new). Uploads directly to Firebase Storage
   // (bypassing any function body-size limit), submits the resulting URL
   // to AssemblyAI, then polls every 4 seconds until done. On success, the
-  // transcript is prepended into the freeform prompt box — per the
-  // person's own framing, this is meant to be dumped in and built on top
-  // of, not routed through a separate "reference material" field.
+  // transcript is prepended into Source Material — per the person's own
+  // framing, this is meant to be dumped in and edited down, not treated as
+  // a black-box output.
+  async function startFileTranscription(file) {
+    setTranscribing(true);
+    setTranscribeError("");
+    setTranscribeStatus("Uploading…");
+    try {
+      const { url } = await uploadTranscriptSource(user.uid, file, (progress) => {
+        setTranscribeStatus(`Uploading… ${Math.round(progress * 100)}%`);
+      });
+      await runTranscription(url, `"${file.name}"`, setTranscribeStatus, setSourceMaterial);
+    } catch (err) {
+      setTranscribeError(err.message || "Something went wrong during transcription.");
+    }
+    setTranscribing(false);
+  }
+
   async function handleFileSelected(e) {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file later
@@ -381,42 +477,54 @@ export default function PromptSandboxPage() {
       return;
     }
 
+    setTranscribeError("");
+    setTranscribeStatus("");
+
+    // Read duration client-side, for free, before spending anything on the
+    // upload or transcription. Soft warning only — see DURATION_WARN_SECONDS.
+    const duration = await getMediaDuration(file);
+    if (duration && duration > DURATION_WARN_SECONDS) {
+      setPendingFile(file);
+      setPendingDurationMinutes(Math.round(duration / 60));
+      return;
+    }
+    startFileTranscription(file);
+  }
+
+  function confirmPendingFile() {
+    const file = pendingFile;
+    setPendingFile(null);
+    setPendingDurationMinutes(null);
+    if (file) startFileTranscription(file);
+  }
+
+  function cancelPendingFile() {
+    setPendingFile(null);
+    setPendingDurationMinutes(null);
+  }
+
+  // Paste-a-link path (new). No duration check available here — a HEAD
+  // request only exposes content-type/length, never duration — so this
+  // skips straight to submission after a basic https:// sanity check;
+  // real validation (protocol, private-address blocking, content-type)
+  // happens server-side in start-transcription.mjs before AssemblyAI ever
+  // sees the URL.
+  async function handleTranscribeUrl() {
+    const url = transcriptUrl.trim();
+    if (!url) return;
+    if (!isPlausibleHttpsMediaUrl(url)) {
+      setTranscribeError("Enter a valid https:// link that points directly to a video or audio file.");
+      return;
+    }
+
     setTranscribing(true);
     setTranscribeError("");
-    setTranscribeStatus("Uploading…");
-
+    setTranscribeStatus("");
     try {
-      const { url } = await uploadTranscriptSource(user.uid, file, (progress) => {
-        setTranscribeStatus(`Uploading… ${Math.round(progress * 100)}%`);
-      });
-
-      setTranscribeStatus("Starting transcription…");
-      const transcriptId = await requestTranscriptionJob(url);
-
-      // Poll every 4s. No hard cap on attempts here deliberately — a long
-      // rally speech or town hall recording can genuinely take several
-      // minutes, and stopping early would just strand the person with a
-      // job that's still running server-side with no way to check back in
-      // from this UI. The person can navigate away if they don't want to
-      // wait; the job itself isn't cancelled by leaving the page.
-      let result = await pollTranscriptionJob(transcriptId);
-      while (result.status === "queued" || result.status === "processing") {
-        setTranscribeStatus(result.status === "queued" ? "Queued…" : "Transcribing…");
-        await new Promise(r => setTimeout(r, 4000));
-        result = await pollTranscriptionJob(transcriptId);
-      }
-
-      if (result.status === "error") {
-        setTranscribeError(result.error || "Transcription failed.");
-        setTranscribing(false);
-        return;
-      }
-
-      const block = `Transcript from "${file.name}" (edit or trim as needed):\n\n${result.text}\n\n`;
-      setSourceMaterial(prev => block + prev);
-      setTranscribeStatus("Done — transcript added to Source Material below.");
+      await runTranscription(url, "pasted link", setTranscribeStatus, setSourceMaterial);
+      setTranscriptUrl("");
     } catch (err) {
-      setTranscribeError(err.message || "Something went wrong during transcription.");
+      setTranscribeError(err.message || "Something went wrong during transcription. Double-check the link points directly to a video/audio file, not a webpage.");
     }
     setTranscribing(false);
   }
@@ -432,9 +540,10 @@ export default function PromptSandboxPage() {
     setContradictionFlags({});
     setScopeDeclined("");
     setCallCount(null);
+    setBatchTitle("");
     let calls = 0; // total API calls this run — generate + expand retries + judge — surfaced at the end so the cost tradeoff of the judge toggle is visible, not assumed
 
-    const prompt = buildSandboxPrompt({ promptText, sourceMaterial, charMin, charMax, hashtag, platform, postCount });
+    const prompt = buildSandboxPrompt({ promptText, sourceMaterial, charMin, charMax, hashtag, platform, postCount, genTitle });
 
     try {
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
@@ -549,6 +658,7 @@ export default function PromptSandboxPage() {
         hashtag: hashtag ? hashtag.replace(/^#/, "") : null, // captured at generation time — see copyPost note below on why this can't just read the live field
       })));
       if (parsed._contradictionFlags) setContradictionFlags(parsed._contradictionFlags);
+      if (genTitle && typeof parsed.title === "string") setBatchTitle(parsed.title.trim());
       setCallCount(calls);
       const fixNotes = [];
       if (expandedCount > 0) fixNotes.push(`${expandedCount} auto-expanded (too short)`);
@@ -643,20 +753,78 @@ export default function PromptSandboxPage() {
         <p style={{ fontSize: 13, color: CHARCOAL, marginBottom: 12 }}>
           Upload a speech, interview, or town hall recording — it'll be transcribed and added to Source Material below, ready to write instructions around. Longer recordings can take several minutes.
         </p>
-        <label style={{
-          display: "inline-block", padding: "10px 18px", borderRadius: 8,
-          background: transcribing ? "#aaa" : PURPLE, color: "#fff", fontWeight: 700, fontSize: 14,
-          cursor: transcribing ? "not-allowed" : "pointer",
-        }}>
-          {transcribing ? "Working…" : "Choose video/audio file"}
-          <input
-            type="file"
-            accept="video/*,audio/*"
-            onChange={handleFileSelected}
-            disabled={transcribing}
-            style={{ display: "none" }}
-          />
-        </label>
+
+        {pendingFile ? (
+          <div style={{ background: "var(--gold-light)", border: `1px solid ${GOLD}`, borderRadius: 8, padding: "12px 16px" }}>
+            <p style={{ fontSize: 13, color: CHARCOAL, marginBottom: 10 }}>
+              <strong>"{pendingFile.name}" is about {pendingDurationMinutes} minutes long.</strong> The AI has to summarize across the whole recording, so message drafts from very long source material tend to come out more generic. Continue anyway, or choose a shorter file/clip?
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={confirmPendingFile} style={{
+                background: PURPLE, color: "#fff", border: "none", borderRadius: 8,
+                padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer",
+              }}>
+                Continue anyway
+              </button>
+              <button onClick={cancelPendingFile} style={{
+                background: "none", color: PURPLE, border: `1px solid ${PURPLE}`, borderRadius: 8,
+                padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer",
+              }}>
+                Choose a different file
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <label style={{
+              display: "inline-block", padding: "10px 18px", borderRadius: 8,
+              background: transcribing ? "#aaa" : PURPLE, color: "#fff", fontWeight: 700, fontSize: 14,
+              cursor: transcribing ? "not-allowed" : "pointer",
+            }}>
+              {transcribing ? "Working…" : "Choose video/audio file"}
+              <input
+                type="file"
+                accept="video/*,audio/*"
+                onChange={handleFileSelected}
+                disabled={transcribing}
+                style={{ display: "none" }}
+              />
+            </label>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "14px 0 4px" }}>
+              <div style={{ flex: 1, height: 1, background: BORDER }} />
+              <span style={{ fontSize: 12, color: "#8A7F92", fontWeight: 700 }}>OR</span>
+              <div style={{ flex: 1, height: 1, background: BORDER }} />
+            </div>
+            <label style={{ fontSize: 13, color: CHARCOAL, marginBottom: 6, display: "block" }}>
+              Paste a direct link to a video/audio file
+            </label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <input
+                value={transcriptUrl}
+                onChange={e => setTranscriptUrl(e.target.value)}
+                placeholder="https://example.com/recording.mp4"
+                disabled={transcribing}
+                style={{ ...inputStyle, flex: "1 1 260px" }}
+              />
+              <button
+                onClick={handleTranscribeUrl}
+                disabled={transcribing || !transcriptUrl.trim()}
+                style={{
+                  background: transcribing || !transcriptUrl.trim() ? "#aaa" : PURPLE, color: "#fff", border: "none",
+                  borderRadius: 8, padding: "10px 18px", fontWeight: 700, fontSize: 14,
+                  cursor: transcribing || !transcriptUrl.trim() ? "not-allowed" : "pointer",
+                }}
+              >
+                Transcribe link
+              </button>
+            </div>
+            <p style={{ fontSize: 12, color: "#8A7F92", marginTop: 6 }}>
+              Must link directly to the file itself (not a webpage or a share page). Duration can't be previewed for a pasted link the way it can for an upload — very long recordings can still produce more generic drafts.
+            </p>
+          </>
+        )}
+
         {transcribing && transcribeStatus && (
           <p style={{ marginTop: 10, fontSize: 13, color: TEAL, fontWeight: 700 }}>{transcribeStatus}</p>
         )}
@@ -674,6 +842,9 @@ export default function PromptSandboxPage() {
       <label style={labelStyle}>Source material <span style={{ fontWeight: 400, color: "#8A7F92" }}>(optional)</span></label>
       <p style={{ fontSize: 12.5, color: "#8A7F92", marginTop: -2, marginBottom: 8 }}>
         Facts, quotes, or details the posts should be grounded in — a transcript, an article, a press release. Not saved as part of a preset, since this is usually one-off for whatever you're working on right now.
+      </p>
+      <p style={{ fontSize: 12.5, color: PURPLE, fontWeight: 700, marginTop: -2, marginBottom: 8 }}>
+        You may edit this box to add the speaker's name and remove any parts you don't want the message generation to consider. A very long transcript risks missing the parts that are most important to your message.
       </p>
       <textarea
         value={sourceMaterial}
@@ -731,6 +902,16 @@ export default function PromptSandboxPage() {
         </span>
       </label>
 
+      <label style={{
+        display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 20,
+        padding: "12px 16px", background: SURFACE_ALT, borderRadius: 10, cursor: "pointer",
+      }}>
+        <input type="checkbox" checked={genTitle} onChange={e => setGenTitle(e.target.checked)} style={{ marginTop: 3 }} />
+        <span style={{ fontSize: 13, color: CHARCOAL, lineHeight: 1.5 }}>
+          <strong style={{ color: PURPLE }}>Also generate a snarky title for this batch</strong> — a 50-character-or-under, sarcastic/witty headline capturing the subject, bundled into the same generation call (no extra API cost). Off by default.
+        </span>
+      </label>
+
       <button
         onClick={handleGenerate}
         disabled={generating}
@@ -764,6 +945,24 @@ export default function PromptSandboxPage() {
       {scopeDeclined && (
         <div style={{ background: SURFACE_ALT, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "16px 20px", marginBottom: 20 }}>
           <strong style={{ color: PURPLE }}>Out of scope:</strong> <span style={{ color: CHARCOAL }}>{scopeDeclined}</span>
+        </div>
+      )}
+
+      {batchTitle && (
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
+          background: SURFACE_ALT, border: `1px solid ${BORDER}`, borderRadius: 10,
+          padding: "14px 18px", marginBottom: 20,
+        }}>
+          <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: PURPLE, fontStyle: "italic" }}>
+            "{batchTitle}"
+          </p>
+          <button onClick={() => navigator.clipboard.writeText(batchTitle)} style={{
+            background: "none", border: `1px solid ${PURPLE}`, color: PURPLE,
+            borderRadius: 6, padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+          }}>
+            Copy title
+          </button>
         </div>
       )}
 
