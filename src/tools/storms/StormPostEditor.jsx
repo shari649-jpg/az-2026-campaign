@@ -11,7 +11,10 @@ import {
   canLockFields,
 } from "../../lib/stormLibrary";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
-import { AI_TELL_PHRASING_BAN, detectBannedStructures } from "../../lib/messageRules";
+import {
+  AI_TELL_PHRASING_BAN, detectBannedStructures,
+  HASHTAG_BODY_BAN, JSON_ONLY_INSTRUCTION, JSON_ESCAPING_INSTRUCTION,
+} from "../../lib/messageRules";
 import { auth } from "../../firebase";
 
 const TEAL       = "var(--teal)";
@@ -118,9 +121,10 @@ ${stormContextBlock()}
 
 Write one post for ${platform?.label} (max ${limit} characters). Match the platform's natural style — punchy and headline-like for X/Twitter, visual/hook-first for Instagram and TikTok, conversational for Threads, community-toned for Facebook and Bluesky.
 
-IMPORTANT: Do NOT include any hashtags in the message body itself. Write clean prose only.
+${HASHTAG_BODY_BAN}
 
-YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
+${JSON_ESCAPING_INSTRUCTION}
+${JSON_ONLY_INSTRUCTION}
 Format: {"${platformKey}": "post text"}
 If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_contradictionFlags": {"${platformKey}": "one-sentence explanation of the contradiction"}} — omitted entirely if it doesn't apply.`;
   }
@@ -141,7 +145,8 @@ ${currentText}
 
 INSTRUCTION: Rephrase this message. Keep the same length, meaning, and platform style, but use different wording, sentence structure, and framing. Do not add new facts, names, or figures beyond what's already here.
 
-YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
+${JSON_ESCAPING_INSTRUCTION}
+${JSON_ONLY_INSTRUCTION}
 Format: {"${platformKey}": "rewritten post text"}
 If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_contradictionFlags": {"${platformKey}": "one-sentence explanation of the contradiction"}} — omitted entirely if it doesn't apply.`;
   }
