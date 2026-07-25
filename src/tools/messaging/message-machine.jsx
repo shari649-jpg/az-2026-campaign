@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
 import { saveCampaign as fbSave, loadAllCampaigns, deleteCampaign as fbDelete } from "../../lib/campaignLibrary";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
-import { AI_TELL_PHRASING_BAN, detectBannedStructures } from "../../lib/messageRules";
+import {
+  AI_TELL_PHRASING_BAN, detectBannedStructures,
+  HASHTAG_BODY_BAN, JSON_ONLY_INSTRUCTION, JSON_ESCAPING_INSTRUCTION,
+} from "../../lib/messageRules";
 import {
   loadAllStorms, loadPosts as loadStormPosts, createPost as createStormPost,
   MEDIA_TYPES as STORM_MEDIA_TYPES, STORM_STATUS, PUSH_TO_STORM_KEY,
@@ -682,10 +685,10 @@ Generate compelling social media posts for: ${plats}
 
 ${PLATFORM_VOICE_GUIDE}
 
-IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
+${HASHTAG_BODY_BAN}
 
-YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
-CRITICAL — VALID JSON ESCAPING: If the generated text includes a direct quotation, use single quotes ('...') for the quoted material rather than double quotes. If a double quote inside a string value is unavoidable, it MUST be escaped as \" — a single unescaped " inside any string value breaks JSON parsing and fails the entire generation.
+${JSON_ONLY_INSTRUCTION}
+${JSON_ESCAPING_INSTRUCTION}
 Only include these platform ids: ${platforms.join(", ")}
 Format: {"platform_id": "message text"}
 If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
@@ -716,10 +719,10 @@ Generate compelling social media posts for: ${plats}
 
 ${PLATFORM_VOICE_GUIDE}
 
-IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
+${HASHTAG_BODY_BAN}
 
-YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
-CRITICAL — VALID JSON ESCAPING: If the generated text includes a direct quotation, use single quotes ('...') for the quoted material rather than double quotes. If a double quote inside a string value is unavoidable, it MUST be escaped as \" — a single unescaped " inside any string value breaks JSON parsing and fails the entire generation.
+${JSON_ONLY_INSTRUCTION}
+${JSON_ESCAPING_INSTRUCTION}
 Only include these platform ids: ${platforms.join(", ")}
 Format: {"platform_id": "message text"}
 If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
@@ -766,10 +769,10 @@ Generate compelling social media posts for: ${plats}
 
 ${PLATFORM_VOICE_GUIDE_NATIONAL}
 
-IMPORTANT: Do NOT include any hashtags in any message. Write clean prose only.
+${HASHTAG_BODY_BAN}
 
-YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation. No refusal text. Only a JSON object.
-CRITICAL — VALID JSON ESCAPING: If the generated text includes a direct quotation, use single quotes ('...') for the quoted material rather than double quotes. If a double quote inside a string value is unavoidable, it MUST be escaped as \" — a single unescaped " inside any string value breaks JSON parsing and fails the entire generation.
+${JSON_ONLY_INSTRUCTION}
+${JSON_ESCAPING_INSTRUCTION}
 Only include these platform ids: ${platforms.join(", ")}
 Format: {"platform_id": "message text"}
 If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
@@ -835,9 +838,9 @@ ${perspLine}
 - Original issue: ${formData.issue}
 ${formData.focalPoint ? `- Focal Point (mandatory — do not let ${regenOpt === "shorten" ? "shortening" : regenOpt === "expand" ? "expanding" : "rephrasing"} drop or dilute this): ${formData.focalPoint}` : ""}
 
-IMPORTANT: Do NOT include hashtags. Write clean prose only.
-YOU MUST RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation.
-CRITICAL — VALID JSON ESCAPING: If the rewritten text includes a direct quotation, use single quotes ('...') for the quoted material rather than double quotes. If a double quote inside a string value is unavoidable, it MUST be escaped as \" — a single unescaped " inside any string value breaks JSON parsing and fails the entire generation.
+${HASHTAG_BODY_BAN}
+${JSON_ONLY_INSTRUCTION}
+${JSON_ESCAPING_INSTRUCTION}
 Format: {"${platformId}": "rewritten message text"}
 If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_contradictionFlags": {"${platformId}": "one-sentence explanation of the contradiction"}} — omitted entirely if it doesn't apply.`;
   };
