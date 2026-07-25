@@ -1355,7 +1355,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               ? "You've used all your AI calls for today. Resets at midnight UTC. Contact an admin for more access."
               : genError === "truncated"
               ? "Claude's reply was cut off before it finished — usually from a lot of source content. Try fewer platforms at once, or trim what's in Issue/Content."
-              : "Request timed out. Try again — or generate without Expand first, then expand per platform."}
+              : "Request timed out. Try again — or select fewer platforms at once, then generate the rest separately."}
           </p>
         </div>
       )}
@@ -1462,10 +1462,10 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   ⚠️ Generation failed
                 </p>
                 <p style={{ fontSize:16, color:T.textMid, lineHeight:1.6, marginBottom:10 }}>
-                  The request timed out or couldn't connect. This can happen with longer content or the <strong style={{ color:T.text }}>Expand</strong> hint on slower connections.
+                  The request timed out or couldn't connect. This can happen with longer content, or with several platforms generating at once on a slower connection.
                 </p>
                 <p style={{ fontSize:15, color:T.textMid, lineHeight:1.6 }}>
-                  <strong>Try:</strong> Hit Generate again — it usually works on a second attempt. If you're using Expand, try without it first, then use the Expand button on individual platforms once results load.
+                  <strong>Try:</strong> Hit Generate again — it usually works on a second attempt. If it keeps happening, select fewer platforms at once, then generate the rest separately.
                 </p>
               </div>
             )}
