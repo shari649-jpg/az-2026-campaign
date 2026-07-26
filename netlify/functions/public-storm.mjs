@@ -115,10 +115,27 @@ export default async function (req) {
         mediaType: p.mediaType,
         media: p.media || [],
         texts: p.texts || {},
-        // Generation params (Handoff #22) — only ever the same short
-        // Mode/Audience/Voice/Tone labels already visible to any signed-in
-        // member; never staff names, dates, or anything else new.
-        genParams: p.genParams || null,
+        // Generation params — SECURITY FIX (this session): this used to
+        // send the full genParams object (mode + voice + audience + tone).
+        // The old comment here assumed these were "only ever short labels
+        // already visible to any signed-in member," but `voice` actually
+        // stores the full descriptive persona/prompt text (e.g. "Bro Code
+        // voice: casual — advice from a trusted buddy..."), which is
+        // proprietary messaging-design detail, not a short label. Fixing
+        // this only in the UI (stormLibrary.js's formatGenParams, done
+        // earlier this session) wasn't enough — the raw API response was
+        // still sending everything to any unauthenticated visitor who
+        // opened devtools' Network tab, regardless of what the page
+        // rendered. Redacting at the source here instead, so there's
+        // nothing left to leak even if a future UI change forgets to
+        // filter it. Matches formatGenParams' fields exactly (audience +
+        // tone only).
+        genParams: p.genParams
+          ? {
+              ...(p.genParams.audience ? { audience: p.genParams.audience } : {}),
+              ...(p.genParams.tone ? { tone: p.genParams.tone } : {}),
+            }
+          : null,
       };
     });
 
