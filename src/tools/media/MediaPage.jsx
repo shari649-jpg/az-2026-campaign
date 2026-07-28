@@ -1,6 +1,7 @@
 import { useState } from "react";
 import FileBrowser from "./FileBrowser";
 import GraphicsStudio from "./GraphicsStudio";
+import CandidateCards from "./CandidateCards";
 
 const B = {
   teal:        "var(--teal)",
@@ -17,8 +18,9 @@ const B = {
 };
 
 const TABS = [
-  { id: "files",    label: "📁 File Browser",    desc: "Browse, preview and download media from Drive" },
-  { id: "graphics", label: "🎨 Graphics Studio", desc: "Create branded quote cards and carousel graphics" },
+  { id: "files",      label: "📁 File Browser",      desc: "Browse, preview and download media from Drive" },
+  { id: "graphics",   label: "🎨 Graphics Studio",    desc: "Create branded quote cards and carousel graphics" },
+  { id: "candidates", label: "🗳️ Candidate Cards",    desc: "Photo cards autofilled from candidate data" },
 ];
 
 export default function MediaPage() {
@@ -116,8 +118,9 @@ export default function MediaPage() {
 
       {/* Content */}
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
-        {activeTab === "files"    && <FileBrowser />}
-        {activeTab === "graphics" && <GraphicsStudio />}
+        {activeTab === "files"      && <FileBrowser />}
+        {activeTab === "graphics"   && <GraphicsStudio />}
+        {activeTab === "candidates" && <CandidateCards />}
       </div>
     </div>
   );
