@@ -1,0 +1,97 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function getRole() {
+      return isSignedIn()
+        ? firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role
+        : null;
+    }
+    function isStaff() {
+      return getRole() == "administrator" || getRole() == "manager";
+    }
+    function isStormOwner(stormId) {
+  return firestore.get(/databases/(default)/documents/storms/$(stormId)).data.createdBy.uid == request.auth.uid;
+}
+    // A storm entry's media may be either a video or a static graphic
+    // (image). Members download whichever type an entry has; only
+    // Managers/Admins upload or replace it.
+    function isAllowedMediaType() {
+      return request.resource.contentType.matches('video/.*')
+        || request.resource.contentType.matches('image/.*');
+    }
+    // Storm campaign media: storms/{stormId}/{fileName}
+    match /storms/{stormId}/{postId}/{fileName} {
+      // Any signed-in coalition member can download storm media.
+      allow read: if isSignedIn();
+      // Only Managers/Admins can upload or replace media, and only
+      // video or image files under 80MB (your workflow caps video at
+      // 72MB; graphics will typically be far smaller — 80MB just gives
+      // a little headroom above the video ceiling rather than hard-
+      // failing right at the line).
+      allow write: if isSignedIn()
+        && (isStaff() || isStormOwner(stormId))
+        && request.resource.size < 80 * 1024 * 1024
+        && isAllowedMediaType();
+      allow delete: if isSignedIn() && (isStaff() || isStormOwner(stormId));
+    }
+    // ══════════════════════════════════════════════════════════════════
+    // ▼▼▼  NEW — added for Prompt Sandbox video/audio-to-transcript  ▼▼▼
+    // ══════════════════════════════════════════════════════════════════
+    // Sandbox transcript source media: sandboxTranscripts/{uid}/{fileName}
+    // Raw, unpublished video/audio a Manager/Admin uploads solely to be
+    // transcribed (see start-transcription.mjs, which reads the file via
+    // its Storage download URL). Reuses isStaff() from above rather than
+    // a separate role check, since the Prompt Sandbox itself is already
+    // Manager/Administrator-only end to end. Scoped to the uploader's own
+    // uid folder — unlike storm media, there's no "team can read anyone's
+    // upload" case here, since this is transient personal source material,
+    // not a shared campaign asset — so read is owner-only, not any
+    // signed-in member.
+    match /sandboxTranscripts/{uid}/{fileName} {
+      // request.resource only exists during a write — checking it inside
+      // a combined "read, write" rule would break every read. Split the
+      // same way the storms block above already does.
+      allow read: if isSignedIn() && request.auth.uid == uid && isStaff();
+      allow write: if isSignedIn()
+        && request.auth.uid == uid
+        && isStaff()
+        && request.resource.size < 500 * 1024 * 1024
+        && (request.resource.contentType.matches('video/.*') || request.resource.contentType.matches('audio/.*'));
+      allow delete: if isSignedIn() && request.auth.uid == uid && isStaff();
+    }
+    // ══════════════════════════════════════════════════════════════════
+    // ▲▲▲  END new sandboxTranscripts block  ▲▲▲
+    // ══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+    // ▼▼▼  NEW — added for Candidate Cards headshots  ▼▼▼
+    // ══════════════════════════════════════════════════════════════════
+    // Candidate headshots: candidate-headshots/{fileName}
+    // Uploaded via the new Admin > Candidate Headshots page and read by
+    // the Candidate Cards tool. Reuses isSignedIn()/isStaff() from above —
+    // same pattern as storm media: any signed-in coalition member can
+    // read (Candidate Cards is usable by regular Members, not just
+    // staff), but only Managers/Admins can upload, replace, or delete,
+    // matching the Admin Headshots page's own UI gate. Capped at 15MB and
+    // images only — headshots should never need to be that large; this
+    // just guards against someone accidentally uploading raw camera
+    // originals or the wrong file type.
+    match /candidate-headshots/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && isStaff()
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isSignedIn() && isStaff();
+    }
+    // ══════════════════════════════════════════════════════════════════
+    // ▲▲▲  END new candidate-headshots block  ▲▲▲
+    // ══════════════════════════════════════════════════════════════════
+    // Deny everything else in the bucket by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
