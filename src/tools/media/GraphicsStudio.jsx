@@ -86,12 +86,13 @@ function parseHighlights(text) {
 }
 
 // Draw a single card on a canvas context
-function drawCard(ctx, { text, label, template, size = CANVAS_SIZE, slideIndex = null, slideTotal = null }) {
+function drawCard(ctx, { text, label, template, size = CANVAS_SIZE, slideIndex = null, slideTotal = null, fontScale = 1, textNudge = 0 }) {
   const T = template.canvas;
   const pad = Math.round(size * 0.074);
-  const fontSize = Math.round(size * 0.068);
+  const fontSize = Math.round(size * 0.068 * fontScale);
   const lineHeight = fontSize * 1.22;
   const handleFontSize = Math.round(size * 0.028);
+  const nudgePx = Math.round(size * (textNudge / 100)); // textNudge is a -20..20 percent-of-size slider value
 
   ctx.clearRect(0, 0, size, size);
 
@@ -127,6 +128,9 @@ function drawCard(ctx, { text, label, template, size = CANVAS_SIZE, slideIndex =
 
     textStartY = chipY + chipH + Math.round(size * 0.06);
   }
+
+  // Vertical nudge — shifts the main text block only, chip stays anchored where it is
+  textStartY += nudgePx;
 
   // Main text — parse highlights, word-wrap manually
   ctx.font = `900 ${fontSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
@@ -192,7 +196,7 @@ function drawCard(ctx, { text, label, template, size = CANVAS_SIZE, slideIndex =
 }
 
 // Single canvas preview card
-function CanvasPreview({ text, label, template, size = 280, slideIndex = null, slideTotal = null }) {
+function CanvasPreview({ text, label, template, size = 280, slideIndex = null, slideTotal = null, fontScale = 1, textNudge = 0 }) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -201,9 +205,9 @@ function CanvasPreview({ text, label, template, size = 280, slideIndex = null, s
     const ctx = canvas.getContext("2d");
     // Load font then draw
     document.fonts.ready.then(() => {
-      drawCard(ctx, { text, label, template, size: canvas.width, slideIndex, slideTotal });
+      drawCard(ctx, { text, label, template, size: canvas.width, slideIndex, slideTotal, fontScale, textNudge });
     });
-  }, [text, label, template, slideIndex, slideTotal]);
+  }, [text, label, template, slideIndex, slideTotal, fontScale, textNudge]);
 
   return (
     <canvas
@@ -223,6 +227,8 @@ export default function GraphicsStudio() {
   const [singleText, setSingleText]   = useState("");
   const [slides, setSlides]           = useState(["", "", "", ""]);
   const [downloading, setDownloading] = useState(false);
+  const [fontScale, setFontScale] = useState(1);
+  const [textNudge, setTextNudge] = useState(0);
   const [downloaded, setDownloaded]   = useState(null);
 
   const template = TEMPLATES.find(t => t.id === templateId);
@@ -233,14 +239,14 @@ export default function GraphicsStudio() {
   };
 
   // Download a single canvas as PNG
-  const downloadCanvas = useCallback((text, label, tmpl, filename, slideIndex = null, slideTotal = null) => {
+  const downloadCanvas = useCallback((text, label, tmpl, filename, slideIndex = null, slideTotal = null, fs = 1, tn = 0) => {
     return new Promise(resolve => {
       const canvas = document.createElement("canvas");
       canvas.width = CANVAS_SIZE;
       canvas.height = CANVAS_SIZE;
       const ctx = canvas.getContext("2d");
       document.fonts.ready.then(() => {
-        drawCard(ctx, { text, label, template: tmpl, size: CANVAS_SIZE, slideIndex, slideTotal });
+        drawCard(ctx, { text, label, template: tmpl, size: CANVAS_SIZE, slideIndex, slideTotal, fontScale: fs, textNudge: tn });
         canvas.toBlob(blob => {
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
@@ -257,7 +263,7 @@ export default function GraphicsStudio() {
   const downloadSingle = async () => {
     if (!singleText.trim()) return;
     setDownloading(true);
-    await downloadCanvas(singleText, activeLabel, template, `az-coalition-card.png`);
+    await downloadCanvas(singleText, activeLabel, template, `az-coalition-card.png`, null, null, fontScale, textNudge);
     setDownloading(false);
     setDownloaded("single");
     setTimeout(() => setDownloaded(null), 3000);
@@ -270,7 +276,7 @@ export default function GraphicsStudio() {
     const total = filledIndices.length;
     for (let n = 0; n < filledIndices.length; n++) {
       const i = filledIndices[n];
-      await downloadCanvas(slides[i], activeLabel, template, `az-coalition-slide-${n + 1}.png`, n + 1, total);
+      await downloadCanvas(slides[i], activeLabel, template, `az-coalition-slide-${n + 1}.png`, n + 1, total, fontScale, textNudge);
       await new Promise(r => setTimeout(r, 200)); // small delay between downloads
     }
     setDownloading(false);
@@ -473,12 +479,51 @@ export default function GraphicsStudio() {
         {/* ── Right: Live Preview ── */}
         <div style={{ position: "sticky", top: 90 }}>
           <label style={{ ...labelStyle, marginBottom: 14 }}>Live Preview</label>
+
+          {/* Type & placement controls */}
+          <div style={{ background: B.surfaceAlt, border: `2px solid ${B.border}`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, color: B.textMid, marginBottom: 4 }}>
+                <span>Text size</span>
+                <span>{Math.round(fontScale * 100)}%</span>
+              </div>
+              <input
+                type="range" min={0.6} max={1.4} step={0.02}
+                value={fontScale}
+                onChange={e => setFontScale(Number(e.target.value))}
+                style={{ width: "100%" }}
+              />
+            </div>
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, color: B.textMid, marginBottom: 4 }}>
+                <span>Vertical nudge</span>
+                <span>{textNudge > 0 ? "+" : ""}{textNudge}%</span>
+              </div>
+              <input
+                type="range" min={-20} max={20} step={1}
+                value={textNudge}
+                onChange={e => setTextNudge(Number(e.target.value))}
+                style={{ width: "100%" }}
+              />
+            </div>
+            {(fontScale !== 1 || textNudge !== 0) && (
+              <button
+                onClick={() => { setFontScale(1); setTextNudge(0); }}
+                style={{ marginTop: 10, background: "none", border: "none", color: B.teal, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0, fontFamily: "inherit" }}
+              >
+                Reset
+              </button>
+            )}
+          </div>
+
           {mode === "single" ? (
             <CanvasPreview
               text={singleText || "Your text will appear here.\n\nWrap *words* in asterisks to highlight them."}
               label={activeLabel}
               template={template}
               size={Math.min(380, 500)}
+              fontScale={fontScale}
+              textNudge={textNudge}
             />
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -499,6 +544,8 @@ export default function GraphicsStudio() {
                         size={170}
                         slideIndex={numberInSet > 0 ? numberInSet : i + 1}
                         slideTotal={total > 0 ? total : slides.length}
+                        fontScale={fontScale}
+                        textNudge={textNudge}
                       />
                     </div>
                   );
