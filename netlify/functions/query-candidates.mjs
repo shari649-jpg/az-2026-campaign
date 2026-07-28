@@ -4,6 +4,8 @@
 // A: Name  B: Office  C: Party  D: District  E: Level  F: Incumbent Status
 // G: Background  H: Record & Accomplishments  I: Strengths
 // J: Vulnerabilities  K: Key Quotes  L: Notes  M: Policy Platform
+// N: Photo Filename (matches a file in the candidate-headshots/ Firebase
+//    Storage folder, e.g. "connolly-janeen.jpg" — added for Candidate Cards)
 //
 // Tab 2 — Race_Demographics (one row per race/district):
 // A: Race Type  B: District ID  C: Counties  D: Location Note  E: Registration Data
@@ -67,7 +69,7 @@ async function fetchAllRows(auth) {
   const sheets = google.sheets({ version: "v4", auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "A2:M",
+    range: "A2:N",
   });
   return response.data.values || [];
 }
@@ -147,6 +149,7 @@ function parseRows(rows) {
       const keyQuotes       = (row[10] || "").trim();
       const notes           = (row[11] || "").trim();
       const policyPlatform  = (row[12] || "").trim();
+      const photoFilename   = (row[13] || "").trim();
 
       const facts = [];
       if (background)      facts.push({ type: "background",     category: "",   text: background });
@@ -165,6 +168,7 @@ function parseRows(rows) {
         level,
         incumbent_status: incumbentStatus,
         policy_platform:  policyPlatform,
+        photo_filename:   photoFilename,
         facts,
       };
     });
