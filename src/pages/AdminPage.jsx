@@ -4,6 +4,7 @@ import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, getDoc,
 import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import AdminHeadshots from "./AdminHeadshots";
 
 const GOLD       = "var(--gold)";
 const TEAL       = "var(--teal)";
@@ -857,6 +858,7 @@ export default function AdminPage() {
             { id: "users",    label: `Registered Users (${counts.total})` },
             { id: "waitlist", label: `Waitlist (${waitlist.length - counts.registered})${counts.pending > 0 ? ` · ${counts.pending} pending` : ""}` },
           { id: "community-notes", label: "Community Notes Upload" },
+          { id: "headshots", label: "Candidate Headshots" },
           { id: "settings", label: "Settings" },
           ].map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSearch(""); }}
@@ -886,13 +888,18 @@ export default function AdminPage() {
         </div>
 
         {/* Search */}
-        <input
-          type="search"
-          placeholder={activeTab === "users" ? "Search by name, email, or role…" : "Search by name, email, or organization…"}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ width: "100%", boxSizing: "border-box", padding: "13px 18px", fontSize: 16, border: "2px solid #ccc", borderRadius: 10, marginBottom: 24, fontFamily: "inherit", color: CHARCOAL, background: BG }}
-        />
+        {activeTab !== "headshots" && (
+          <input
+            type="search"
+            placeholder={activeTab === "users" ? "Search by name, email, or role…" : "Search by name, email, or organization…"}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", padding: "13px 18px", fontSize: 16, border: "2px solid #ccc", borderRadius: 10, marginBottom: 24, fontFamily: "inherit", color: CHARCOAL, background: BG }}
+          />
+        )}
+
+        {/* ── HEADSHOTS TAB ── */}
+        {activeTab === "headshots" && <AdminHeadshots />}
 
         {/* ── USERS TAB ── */}
         {activeTab === "users" && (
