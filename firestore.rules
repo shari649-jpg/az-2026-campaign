@@ -31,6 +31,17 @@ service cloud.firestore {
       let protectedFields = ['role', 'dailyCalls', 'dailyCallsDate', 'dailyLimitOverride', 'dailyLimitOverrideDate'];
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(protectedFields);
     }
+    // Requires the create to reference a real waitlist doc, in status
+    // "invited", whose email matches the account being created. Added this
+    // session — this is the actual security boundary for "only approved
+    // users get in." See the long comment on users/{uid}'s create rule
+    // below for why this was necessary and what it closes.
+    function referencesValidInvite() {
+      let wl = get(/databases/$(database)/documents/waitlist/$(request.resource.data.waitlistId));
+      return request.resource.data.waitlistId is string
+        && wl.data.status == "invited"
+        && wl.data.email == request.resource.data.email;
+    }
     // ── users/{uid} ──────────────────────────────────────────────────────
     // Each person can read/create their own profile (registration, Google
     // sign-in first-time doc creation, AuthContext's own-profile read).
@@ -41,8 +52,28 @@ service cloud.firestore {
     match /users/{uid} {
       allow get:    if isSignedIn() && (request.auth.uid == uid || isAdmin());
       allow list:   if isAdmin();
+      // SECURITY FIX: previously this only required
+      // `request.auth.uid == uid && role == "user"` — i.e. ANY successfully
+      // authenticated Firebase user could write themselves a legitimate-
+      // looking profile doc, regardless of whether they'd ever been
+      // through the waitlist/invite flow at all. RegisterPage.jsx's
+      // invite-token check (validate-token.mjs) runs entirely client-side
+      // and only gates whether the React form renders — nothing stopped
+      // someone from calling createUserWithEmailAndPassword() and this
+      // create directly (browser console, or any Firebase client SDK),
+      // since Firebase email/password sign-up itself has no invite
+      // restriction. That meant unlimited free accounts, each getting a
+      // real 50-call/day Claude budget — a "who gets in" gap AND a direct
+      // cost-overrun vector. Now the create must reference a real,
+      // still-"invited" waitlist doc with a matching email — something
+      // only obtainable by actually being sent a real invite
+      // (send-invite.mjs, Administrator-only, always assigns a
+      // waitlistId — see that function). RegisterPage.jsx and LoginPage.jsx's
+      // Google sign-in flow now both write `waitlistId` onto the profile
+      // doc for exactly this reason.
       allow create: if isSignedIn() && request.auth.uid == uid
-                    && request.resource.data.role == "user"; // can't self-assign a higher role
+                    && request.resource.data.role == "user" // can't self-assign a higher role
+                    && referencesValidInvite();
       allow update: if isSignedIn() && (
                       // Owner may update their own profile fields, but never
                       // `role` or the rate-limit bookkeeping fields.
@@ -73,11 +104,18 @@ service cloud.firestore {
       allow get:    if isAdmin();
       allow list:   if isAdmin();
       allow create: if request.resource.data.status == "pending"; // public signup always starts as pending
+      // Tightened alongside the users/{uid} fix above: only the person
+      // whose OWN verified email matches this waitlist entry can flip it
+      // to "registered" — previously any signed-in user could flip ANY
+      // invited-status waitlist doc, which (while not itself a way to gain
+      // access) is a needless griefing surface now that this doc's status
+      // is load-bearing for account creation.
       allow update: if isAdmin() ||
                       // RegisterPage.jsx / LoginPage.jsx marking an invited entry "registered" after successful signup
                       (isSignedIn() &&
                         resource.data.status == "invited" &&
-                        request.resource.data.status == "registered");
+                        request.resource.data.status == "registered" &&
+                        request.auth.token.email == resource.data.email);
       allow delete: if isAdmin();
     }
     // ── saved_campaigns/{doc} ────────────────────────────────────────────
