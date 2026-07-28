@@ -23,29 +23,53 @@ const CANVAS_SIZE = 1080;
 
 const TEMPLATES = [
   {
-    id: "charcoal",
-    label: "Charcoal",
-    description: "Dark charcoal · white text · teal highlights",
-    preview: { bg: "#362A44", text: "#ffffff", highlight: "#17A2A8", chip: "#17A2A8", chipText: "#0E7A8C" },
-    canvas: { bg: "#362A44", text: "#ffffff", highlight: "#17A2A8", chip: "#17A2A8", chipText: "#1A1A1A" },
+    id: "sunrise",
+    label: "Sunrise",
+    description: "Clean white · dark text · ocean blue highlights",
+    preview: { bg: "#ffffff", text: "#241A14", highlight: "#1C87A8", chip: "#1C87A8", chipText: "#ffffff" },
+    canvas: { bg: "#ffffff", text: "#241A14", highlight: "#1C87A8", chip: "#1C87A8", chipText: "#ffffff" },
   },
   {
-    id: "teal",
-    label: "Teal",
-    description: "Deep teal · white text · gold highlights",
-    preview: { bg: "#0E7A8C", text: "#ffffff", highlight: "#F5C842", chip: "#F5C842", chipText: "#0E7A8C" },
-    canvas: { bg: "#0E7A8C", text: "#ffffff", highlight: "#F5C842", chip: "#F5C842", chipText: "#0E7A8C" },
+    id: "ocean",
+    label: "Ocean",
+    description: "Bright ocean blue · white text · yellow highlights",
+    preview: { bg: "#1C87A8", text: "#ffffff", highlight: "#FFD166", chip: "#FFD166", chipText: "#14304A" },
+    canvas: { bg: "#1C87A8", text: "#ffffff", highlight: "#FFD166", chip: "#FFD166", chipText: "#14304A" },
+  },
+  {
+    id: "charcoal",
+    label: "Charcoal",
+    description: "Deep navy charcoal · white text · yellow highlights",
+    preview: { bg: "#232B3D", text: "#ffffff", highlight: "#FFD166", chip: "#FFD166", chipText: "#14304A" },
+    canvas: { bg: "#232B3D", text: "#ffffff", highlight: "#FFD166", chip: "#FFD166", chipText: "#14304A" },
   },
   {
     id: "breaking",
     label: "Breaking",
     description: "Black · white text · terracotta highlights",
-    preview: { bg: "#111111", text: "#ffffff", highlight: "#EB8292", chip: "#EB8292", chipText: "#ffffff" },
-    canvas: { bg: "#111111", text: "#ffffff", highlight: "#EB8292", chip: "#EB8292", chipText: "#ffffff" },
+    preview: { bg: "#111111", text: "#ffffff", highlight: "#D9613F", chip: "#D9613F", chipText: "#ffffff" },
+    canvas: { bg: "#111111", text: "#ffffff", highlight: "#D9613F", chip: "#D9613F", chipText: "#ffffff" },
+  },
+  {
+    id: "gold",
+    label: "Gold",
+    description: "Bold bright yellow · dark text · ocean blue highlights",
+    preview: { bg: "#FFD166", text: "#241A14", highlight: "#1C87A8", chip: "#1C87A8", chipText: "#ffffff" },
+    canvas: { bg: "#FFD166", text: "#241A14", highlight: "#1C87A8", chip: "#1C87A8", chipText: "#ffffff" },
   },
 ];
 
 const LABEL_PRESETS = ["Arizona", "Breaking", "Custom", "None"];
+
+// Convert a hex color to an rgba() string at a given alpha — used so watermark/slide-number
+// opacity adapts to each template's own text color instead of assuming a dark background.
+function hexToRgba(hex, alpha) {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 // Parse text — words wrapped in *asterisks* get highlight color
 function parseHighlights(text) {
@@ -151,7 +175,7 @@ function drawCard(ctx, { text, label, template, size = CANVAS_SIZE, slideIndex =
 
   // Handle / watermark — bottom right
   ctx.font = `700 ${handleFontSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
-  ctx.fillStyle = "rgba(255,255,255,0.45)";
+  ctx.fillStyle = hexToRgba(T.text, 0.45);
   ctx.textBaseline = "bottom";
   ctx.textAlign = "right";
   ctx.fillText("@ArizonaCoalition", size - pad, size - pad);
@@ -160,7 +184,7 @@ function drawCard(ctx, { text, label, template, size = CANVAS_SIZE, slideIndex =
   // Slide number — bottom left (carousel mode only)
   if (slideIndex != null && slideTotal != null) {
     ctx.font = `900 ${handleFontSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.fillStyle = hexToRgba(T.text, 0.7);
     ctx.textBaseline = "bottom";
     ctx.textAlign = "left";
     ctx.fillText(`${slideIndex}/${slideTotal}`, pad, size - pad);
