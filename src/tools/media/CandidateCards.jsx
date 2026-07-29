@@ -138,7 +138,7 @@ function drawPlaceholder(ctx, img, x, y, w, h, showLabel, size) {
 function drawCandidateCard(ctx, opts) {
   const {
     template, img, hasRealPhoto, name, office, district, showDistrict,
-    party, tagline, nameFontScale = 1, taglineFontScale = 1,
+    party, tagline, tags = [], nameFontScale = 1, taglineFontScale = 1,
     offsetX = 0, offsetY = 0, photoPosY = 50, showPlaceholderLabel = true,
     size = CANVAS_SIZE,
   } = opts;
@@ -329,6 +329,30 @@ function drawCandidateCard(ctx, opts) {
       ctx.fillStyle = "rgba(255,255,255,0.9)";
       const tLines = wrapText(ctx, tagline, size - pad * 2);
       tLines.forEach(line => { ctx.fillText(line, pad, ly); ly += taglineSize * 1.25; });
+      ly += size * 0.015;
+    }
+
+    const filledTags = tags.filter(t => t && t.trim());
+    if (filledTags.length > 0) {
+      const gap = size * 0.02;
+      const boxW = (size - pad * 2 - gap * (filledTags.length - 1)) / filledTags.length;
+      const boxH = size * 0.06;
+      const tagFontSize = Math.round(size * 0.016);
+      filledTags.forEach((tag, i) => {
+        const bx = pad + i * (boxW + gap);
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+        roundRectPath(ctx, bx, ly, boxW, boxH, size * 0.006);
+        ctx.fill();
+        ctx.fillStyle = ACCENT;
+        ctx.fillRect(bx, ly, boxW, size * 0.004);
+        ctx.font = `700 ${tagFontSize}px Arial, sans-serif`;
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(tag.trim().toUpperCase(), bx + boxW / 2, ly + boxH / 2, boxW - 8);
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+      });
     }
   }
 
@@ -385,6 +409,8 @@ export default function CandidateCards() {
   const [loadingCandidates, setLoadingCandidates] = useState(true);
   const [candidateError, setCandidateError] = useState(null);
   const [selectedName, setSelectedName] = useState("");
+  const [candidateQuery, setCandidateQuery] = useState("");
+  const [showCandidateList, setShowCandidateList] = useState(false);
 
   const [name, setName] = useState("");
   const [office, setOffice] = useState("");
@@ -392,6 +418,7 @@ export default function CandidateCards() {
   const [showDistrict, setShowDistrict] = useState(true);
   const [party, setParty] = useState("D");
   const [tagline, setTagline] = useState("");
+  const [tags, setTags] = useState(["", "", ""]);
 
   const [template, setTemplate] = useState("split");
   const [nameFontScale, setNameFontScale] = useState(1);
@@ -434,6 +461,8 @@ export default function CandidateCards() {
 
   function selectCandidate(candidateName) {
     setSelectedName(candidateName);
+    setCandidateQuery(candidateName);
+    setShowCandidateList(false);
     const c = candidates.find(c => c.candidate_name === candidateName);
     if (!c) return;
     setName(c.candidate_name || "");
@@ -442,6 +471,10 @@ export default function CandidateCards() {
     setParty(c.party || "D");
     setManualPhotoDataUrl(null); // clear any manual override — defer to the candidate's own headshot
   }
+
+  const filteredCandidates = candidateQuery.trim()
+    ? candidates.filter(c => c.candidate_name.toLowerCase().includes(candidateQuery.trim().toLowerCase()))
+    : candidates;
 
   // Resolve which photo to show: manual override > Firebase Storage headshot > null (placeholder)
   useEffect(() => {
@@ -499,11 +532,11 @@ export default function CandidateCards() {
   }
 
   const buildDrawOpts = useCallback((size, forceHideLabel) => ({
-    template, img: resolvedImg, hasRealPhoto, name, office, district, showDistrict, party, tagline,
+    template, img: resolvedImg, hasRealPhoto, name, office, district, showDistrict, party, tagline, tags,
     nameFontScale, taglineFontScale, offsetX, offsetY, photoPosY,
     showPlaceholderLabel: forceHideLabel ? false : !previewMode,
     size,
-  }), [template, resolvedImg, hasRealPhoto, name, office, district, showDistrict, party, tagline,
+  }), [template, resolvedImg, hasRealPhoto, name, office, district, showDistrict, party, tagline, tags,
        nameFontScale, taglineFontScale, offsetX, offsetY, photoPosY, previewMode]);
 
   const draw = useCallback((ctx) => {
@@ -561,18 +594,41 @@ export default function CandidateCards() {
             ) : candidateError ? (
               <p style={{ fontSize: 13, color: "#c41e1e" }}>{candidateError}</p>
             ) : (
-              <select
-                value={selectedName}
-                onChange={e => selectCandidate(e.target.value)}
-                style={inputStyle}
-              >
-                <option value="">Select a candidate\u2026</option>
-                {candidates.map(c => (
-                  <option key={c.candidate_name} value={c.candidate_name}>
-                    {c.candidate_name} \u2014 {c.office}{c.district ? ` (${c.district})` : ""}
-                  </option>
-                ))}
-              </select>
+              <div style={{ position: "relative" }}>
+                <input
+                  value={candidateQuery}
+                  onChange={e => { setCandidateQuery(e.target.value); setShowCandidateList(true); }}
+                  onFocus={() => setShowCandidateList(true)}
+                  onBlur={() => setTimeout(() => setShowCandidateList(false), 150)}
+                  placeholder="Type a name to search\u2026"
+                  style={inputStyle}
+                />
+                {showCandidateList && (
+                  <div style={{
+                    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20,
+                    background: B.surface, border: `2px solid ${B.border}`, borderRadius: 8,
+                    marginTop: 4, maxHeight: 260, overflowY: "auto", boxShadow: "0 4px 14px rgba(0,0,0,0.12)",
+                  }}>
+                    {filteredCandidates.length === 0 ? (
+                      <div style={{ padding: "10px 12px", fontSize: 13, color: B.textMute }}>No matches</div>
+                    ) : (
+                      filteredCandidates.map(c => (
+                        <div
+                          key={c.candidate_name}
+                          onMouseDown={e => { e.preventDefault(); selectCandidate(c.candidate_name); }}
+                          style={{
+                            padding: "9px 12px", fontSize: 13, cursor: "pointer",
+                            background: c.candidate_name === selectedName ? B.tealLight : "transparent",
+                            borderBottom: `1px solid ${B.border}`,
+                          }}
+                        >
+                          <strong>{c.candidate_name}</strong> — {c.office}{c.district ? ` (${c.district})` : ""}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             )}
             <p style={{ fontSize: 11, color: B.textMute, marginTop: 8 }}>
               Pulls Name / Office / District / Party straight from the Candidates sheet. You can still edit them below.
@@ -664,6 +720,22 @@ export default function CandidateCards() {
               <label style={{ fontSize: 11, color: B.textMute }}>Tagline</label>
               <input value={tagline} onChange={e => setTagline(e.target.value)} placeholder="Relief for working families." style={inputStyle} />
             </div>
+            {template === "banner" && (
+              <div style={{ marginTop: 10 }}>
+                <label style={{ fontSize: 11, color: B.textMute }}>Priority tags (shown across the bottom, up to 3)</label>
+                <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                  {tags.map((tag, i) => (
+                    <input
+                      key={i}
+                      value={tag}
+                      onChange={e => setTags(prev => prev.map((t, j) => (j === i ? e.target.value : t)))}
+                      placeholder={["Housing", "Groceries", "Child Care"][i]}
+                      style={{ ...inputStyle, fontSize: 13 }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={sectionStyle}>
