@@ -148,8 +148,8 @@ function parseRows(rows) {
       const vulnerabilities = (row[9]  || "").trim();
       const keyQuotes       = (row[10] || "").trim();
       const notes           = (row[11] || "").trim();
-      const policyPlatform  = (row[12] || "").trim();
-      const photoFilename   = (row[13] || "").trim();
+      const policyPlatform  = (row[13] || "").trim();
+      const photoFilename   = (row[12] || "").trim();
 
       const facts = [];
       if (background)      facts.push({ type: "background",     category: "",   text: background });
