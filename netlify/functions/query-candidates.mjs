@@ -3,8 +3,8 @@
 // Tab 1 — Candidates (one row per candidate):
 // A: Name  B: Office  C: Party  D: District  E: Level  F: Incumbent Status
 // G: Background  H: Record & Accomplishments  I: Strengths
-// J: Vulnerabilities  K: Key Quotes  L: Notes  M: Policy Platform
-// N: Photo Filename (matches a file in the candidate-headshots/ Firebase
+// J: Vulnerabilities  K: Key Quotes  L: Notes  N: Policy Platform
+// M: Photo Filename (matches a file in the candidate-headshots/ Firebase
 //    Storage folder, e.g. "connolly-janeen.jpg" — added for Candidate Cards)
 //
 // Tab 2 — Race_Demographics (one row per race/district):
