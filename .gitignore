@@ -6,3 +6,4 @@ dist/
 build/
 netlify/functions/*/firebase-service-account.json
 netlify/functions/*/google-service-account.json
+*.local.json
