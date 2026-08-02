@@ -114,14 +114,20 @@ function slugify(str) {
     .replace(/-+/g, "-");
 }
 
-function buildDocId(name, state, district) {
+function buildDocId(name, state, district, office) {
   const nameSlug = slugify(name);
   const stateSlug = slugify(state);
-  const districtSlug = slugify(district);
-  if (!nameSlug || !stateSlug || !districtSlug) {
-    return null; // caller must skip and report this row
+  // Statewide races (Governor, Attorney General, Secretary of State, U.S.
+  // Senate, etc.) have no District value at all — that's expected, not a
+  // data error. Fall back to Office as the disambiguating third segment
+  // in that case, so these candidates get a real doc ID instead of being
+  // skipped. Only fall back to "statewide" as a last resort if BOTH
+  // District and Office are somehow blank (a genuine data-entry gap).
+  const thirdSegment = slugify(district) || slugify(office) || "statewide";
+  if (!nameSlug || !stateSlug || !thirdSegment) {
+    return null;
   }
-  return `${nameSlug}-${stateSlug}-${districtSlug}`;
+  return `${nameSlug}-${stateSlug}-${thirdSegment}`;
 }
 
 // ── Sheet fetch + parse ──────────────────────────────────────────────────
@@ -183,13 +189,15 @@ async function main() {
       continue;
     }
     if (!candidate.district) {
-      skipped.push({ rowNum, name: candidate.name, reason: "missing District (column D)" });
-      continue;
+      // No longer a skip condition — statewide races legitimately have no
+      // District. buildDocId() below falls back to Office in that case.
+      // Only genuinely missing BOTH District and Office gets skipped, and
+      // that's caught by the docId === null check further down.
     }
 
-    const docId = buildDocId(candidate.name, candidate.state, candidate.district);
+    const docId = buildDocId(candidate.name, candidate.state, candidate.district, candidate.office);
     if (!docId) {
-      skipped.push({ rowNum, name: candidate.name, reason: "could not build a valid doc ID from name/state/district" });
+      skipped.push({ rowNum, name: candidate.name, reason: "could not build a valid doc ID — Name, State, and either District or Office are all required, and this row is missing more than one of them" });
       continue;
     }
 
