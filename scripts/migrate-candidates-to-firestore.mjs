@@ -153,8 +153,13 @@ function parseRow(row) {
   const vulnerabilities   = (row[9]  || "").trim();
   const keyQuotes         = (row[10] || "").trim();
   const notes             = (row[11] || "").trim();
-  const policyPlatform    = (row[12] || "").trim();
-  const photoFilename     = (row[13] || "").trim();
+  // NOTE: the sheet's actual column order is the REVERSE of what
+  // query-candidates.mjs's header comment originally documented — M is
+  // really Photo Filename, N is really Policy Platform. Confirmed against
+  // the live sheet's header row (Aug 2026). Read in the order that
+  // actually matches the sheet, not the order the old comment assumed.
+  const photoFilename     = (row[12] || "").trim(); // M
+  const policyPlatform    = (row[13] || "").trim(); // N
   const wins              = (row[14] || "").trim();
   const state             = (row[15] || "").trim().toUpperCase();
 
