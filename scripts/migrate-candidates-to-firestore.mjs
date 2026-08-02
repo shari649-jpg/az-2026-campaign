@@ -36,24 +36,55 @@
 //
 // CREDENTIALS
 // ────────────────────────────────────────────────────────────────────────
-// This is a standalone Node script (not a Netlify Function), so it isn't
-// subject to Lambda's 4KB env-var cap — it reads GOOGLE_SERVICE_ACCOUNT_JSON
-// and FIREBASE_SERVICE_ACCOUNT_JSON directly from process.env. Run it
-// locally with those set (e.g. via `netlify env:get` piped into your shell,
-// or a local .env loaded with `node --env-file=.env`), or in CI.
+// Read from local JSON FILES, not from raw JSON pasted into .env. Service-
+// account JSON is pretty-printed (multi-line) by default, and cramming
+// multi-line text into a single .env line is fragile — a stray literal
+// line break in the middle of the value breaks JSON.parse with a "Bad
+// control character" error. Reading the files directly sidesteps that
+// entirely; the JSON can stay exactly as downloaded, multi-line and all.
+//
+// Save your two credential files in the PROJECT ROOT (same folder as
+// package.json) with these exact names:
+//   google-service-account.local.json
+//   firebase-service-account.local.json
+// (the ".local" suffix distinguishes these from the build-time-generated
+// files of similar names that already live inside netlify/functions/ —
+// different purpose, don't mix them up.)
+//
+// GOOGLE_SHEET_ID still comes from .env — it's a plain string with no
+// quoting/newline risk, so .env is fine for that one.
 
 import { google } from "googleapis";
 import admin from "firebase-admin";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(__dirname, ".."); // scripts/ -> repo root
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const DRY_RUN = process.argv.includes("--dry-run");
 const BATCH_LIMIT = 500; // Firestore's hard cap per batch write
 
+function readLocalJson(filename) {
+  const path = join(REPO_ROOT, filename);
+  let raw;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    throw new Error(`Could not find ${filename} in the project root (${path}). Save your service-account JSON there with this exact filename.`);
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`${filename} is not valid JSON: ${err.message}`);
+  }
+}
+
 // ── Credential loading ──────────────────────────────────────────────────
 function getGoogleAuth() {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (!raw) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is not set.");
-  const credentials = JSON.parse(raw);
+  const credentials = readLocalJson("google-service-account.local.json");
   return new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
@@ -61,9 +92,7 @@ function getGoogleAuth() {
 }
 
 function getFirestoreDb() {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not set.");
-  const serviceAccount = JSON.parse(raw);
+  const serviceAccount = readLocalJson("firebase-service-account.local.json");
   if (!admin.apps.length) {
     admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
   }
