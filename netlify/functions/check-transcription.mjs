@@ -13,9 +13,65 @@
 //             A poll request is cheap on AssemblyAI's side (status check,
 //             not a re-transcription), so repeated polling isn't a cost
 //             concern the way repeated transcription submissions would be.
+//
+// Credit billing (added August 2026, A.6): THIS is where the actual org
+// transcription-credit debit happens, not start-transcription.mjs — the
+// real audio_duration doesn't exist until AssemblyAI finishes the job, so
+// this is the earliest point the real cost can be known. On the first
+// poll that reports status "completed", this function reads the job's
+// transcriptionJobs/{id} record (written by start-transcription.mjs,
+// authoritative for which org actually submitted this — never trusted
+// from the client), computes ceil(audio_duration_seconds / 240) credits
+// (4 minutes = 1 credit, per A.6/A.7's ceiling-rounding rule), and debits
+// that many credits from the org's transcriptionBalance in one
+// transaction alongside marking the job billed. The transaction reads
+// `billed` before writing, so repeated polls after completion (the client
+// keeps calling this until it sees "completed" client-side too) never
+// double-bill. A job whose real duration ends up costing more than the
+// org had left is allowed to go negative — this endpoint's job is
+// accurate billing, not enforcement; enforcement already happened at
+// submission time in start-transcription.mjs.
 
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
+
+const TRANSCRIPTION_CREDIT_MINUTES = 4;
+
+function creditsForDuration(durationSeconds) {
+  if (!durationSeconds || durationSeconds <= 0) return 1; // never bill zero, even for a very short/odd clip
+  return Math.ceil(durationSeconds / (TRANSCRIPTION_CREDIT_MINUTES * 60));
+}
+
+// Bills a completed job exactly once. Safe to call on every poll — it's a
+// no-op (does nothing, returns immediately) for a job that's already
+// billed or that has no transcriptionJobs record at all (e.g. a job
+// submitted before this billing logic shipped — logged, not billed
+// retroactively, since there's no way to know its real org after the
+// fact for those old jobs).
+async function billCompletedJobIfNeeded(app, transcriptId, audioDurationSeconds) {
+  const db = admin.firestore(app);
+  const jobRef = db.doc(`transcriptionJobs/${transcriptId}`);
+
+  await db.runTransaction(async (tx) => {
+    const jobSnap = await tx.get(jobRef);
+    if (!jobSnap.exists) {
+      console.warn(`[check-transcription] No job record for ${transcriptId} — submitted before org billing shipped, or record missing. Not billed.`);
+      return;
+    }
+    const job = jobSnap.data();
+    if (job.billed) return; // already billed on an earlier poll — no-op
+
+    const credits = creditsForDuration(audioDurationSeconds);
+    const orgRef = db.doc(`orgs/${job.orgId}`);
+    tx.set(orgRef, { "credits.transcriptionBalance": admin.firestore.FieldValue.increment(-credits) }, { merge: true });
+    tx.update(jobRef, {
+      billed: true,
+      billedCredits: credits,
+      audioDurationSeconds: audioDurationSeconds || null,
+      billedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+}
 
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
@@ -98,6 +154,17 @@ export default async function (req) {
     if (!response.ok) {
       console.error("[check-transcription] AssemblyAI error:", data);
       return new Response(JSON.stringify({ error: data.error || "Transcription service error." }), { status: 502, headers: corsHeaders(req) });
+    }
+
+    if (data.status === "completed") {
+      try {
+        await billCompletedJobIfNeeded(app, transcriptId, data.audio_duration);
+      } catch (err) {
+        // Never fail the response over a billing hiccup — the person is
+        // waiting on their transcript. Log loudly so it gets caught, but
+        // still hand back the completed text.
+        console.error(`[check-transcription] Billing failed for ${transcriptId}:`, err.message);
+      }
     }
 
     // AssemblyAI status values: queued | processing | completed | error
