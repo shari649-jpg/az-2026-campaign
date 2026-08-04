@@ -34,6 +34,13 @@ const FILTER_TYPES = [
   { id: 'background',     label: 'Background' },
   { id: 'policy',         label: 'Policy Platform' },
   { id: 'notes',          label: 'Additional Notes' },
+  // New August 2026 — Issue Tags, Endorsements, Fundraising, Campaign
+  // Website, Ballotpedia URL, and Wins deliberately NOT added here; they're
+  // card-only display fields, not filter pills (see conversation — keeping
+  // this row from growing past what's actually worth a global filter).
+  { id: 'opponent',               label: 'Opponent' },
+  { id: 'opponent_vulnerability', label: 'Opp. Vulnerabilities' },
+  { id: 'messaging_hook',         label: 'Messaging Hooks' },
 ];
 
 const FACT_LABELS = {
@@ -44,6 +51,9 @@ const FACT_LABELS = {
   background:     'Background',
   policy:         'Policy Platform',
   notes:          'Additional Notes',
+  opponent:               'Opponent',
+  opponent_vulnerability: 'Opponent Vulnerability',
+  messaging_hook:         'Messaging Hook',
 };
 
 const FACT_COLORS = {
@@ -54,7 +64,63 @@ const FACT_COLORS = {
   background:     { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' },
   policy:         { bg: 'var(--teal-light)', text: 'var(--teal)', border: 'var(--turquoise)' },
   notes:          { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' },
+  // New August 2026 — see FILTER_TYPES/FACT_LABELS below for the matching entries
+  opponent:               { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
+  opponent_vulnerability: { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
+  messaging_hook:         { bg: 'var(--teal-light)', text: 'var(--teal)', border: 'var(--turquoise)' },
 };
+
+// Escapes regex special characters in a raw search string before it's used
+// to build a RegExp — otherwise a query containing e.g. "(" or "." would
+// either throw or match something the person never typed.
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Splits fact text into plain/highlighted segments around every
+// case-insensitive match of `query`, for rendering as React nodes — never
+// via dangerouslySetInnerHTML, since this only needs plain-text
+// highlighting, not markup injection. Returns the original text
+// unmodified (as a single segment) when there's no query or no match.
+function highlightText(text, query) {
+  const q = (query || '').trim();
+  if (!q) return [{ text, hit: false }];
+  const re = new RegExp(`(${escapeRegExp(q)})`, 'gi');
+  const parts = text.split(re);
+  if (parts.length === 1) return [{ text, hit: false }];
+  return parts.map(part => ({ text: part, hit: re.test(part) && part.toLowerCase() === q.toLowerCase() }));
+}
+// NOTE: String.split with a capturing group interleaves matches and
+// non-matches in order, so re-testing each part against the same query
+// (case-insensitively) is enough to tell which parts were the match vs.
+// surrounding text — no index bookkeeping needed.
+
+// Collapsed-state preview: centers a short window of text on the first
+// query match (so the relevant part is visible without expanding), or
+// just the first ~90 characters when there's no active search — this is
+// what lets someone scan which of several collapsed facts is worth
+// opening, rather than having to open every one to find the hit.
+function getSnippet(text, query, radius = 60) {
+  const q = (query || '').trim();
+  if (!q) return text.length > 90 ? text.slice(0, 90) + '…' : text;
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return text.length > 90 ? text.slice(0, 90) + '…' : text;
+  const start = Math.max(0, idx - radius);
+  const end = Math.min(text.length, idx + q.length + radius);
+  return (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
+}
+
+// Renders highlightText()'s segments as React nodes — a small styled span
+// for hits, plain text otherwise. Kept separate from highlightText() so
+// the pure text-splitting logic stays independently testable.
+function HighlightedText({ text, query }) {
+  const segments = highlightText(text, query);
+  return segments.map((seg, i) =>
+    seg.hit
+      ? <mark key={i} style={{ background: 'var(--gold)', color: B.text, padding: '0 2px', borderRadius: 3 }}>{seg.text}</mark>
+      : <span key={i}>{seg.text}</span>
+  );
+}
 
 function partyColor(party) {
   const p = (party || '').toUpperCase();
@@ -101,6 +167,17 @@ export default function CandidateQuery() {
   const [error,     setError]     = useState(null);
   const [lsError,   setLsError]   = useState(false);
   const [expanded,  setExpanded]  = useState({});
+  // Per-fact accordion state (August 2026) — separate from `expanded`
+  // above, which tracks whether a CANDIDATE's whole fact list is open at
+  // all. This tracks whether an individual fact WITHIN an open candidate
+  // is showing full text or just its collapsed header + snippet. Default
+  // collapsed (nothing in this object = collapsed) — this is what keeps
+  // opening a candidate with 10 facts from immediately dumping 10 long
+  // paragraphs onto the screen at once.
+  const [expandedFacts, setExpandedFacts] = useState({});
+  function toggleFactExpanded(factKey) {
+    setExpandedFacts(prev => ({ ...prev, [factKey]: !prev[factKey] }));
+  }
   const [selected,  setSelected]  = useState({});  // candidateName -> candidate object
   const [selectedFacts, setSelectedFacts] = useState({}); // `candidateName:factIndex` -> {candidate, fact}
   const [pushed,    setPushed]    = useState(false);
@@ -418,27 +495,66 @@ export default function CandidateQuery() {
                                   const fc = FACT_COLORS[fact.type] || FACT_COLORS.background;
                                   const factKey = `${candidate.candidate_name}:${fi}`;
                                   const isFactSelected = !!selectedFacts[factKey];
+                                  // Default open/closed depends on whether there's an active
+                                  // search hit in THIS fact — once the person taps a fact
+                                  // (recorded in expandedFacts), that explicit choice always
+                                  // wins over the auto-open-on-match default, in either
+                                  // direction (they can manually close a match, or open a
+                                  // non-match).
+                                  const hasMatch = query.trim() && fact.text.toLowerCase().includes(query.trim().toLowerCase());
+                                  const isFactOpen = expandedFacts[factKey] !== undefined ? expandedFacts[factKey] : !!hasMatch;
                                   return (
                                     <div key={fi} style={{ background: fc.bg, border: `1.5px solid ${isFactSelected ? fc.text : fc.border}`, borderRadius: 8, padding: '10px 14px', marginBottom: 10 }}>
-                                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 6, alignItems: 'center' }}>
+                                      {/* Header row — always visible, tapping it toggles this ONE
+                                          fact open/closed. Checkbox stays independent of the
+                                          open/closed state, so a fact can be selected for Message
+                                          Machine without ever being expanded to read in full. */}
+                                      <div
+                                        onClick={() => toggleFactExpanded(factKey)}
+                                        style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', cursor: 'pointer' }}
+                                        role="button"
+                                        aria-expanded={isFactOpen}
+                                      >
                                         <input
                                           type="checkbox"
                                           checked={isFactSelected}
+                                          onClick={e => e.stopPropagation()}
                                           onChange={() => toggleFact(candidate, fi, fact)}
                                           style={{ width: 15, height: 15, accentColor: B.teal, cursor: 'pointer', flexShrink: 0 }}
                                           aria-label={`Select fact: ${fact.text.substring(0, 40)}`}
                                         />
                                         <span style={{ fontSize: 11, fontWeight: 700, color: fc.text, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{FACT_LABELS[fact.type] || fact.type}</span>
+                                        <span style={{ marginLeft: 'auto', fontSize: 13, color: fc.text, flexShrink: 0 }}>{isFactOpen ? '▲' : '▼'}</span>
                                       </div>
-                                      <p style={{ fontSize: 14, color: B.text, lineHeight: 1.6, margin: '0 0 10px 0', fontStyle: fact.type === 'quote' ? 'italic' : 'normal' }}>
-                                        {fact.type === 'quote' ? `"${fact.text}"` : fact.text}
-                                      </p>
-                                      <button
-                                        onClick={() => toggleFact(candidate, fi, fact)}
-                                        style={{ fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 6, border: `1px solid ${fc.border}`, background: isFactSelected ? fc.text : 'transparent', color: isFactSelected ? '#fff' : fc.text, cursor: 'pointer', fontFamily: 'inherit' }}
-                                      >
-                                        {isFactSelected ? '✓ Selected' : 'Select fact →'}
-                                      </button>
+
+                                      {/* Collapsed: a short snippet centered on the search hit
+                                          (if any), so someone can tell which facts are worth
+                                          opening without opening all of them — the whole point
+                                          of this accordion. */}
+                                      {!isFactOpen && (
+                                        <p style={{ fontSize: 13, color: B.textMute, lineHeight: 1.5, margin: '6px 0 0 0', fontStyle: fact.type === 'quote' ? 'italic' : 'normal' }}>
+                                          <HighlightedText text={getSnippet(fact.text, query)} query={query} />
+                                        </p>
+                                      )}
+
+                                      {/* Expanded: full text, same search-term highlighting
+                                          carried through so the hit is easy to spot at a glance
+                                          even in a long paragraph. */}
+                                      {isFactOpen && (
+                                        <>
+                                          <p style={{ fontSize: 14, color: B.text, lineHeight: 1.6, margin: '8px 0 10px 0', fontStyle: fact.type === 'quote' ? 'italic' : 'normal' }}>
+                                            {fact.type === 'quote'
+                                              ? <>"<HighlightedText text={fact.text} query={query} />"</>
+                                              : <HighlightedText text={fact.text} query={query} />}
+                                          </p>
+                                          <button
+                                            onClick={() => toggleFact(candidate, fi, fact)}
+                                            style={{ fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 6, border: `1px solid ${fc.border}`, background: isFactSelected ? fc.text : 'transparent', color: isFactSelected ? '#fff' : fc.text, cursor: 'pointer', fontFamily: 'inherit' }}
+                                          >
+                                            {isFactSelected ? '✓ Selected' : 'Select fact →'}
+                                          </button>
+                                        </>
+                                      )}
                                     </div>
                                   );
                                 })
