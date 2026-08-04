@@ -3,21 +3,21 @@
 
   "orgs": [
     {
-      "orgId": "REPLACE_WITH_MAIN_ORG_ID",
-      "name": "REPLACE_WITH_MAIN_ORG_DISPLAY_NAME",
+      "orgId": "az-coalition",
+      "name": "Arizona Coalition",
       "addons": { "sandboxTranscription": true }
     },
     {
-      "orgId": "REPLACE_WITH_BETA_ORG_ID",
-      "name": "REPLACE_WITH_BETA_ORG_DISPLAY_NAME",
+      "orgId": "dem-cast",
+      "name": "DemCast USA",
       "addons": { "sandboxTranscription": true }
     }
   ],
 
-  "defaultOrgId": "REPLACE_WITH_MAIN_ORG_ID",
+  "defaultOrgId": "az-coalition",
 
   "userAssignments": {
     "_comment": "email (lowercase, exact match to the users/{uid} doc's stored email field) -> orgId. Only list users who should NOT get defaultOrgId.",
-    "someone@example.com": "REPLACE_WITH_BETA_ORG_ID"
+    "jennifer@demcastusa.com": "dem-cast"
   }
 }
