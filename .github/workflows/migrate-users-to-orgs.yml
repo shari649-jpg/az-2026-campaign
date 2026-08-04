@@ -1,0 +1,45 @@
+name: Migrate Users to Orgs
+
+# Manual-only trigger — this never runs automatically. You start it by
+# clicking a button on the Actions tab of the repo on GitHub.com.
+# Reminder: fill in scripts/orgs.config.json with real org names/IDs and
+# any non-default user email assignments BEFORE running this — the
+# workflow reads whatever is committed to the repo at run time.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run only (preview, no writes to Firestore)"
+        type: boolean
+        default: true
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      # Only the Firebase credential is needed here — this migration
+      # doesn't touch Google Sheets, unlike migrate-candidates.yml.
+      - name: Write credential file
+        env:
+          FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          echo "$FIREBASE_SA_JSON" > firebase-service-account.local.json
+
+      - name: Run migration
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            node scripts/migrate-users-to-orgs.mjs --dry-run
+          else
+            node scripts/migrate-users-to-orgs.mjs
+          fi
