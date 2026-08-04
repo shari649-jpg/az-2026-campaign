@@ -35,6 +35,9 @@ const FACT_LABELS = {
   background:     'Background',
   policy:         'Policy Platform',
   notes:          'Additional Notes',
+  opponent:               'Opponent',
+  opponent_vulnerability: 'Opponent Vulnerability',
+  messaging_hook:         'Messaging Hook',
 };
 
 const FACT_COLORS = {
@@ -45,7 +48,44 @@ const FACT_COLORS = {
   background:     { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' },
   policy:         { bg: 'var(--teal-light)', text: 'var(--teal)', border: 'var(--turquoise)' },
   notes:          { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' },
+  opponent:               { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
+  opponent_vulnerability: { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
+  messaging_hook:         { bg: 'var(--teal-light)', text: 'var(--teal)', border: 'var(--turquoise)' },
 };
+
+// Same helpers as CandidateQuery.jsx's — kept duplicated rather than
+// shared, matching this codebase's existing pattern of each Research tab
+// file owning its own FACT_COLORS/FACT_LABELS rather than importing a
+// shared constants module.
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+function highlightText(text, query) {
+  const q = (query || '').trim();
+  if (!q) return [{ text, hit: false }];
+  const re = new RegExp(`(${escapeRegExp(q)})`, 'gi');
+  const parts = text.split(re);
+  if (parts.length === 1) return [{ text, hit: false }];
+  return parts.map(part => ({ text: part, hit: re.test(part) && part.toLowerCase() === q.toLowerCase() }));
+}
+function getSnippet(text, query, radius = 60) {
+  const q = (query || '').trim();
+  if (!q) return text.length > 90 ? text.slice(0, 90) + '…' : text;
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return text.length > 90 ? text.slice(0, 90) + '…' : text;
+  const start = Math.max(0, idx - radius);
+  const end = Math.min(text.length, idx + q.length + radius);
+  return (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
+}
+function HighlightedText({ text, query }) {
+  const segments = highlightText(text, query);
+  return segments.map((seg, i) =>
+    seg.hit
+      ? <mark key={i} style={{ background: 'var(--gold)', color: B.text, padding: '0 2px', borderRadius: 3 }}>{seg.text}</mark>
+      : <span key={i}>{seg.text}</span>
+  );
+}
+
 
 function partyColor(party) {
   const p = (party || '').toUpperCase();
@@ -78,6 +118,10 @@ export default function RaceComparison() {
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState(null);
   const [expanded, setExpanded] = useState({});
+  const [expandedFacts, setExpandedFacts] = useState({}); // per-fact accordion state — see CandidateQuery.jsx for the same pattern
+  function toggleFactExpanded(factKey) {
+    setExpandedFacts(prev => ({ ...prev, [factKey]: !prev[factKey] }));
+  }
   const [selected, setSelected] = useState({});
   const [selectedFacts, setSelectedFacts] = useState({}); // `candidateName:factIndex` -> fact object
   const [pushed,   setPushed]   = useState(false);
@@ -521,27 +565,49 @@ export default function RaceComparison() {
                       const fc = FACT_COLORS[fact.type] || FACT_COLORS.background;
                       const factKey = `${candidate.candidate_name}:${fi}`;
                       const isFactSelected = !!selectedFacts[factKey];
+                      const hasMatch = search.trim() && fact.text.toLowerCase().includes(search.trim().toLowerCase());
+                      const isFactOpen = expandedFacts[factKey] !== undefined ? expandedFacts[factKey] : !!hasMatch;
                       return (
                         <div key={fi} style={{ background: isFactSelected ? fc.bg : fc.bg + 'aa', border: `1.5px solid ${isFactSelected ? fc.text : fc.border}`, borderRadius: 8, padding: '10px 14px', marginBottom: 10 }}>
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 5, alignItems: 'center' }}>
+                          <div
+                            onClick={() => toggleFactExpanded(factKey)}
+                            style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', cursor: 'pointer' }}
+                            role="button"
+                            aria-expanded={isFactOpen}
+                          >
                             <input
                               type="checkbox"
                               checked={isFactSelected}
+                              onClick={e => e.stopPropagation()}
                               onChange={() => toggleFact(candidate, fi, fact)}
                               style={{ width: 15, height: 15, accentColor: B.teal, cursor: 'pointer', flexShrink: 0 }}
                               aria-label={`Select fact: ${fact.text.substring(0, 40)}`}
                             />
                             <span style={{ fontSize: 11, fontWeight: 700, color: fc.text, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{FACT_LABELS[fact.type] || fact.type}</span>
+                            <span style={{ marginLeft: 'auto', fontSize: 13, color: fc.text, flexShrink: 0 }}>{isFactOpen ? '▲' : '▼'}</span>
                           </div>
-                          <p style={{ fontSize: 14, color: B.text, lineHeight: 1.6, margin: '0 0 10px 0', fontStyle: fact.type === 'quote' ? 'italic' : 'normal' }}>
-                            {fact.type === 'quote' ? `"${fact.text}"` : fact.text}
-                          </p>
-                          <button
-                            onClick={() => toggleFact(candidate, fi, fact)}
-                            style={{ fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 6, border: `1px solid ${fc.border}`, background: isFactSelected ? fc.text : 'transparent', color: isFactSelected ? '#fff' : fc.text, cursor: 'pointer', fontFamily: 'inherit' }}
-                          >
-                            {isFactSelected ? '✓ Selected' : 'Select fact →'}
-                          </button>
+
+                          {!isFactOpen && (
+                            <p style={{ fontSize: 13, color: B.textMute, lineHeight: 1.5, margin: '6px 0 0 0', fontStyle: fact.type === 'quote' ? 'italic' : 'normal' }}>
+                              <HighlightedText text={getSnippet(fact.text, search)} query={search} />
+                            </p>
+                          )}
+
+                          {isFactOpen && (
+                            <>
+                              <p style={{ fontSize: 14, color: B.text, lineHeight: 1.6, margin: '8px 0 10px 0', fontStyle: fact.type === 'quote' ? 'italic' : 'normal' }}>
+                                {fact.type === 'quote'
+                                  ? <>"<HighlightedText text={fact.text} query={search} />"</>
+                                  : <HighlightedText text={fact.text} query={search} />}
+                              </p>
+                              <button
+                                onClick={() => toggleFact(candidate, fi, fact)}
+                                style={{ fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 6, border: `1px solid ${fc.border}`, background: isFactSelected ? fc.text : 'transparent', color: isFactSelected ? '#fff' : fc.text, cursor: 'pointer', fontFamily: 'inherit' }}
+                              >
+                                {isFactSelected ? '✓ Selected' : 'Select fact →'}
+                              </button>
+                            </>
+                          )}
                         </div>
                       );
                     })
