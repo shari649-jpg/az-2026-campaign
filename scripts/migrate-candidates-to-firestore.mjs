@@ -28,6 +28,14 @@
 // K Key Quotes  L Notes  M Policy Platform  N Photo Filename
 // O Wins            ← NEW, add this column to the sheet
 // P State            ← NEW, add this column to the sheet (2-letter code, e.g. AZ)
+// Q Issue Tags       ← NEW August 2026, additive only — existing rows
+// R Messaging Hooks     will read blank for these 8 until filled in.
+// S Endorsements        Confirmed with the person: staff-entered manual
+// T Fundraising         fields, no API/external data source behind any
+// U Opponent             of them. Ballotpedia URL (X) is a manually-
+// V Opponent Vulnerabilities  pasted link, NOT a connection to the
+// W Campaign Website     Ballotpedia API. Fundraising (T) is a manual
+// X Ballotpedia URL      staff-entered figure/summary, not FEC data.
 //
 // USAGE
 // ────────────────────────────────────────────────────────────────────────
@@ -135,7 +143,7 @@ async function fetchCandidateRows(auth) {
   const sheets = google.sheets({ version: "v4", auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "A2:P", // extended from A2:N to include Wins (O) and State (P)
+    range: "A2:X", // extended from A2:P (August 2026) to include the 8 new columns: Issue Tags → Ballotpedia URL
   });
   return response.data.values || [];
 }
@@ -162,12 +170,26 @@ function parseRow(row) {
   const policyPlatform    = (row[13] || "").trim(); // N
   const wins              = (row[14] || "").trim();
   const state             = (row[15] || "").trim().toUpperCase();
+  // New August 2026 (additive) — existing rows will read as empty strings
+  // for these 8 until someone fills them in on the live sheet; that's
+  // expected, not an error, and this script's upsert/merge:true write
+  // handles it the same as any other blank cell.
+  const issueTags               = (row[16] || "").trim(); // Q
+  const messagingHooks          = (row[17] || "").trim(); // R
+  const endorsements            = (row[18] || "").trim(); // S
+  const fundraising             = (row[19] || "").trim(); // T
+  const opponent                = (row[20] || "").trim(); // U
+  const opponentVulnerabilities = (row[21] || "").trim(); // V
+  const campaignWebsite         = (row[22] || "").trim(); // W
+  const ballotpediaUrl          = (row[23] || "").trim(); // X
 
   return {
     name, office, party, district, level,
     incumbentStatus, background, recordAccomplishments,
     strengths, vulnerabilities, keyQuotes, notes,
     policyPlatform, photoFilename, wins, state,
+    issueTags, messagingHooks, endorsements, fundraising,
+    opponent, opponentVulnerabilities, campaignWebsite, ballotpediaUrl,
   };
 }
 
