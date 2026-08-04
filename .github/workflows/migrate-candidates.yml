@@ -10,6 +10,16 @@ on:
         type: boolean
         default: true
 
+# Added to close a CodeQL Medium finding ("Workflow does not contain
+# permissions" — the GITHUB_TOKEN otherwise defaults to broader access
+# than this workflow actually needs). contents: read is the minimal grant
+# this workflow requires — it only checks out the repo and runs a script;
+# it never pushes, comments, or opens anything back to GitHub itself
+# (Firestore/Sheets writes go through the credential Secrets above, not
+# the GITHUB_TOKEN).
+permissions:
+  contents: read
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
