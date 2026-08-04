@@ -13,6 +13,12 @@ on:
         type: boolean
         default: true
 
+# Added to close a CodeQL Medium finding ("Workflow does not contain
+# permissions"). contents: read is the minimal grant this workflow
+# needs — same reasoning as migrate-candidates.yml.
+permissions:
+  contents: read
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
