@@ -52,7 +52,7 @@ function isAtDailyLimit(u) {
 }
 
 export default function AdminPage() {
-  const { isManager, user: currentUser } = useAuth();
+  const { isManager, isAdmin, user: currentUser } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab]   = useState("users"); // "users" | "waitlist"
@@ -87,10 +87,22 @@ export default function AdminPage() {
   const [pubRegenEnabled, setPubRegenEnabled] = useState(true);
   const [pubRegenLoaded, setPubRegenLoaded] = useState(false);
   const [pubRegenSaving, setPubRegenSaving] = useState(false);
+  // ── Orgs tab (August 2026, priority-list item #1 follow-up) ─────────────
+  // orgs/{orgId} docs, loaded lazily the first time the Orgs tab opens —
+  // same lazy-load pattern as pubRegenLoaded/fetchPubRegenSetting above.
+  const [orgs, setOrgs]               = useState([]);
+  const [orgsLoaded, setOrgsLoaded]   = useState(false);
+  const [orgsLoading, setOrgsLoading] = useState(false);
+  const [addonSaving, setAddonSaving] = useState(null); // orgId currently mid addon-toggle call
+  // One grant-form's worth of state per org row, keyed by orgId, so
+  // multiple rows can have independent in-progress forms without
+  // colliding. { [orgId]: { creditType, amount, reason, submitting } }
+  const [grantForms, setGrantForms]   = useState({});
 
   useEffect(() => { if (!isManager) navigate("/"); }, [isManager]);
   useEffect(() => { if (isManager) { fetchUsers(); fetchWaitlist(); } }, [isManager]);
   useEffect(() => { if (activeTab === "settings" && !pubRegenLoaded) fetchPubRegenSetting(); }, [activeTab]);
+  useEffect(() => { if (activeTab === "orgs" && !orgsLoaded) fetchOrgs(); }, [activeTab]);
 
   const fetchPubRegenSetting = async () => {
     try {
@@ -116,6 +128,89 @@ export default function AdminPage() {
   const notify = (msg, type = "ok") => {
     setNotif({ msg, type });
     setTimeout(() => setNotif(null), 3500);
+  };
+
+  // ── Orgs tab ──────────────────────────────────────────────────────────
+  const fetchOrgs = async () => {
+    setOrgsLoading(true);
+    try {
+      const snap = await getDocs(collection(db, "orgs"));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+      setOrgs(list);
+      // Seed a blank grant-form entry for any org that doesn't have one yet
+      // (first load, or a newly-seeded org since the last fetch).
+      setGrantForms(prev => {
+        const next = { ...prev };
+        for (const o of list) {
+          if (!next[o.id]) next[o.id] = { creditType: "generation", amount: "", reason: "", submitting: false };
+        }
+        return next;
+      });
+    } catch {
+      notify("Failed to load orgs.", "err");
+    }
+    setOrgsLoading(false);
+    setOrgsLoaded(true);
+  };
+
+  // Direct client write — allowed for admins per firestore.rules'
+  // `orgs/{orgId}` block (allow create, update, delete: if isAdmin()), same
+  // pattern as togglePubRegen's direct setDoc above. No Netlify function
+  // needed for a same-shape boolean flip like this one.
+  const toggleOrgAddon = async (org) => {
+    setAddonSaving(org.id);
+    try {
+      const next = !(org.addons?.sandboxTranscription);
+      await updateDoc(doc(db, "orgs", org.id), { "addons.sandboxTranscription": next });
+      setOrgs(prev => prev.map(o => o.id === org.id ? { ...o, addons: { ...o.addons, sandboxTranscription: next } } : o));
+      notify(`${org.name || org.id}: Sandbox transcription ${next ? "enabled" : "disabled"}.`);
+    } catch {
+      notify("Couldn't update that org's addon — try again.", "err");
+    }
+    setAddonSaving(null);
+  };
+
+  const updateGrantForm = (orgId, patch) => {
+    setGrantForms(prev => ({ ...prev, [orgId]: { ...prev[orgId], ...patch } }));
+  };
+
+  // Admin-granted comp credits (A.8). Deliberately NOT a direct client
+  // Firestore write, even though isAdmin() could technically write
+  // orgs/{orgId} directly — going through the Netlify function keeps the
+  // balance increment and the creditGrants audit-trail entry atomic (one
+  // function call, one server-side transaction) rather than two separate
+  // client writes that could partially fail, and keeps the "who granted
+  // this and why" record tamper-evident (server-set grantedBy from the
+  // verified ID token, not a client-supplied field).
+  const handleGrantCredits = async (org) => {
+    const form = grantForms[org.id];
+    const amount = Number(form?.amount);
+    if (!form?.amount || !Number.isFinite(amount) || amount <= 0) {
+      notify("Enter a positive credit amount first.", "err");
+      return;
+    }
+    if (!form?.reason?.trim()) {
+      notify("A reason is required for every grant — it's what shows up in the audit trail.", "err");
+      return;
+    }
+    updateGrantForm(org.id, { submitting: true });
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/.netlify/functions/grant-credits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+        body: JSON.stringify({ orgId: org.id, creditType: form.creditType, amount, reason: form.reason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Grant failed.");
+      setOrgs(prev => prev.map(o => o.id === org.id ? { ...o, credits: data.credits } : o));
+      updateGrantForm(org.id, { amount: "", reason: "", submitting: false });
+      notify(`Granted ${amount} ${form.creditType} credit(s) to ${org.name || org.id}.`);
+    } catch (err) {
+      notify(err.message || "Couldn't grant credits — try again.", "err");
+      updateGrantForm(org.id, { submitting: false });
+    }
   };
 
   const fetchUsers = async () => {
@@ -860,6 +955,7 @@ export default function AdminPage() {
           { id: "community-notes", label: "Community Notes Upload" },
           { id: "headshots", label: "Candidate Headshots" },
           { id: "settings", label: "Settings" },
+          { id: "orgs", label: "Orgs" },
           ].map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSearch(""); }}
               style={{
@@ -888,7 +984,7 @@ export default function AdminPage() {
         </div>
 
         {/* Search */}
-        {activeTab !== "headshots" && (
+        {activeTab !== "headshots" && activeTab !== "orgs" && (
           <input
             type="search"
             placeholder={activeTab === "users" ? "Search by name, email, or role…" : "Search by name, email, or organization…"}
@@ -1328,6 +1424,124 @@ export default function AdminPage() {
             <p style={{ fontSize: 12.5, color: "#999", marginTop: 18, lineHeight: 1.6 }}>
               Separately, this also auto-disables per visitor for the rest of the day if it hits 20 regenerations from one IP, 200 from one storm, or 1,000 sitewide — each resets at UTC midnight. Shari gets an email the first time any of those limits trips each day.
             </p>
+          </div>
+        )}
+
+        {/* ── ORGS TAB ── */}
+        {activeTab === "orgs" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {orgsLoading && !orgsLoaded ? (
+              <p style={{ color: "#999", fontSize: 14 }}>Loading…</p>
+            ) : orgs.length === 0 ? (
+              <p style={{ color: "#999", fontSize: 14 }}>
+                No orgs found. Run scripts/migrate-users-to-orgs.mjs (GitHub Actions → Migrate Users to Orgs) to seed them.
+              </p>
+            ) : orgs.map(org => {
+              const form = grantForms[org.id] || { creditType: "generation", amount: "", reason: "", submitting: false };
+              const genBalance = org.credits?.generationBalance ?? 0;
+              const transBalance = org.credits?.transcriptionBalance ?? 0;
+              return (
+                <div key={org.id} style={{ background: BG, border: "2px solid #eee", borderRadius: 12, padding: "24px 28px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+                    <div>
+                      <h2 style={{ fontSize: 20, fontWeight: 800, color: CHARCOAL, margin: "0 0 2px" }}>{org.name || org.id}</h2>
+                      <span style={{ fontFamily: "monospace", fontSize: 12, color: "#999" }}>{org.id}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 20 }}>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: TEAL, lineHeight: 1 }}>{genBalance}</div>
+                        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#999", marginTop: 3 }}>Generation credits</div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: TURQUOISE, lineHeight: 1 }}>{transBalance}</div>
+                        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#999", marginTop: 3 }}>Transcription credits</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sandbox transcription addon toggle — admin-only, matches
+                      firestore.rules' orgs/{orgId} write gate */}
+                  <div style={{ marginBottom: 20 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: isAdmin && addonSaving !== org.id ? "pointer" : "default", opacity: isAdmin ? 1 : 0.6 }}>
+                      <input
+                        type="checkbox"
+                        checked={!!org.addons?.sandboxTranscription}
+                        disabled={!isAdmin || addonSaving === org.id}
+                        onChange={() => toggleOrgAddon(org)}
+                        style={{ width: 18, height: 18, cursor: isAdmin ? "pointer" : "default" }}
+                      />
+                      <span style={{ fontSize: 14, fontWeight: 700, color: org.addons?.sandboxTranscription ? TEAL : "#999" }}>
+                        Sandbox transcription {org.addons?.sandboxTranscription ? "enabled" : "disabled"}
+                      </span>
+                    </label>
+                    {!isAdmin && (
+                      <p style={{ fontSize: 12, color: "#aaa", margin: "6px 0 0 28px" }}>Administrator access required to change this.</p>
+                    )}
+                  </div>
+
+                  {/* Grant credits — admin-only. Never a Stripe purchase;
+                      always logged to orgs/{orgId}/creditGrants for audit. */}
+                  <div style={{ borderTop: "1px solid #eee", paddingTop: 16 }}>
+                    <h3 style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "#999", margin: "0 0 12px" }}>
+                      Grant comp credits
+                    </h3>
+                    {!isAdmin ? (
+                      <p style={{ fontSize: 13, color: "#aaa" }}>Administrator access required to grant credits.</p>
+                    ) : (
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                        <div>
+                          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#999", marginBottom: 4 }}>Credit type</label>
+                          <select
+                            value={form.creditType}
+                            disabled={form.submitting}
+                            onChange={e => updateGrantForm(org.id, { creditType: e.target.value })}
+                            style={{ padding: "9px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", background: BG, color: CHARCOAL }}
+                          >
+                            <option value="generation">Generation</option>
+                            <option value="transcription">Transcription</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#999", marginBottom: 4 }}>Amount</label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={form.amount}
+                            disabled={form.submitting}
+                            onChange={e => updateGrantForm(org.id, { amount: e.target.value })}
+                            style={{ width: 100, padding: "8px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", background: BG, color: CHARCOAL }}
+                          />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#999", marginBottom: 4 }}>Reason (required — shows in the audit trail)</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. beta testing comp, Aug–Sep 2026"
+                            value={form.reason}
+                            disabled={form.submitting}
+                            onChange={e => updateGrantForm(org.id, { reason: e.target.value })}
+                            style={{ width: "100%", boxSizing: "border-box", padding: "8px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", background: BG, color: CHARCOAL }}
+                          />
+                        </div>
+                        <button
+                          onClick={() => handleGrantCredits(org)}
+                          disabled={form.submitting}
+                          style={{
+                            background: form.submitting ? "#ccc" : TEAL, color: "#fff",
+                            border: "none", borderRadius: 8, padding: "10px 20px",
+                            fontSize: 14, fontWeight: 700, fontFamily: "inherit",
+                            cursor: form.submitting ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                          }}
+                        >
+                          {form.submitting ? "Granting…" : "Grant"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
