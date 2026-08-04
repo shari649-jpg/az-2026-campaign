@@ -331,6 +331,20 @@ service cloud.firestore {
       allow read: if isSameOrg(orgId) || isAdmin();
       allow create, update, delete: if isAdmin();
     }
+    // ── orgs/{orgId}/creditGrants/{grantId} ──────────────────────────────
+    // Added alongside grant-credits.mjs (August 2026, admin-granted comp
+    // credits — A.8 in the pricing/decisions report). An immutable
+    // audit-trail entry per grant: amount, creditType, reason, who granted
+    // it (server-set from the verified ID token, never client-supplied),
+    // when. Read-only from the client — every write happens exclusively
+    // through grant-credits.mjs's Admin SDK transaction, which bypasses
+    // these rules entirely; `allow write: if false` here isn't a gap, it's
+    // the point — there is no legitimate direct-client path to create,
+    // edit, or delete a grant record.
+    match /orgs/{orgId}/creditGrants/{grantId} {
+      allow read: if isSameOrg(orgId) || isAdmin();
+      allow write: if false;
+    }
     // ══════════════════════════════════════════════════════════════════
     // ▲▲▲  END new orgs block  ▲▲▲
     // ══════════════════════════════════════════════════════════════════
