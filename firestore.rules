@@ -345,6 +345,20 @@ service cloud.firestore {
       allow read: if isSameOrg(orgId) || isAdmin();
       allow write: if false;
     }
+    // ── transcriptionJobs/{jobId} ────────────────────────────────────────
+    // Added alongside the transcription credit-metering wiring (August
+    // 2026, closes out A.6). One doc per AssemblyAI job, written by
+    // start-transcription.mjs at submission and updated by
+    // check-transcription.mjs on billing — both via the Admin SDK, which
+    // bypasses these rules entirely. Client access is read-only, scoped to
+    // the submitting org (or a global admin) — there is no legitimate
+    // direct-client write path; billing correctness depends on orgId and
+    // billed being set exclusively by the server, never by whatever a
+    // client happens to send.
+    match /transcriptionJobs/{jobId} {
+      allow read: if isSameOrg(resource.data.orgId) || isAdmin();
+      allow write: if false;
+    }
     // ══════════════════════════════════════════════════════════════════
     // ▲▲▲  END new orgs block  ▲▲▲
     // ══════════════════════════════════════════════════════════════════
