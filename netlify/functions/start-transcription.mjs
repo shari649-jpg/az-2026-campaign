@@ -28,6 +28,17 @@
 //             why a plain read+write here would be a real race/cost risk
 //             under concurrent requests).
 //
+// Org credit gate (added August 2026, A.6): SEPARATE from the per-user/
+// sitewide submission-rate caps above — those guard against rapid-fire
+// submission spam regardless of cost; this guards against actual dollar
+// cost regardless of submission rate. Checked here at submission time:
+// org has the sandboxTranscription addon enabled, and has a positive
+// transcriptionBalance. The real per-job cost can't be known until
+// AssemblyAI reports a duration, so the actual credit debit happens in
+// check-transcription.mjs on completion, not here — see
+// requireOrgTranscriptionAccess() and the transcriptionJobs/{id} record
+// created at the end of this function for how the two functions connect.
+//
 // audioUrl validation (new — added alongside Sandbox's "paste a link"
 // input): this function used to only ever receive a Firebase Storage URL
 // it had generated itself moments earlier. Now that a manager can paste
@@ -174,11 +185,47 @@ async function requireManagerOrAdmin(app, idToken) {
   if (!idToken) throw new Error("unauthenticated");
   const decoded = await admin.auth(app).verifyIdToken(idToken);
   const snap = await admin.firestore(app).doc(`users/${decoded.uid}`).get();
-  const role = snap.exists ? (snap.data().role || "user") : "user";
+  const data = snap.exists ? snap.data() : {};
+  const role = data.role || "user";
   if (role !== "manager" && role !== "administrator") {
     throw new Error("forbidden");
   }
-  return decoded.uid;
+  // orgId added August 2026 alongside org-scoped transcription credit
+  // metering (A.6). A user with no orgId (shouldn't happen post-migration,
+  // but defensive) is treated as a hard block below, not a silent
+  // fall-through — there is no "no org" bucket that gets free transcription.
+  return { uid: decoded.uid, orgId: data.orgId || null };
+}
+
+const TRANSCRIPTION_CREDIT_MINUTES = 4; // 4 minutes of audio = 1 credit, confirmed Aug 2026 (see A.6)
+
+// Org-level gate: addon enabled, and a positive transcription-credit
+// balance. This is a SUBMISSION-time check only — the real duration (and
+// therefore the real cost) isn't known until AssemblyAI finishes the job,
+// so this can only ever confirm "this org is allowed to submit more work
+// right now," not "this org can afford exactly this file." The actual
+// debit happens in check-transcription.mjs once the job completes and a
+// real audio_duration exists. Balance going negative from a single
+// over-length job that started when the balance was still positive is
+// expected and accepted — the alternative (blocking submission until
+// duration is somehow known upfront) isn't possible with this API.
+async function requireOrgTranscriptionAccess(app, orgId) {
+  if (!orgId) {
+    throw new Error("This account isn't assigned to an org yet — contact an Administrator.");
+  }
+  const db = admin.firestore(app);
+  const orgSnap = await db.doc(`orgs/${orgId}`).get();
+  if (!orgSnap.exists) {
+    throw new Error("Your org record couldn't be found — contact an Administrator.");
+  }
+  const org = orgSnap.data();
+  if (!org.addons?.sandboxTranscription) {
+    throw new Error("Sandbox transcription isn't enabled for your org — contact an Administrator.");
+  }
+  const balance = org.credits?.transcriptionBalance ?? 0;
+  if (balance <= 0) {
+    throw new Error("Your org's transcription credit balance is empty — contact an Administrator to add credits.");
+  }
 }
 
 export default async function (req) {
@@ -203,15 +250,21 @@ export default async function (req) {
     const body = await req.json();
     const idToken = headerToken || body.idToken;
 
-    let uid;
+    let uid, orgId;
     try {
-      uid = await requireManagerOrAdmin(app, idToken);
+      ({ uid, orgId } = await requireManagerOrAdmin(app, idToken));
     } catch (err) {
       const status = err.message === "forbidden" ? 403 : 401;
       const msg = err.message === "forbidden"
         ? "Video/audio transcription is limited to Managers and Administrators."
         : "You must be signed in to use this tool.";
       return new Response(JSON.stringify({ error: msg }), { status, headers: corsHeaders(req) });
+    }
+
+    try {
+      await requireOrgTranscriptionAccess(app, orgId);
+    } catch (err) {
+      return new Response(JSON.stringify({ error: err.message }), { status: 403, headers: corsHeaders(req) });
     }
 
     const limitResult = await checkAndIncrementTranscriptionLimit(app, uid);
@@ -248,6 +301,23 @@ export default async function (req) {
       console.error("[start-transcription] AssemblyAI error:", data);
       return new Response(JSON.stringify({ error: data.error || "Transcription service rejected the request." }), { status: 502, headers: corsHeaders(req) });
     }
+
+    // Persistent job record — this is what lets check-transcription.mjs
+    // later bill the RIGHT org once the real duration is known, verified
+    // server-side rather than trusted from whatever the client's polling
+    // request claims. `billed: false` is the guard check-transcription.mjs
+    // uses to bill exactly once no matter how many times the client polls.
+    // This also closes a previously-flagged gap: before this, no
+    // transcription job was ever persisted anywhere in Firestore at all —
+    // only aggregate daily counters existed, with no way to attribute a
+    // specific job to a specific org after the fact.
+    await admin.firestore(app).doc(`transcriptionJobs/${data.id}`).set({
+      orgId,
+      uid,
+      audioUrl,
+      billed: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
     return new Response(JSON.stringify({ id: data.id }), { status: 200, headers: corsHeaders(req) });
   } catch (err) {
