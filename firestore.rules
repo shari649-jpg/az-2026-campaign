@@ -19,6 +19,20 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
+    // ── NEW — org identity (August 2026) ─────────────────────────────────
+    // Matches AuthContext.jsx's future orgId reads: checked via a
+    // Firestore doc lookup, the exact same pattern as isAdmin()/isManager()
+    // above — deliberately NOT a Firebase custom claim, so there's only
+    // one mechanism for "check something about the requesting user" in
+    // this whole rules file, not two. Returns false (not an error) for a
+    // signed-out user or a user doc with no orgId yet, so callers can use
+    // this directly in a boolean expression without a separate isSignedIn()
+    // guard every time.
+    function isSameOrg(orgId) {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgId == orgId;
+    }
     // Fields on users/{uid} that only an admin may change. The owner can
     // still edit their own profile (name, handles, org, etc.), but never
     // their own role, and never the server-computed rate-limit bookkeeping
@@ -27,8 +41,15 @@ service cloud.firestore {
     // rateLimitHelper.mjs entirely) and set dailyLimitOverride /
     // dailyLimitOverrideDate to grant themselves unlimited AI calls, or
     // reset dailyCalls / dailyCallsDate early. Fixed July 2026 security pass.
+    //
+    // orgId added to this list (August 2026) for the same reason role is
+    // here: a user assigning themselves into a different org would give
+    // them that org's addons/credits/data access for free. Org assignment
+    // now only ever happens via scripts/migrate-users-to-orgs.mjs (Admin
+    // SDK, bypasses these rules) or a future admin-only action — never a
+    // self-service profile edit.
     function ownerProtectedFieldsUnchanged() {
-      let protectedFields = ['role', 'dailyCalls', 'dailyCallsDate', 'dailyLimitOverride', 'dailyLimitOverrideDate'];
+      let protectedFields = ['role', 'orgId', 'dailyCalls', 'dailyCallsDate', 'dailyLimitOverride', 'dailyLimitOverrideDate'];
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(protectedFields);
     }
     // Requires the create to reference a real waitlist doc, in status
@@ -46,7 +67,7 @@ service cloud.firestore {
     // Each person can read/create their own profile (registration, Google
     // sign-in first-time doc creation, AuthContext's own-profile read).
     // Admins can read everyone (Admin panel user list) and change role.
-    // Nobody — including the owner — can change their OWN role or their
+    // Nobody — including the owner — can change their OWN role, orgId, or
     // OWN rate-limit fields; only an admin can do that, and only on
     // someone else's doc.
     match /users/{uid} {
@@ -71,12 +92,20 @@ service cloud.firestore {
       // waitlistId — see that function). RegisterPage.jsx and LoginPage.jsx's
       // Google sign-in flow now both write `waitlistId` onto the profile
       // doc for exactly this reason.
+      //
+      // NOTE: this create rule does NOT require orgId to be set. New
+      // accounts are created without an org today, same as every existing
+      // account before this migration — org assignment happens via
+      // scripts/migrate-users-to-orgs.mjs (Admin SDK) or a future
+      // invite-time/admin flow, not at self-registration. Revisit once
+      // org-aware invites are actually designed.
       allow create: if isSignedIn() && request.auth.uid == uid
                     && request.resource.data.role == "user" // can't self-assign a higher role
+                    && !("orgId" in request.resource.data) // can't self-assign an org either
                     && referencesValidInvite();
       allow update: if isSignedIn() && (
                       // Owner may update their own profile fields, but never
-                      // `role` or the rate-limit bookkeeping fields.
+                      // `role`, `orgId`, or the rate-limit bookkeeping fields.
                       (request.auth.uid == uid && ownerProtectedFieldsUnchanged())
                       ||
                       // Admin may update anyone else's doc (role changes, edits)
@@ -140,9 +169,9 @@ service cloud.firestore {
     // ══════════════════════════════════════════════════════════════════
     // ── storms/{stormId} ─────────────────────────────────────────────────
     // Matches stormLibrary.js's canReview/canArchive (isManager — manager
-    // OR administrator) and canDelete (isAdmin — administrator only).
-    // Members can create (always forced to "draft") and edit only their
-    // own draft; everything else requires Manager or Administrator.
+    // OR administrator). Members can create (always forced to "draft")
+    // and edit only their own draft; everything else requires Manager or
+    // Administrator.
     match /storms/{stormId} {
       // Any signed-in coalition member can read all storms. The app's own
       // tab/filter UI is what limits what a Member sees by default; the
@@ -232,6 +261,78 @@ service cloud.firestore {
     }
     // ══════════════════════════════════════════════════════════════════
     // ▲▲▲  END new sandboxPresets block  ▲▲▲
+    // ══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+    // ▼▼▼  NEW — added for Candidates Firestore migration (August 2026, Handoff #29 follow-up)  ▼▼▼
+    // ══════════════════════════════════════════════════════════════════
+    // ── candidates/{candidateId} ─────────────────────────────────────────
+    // Backs the Research tool's Search Candidates / Compare Races /
+    // District Profiles tabs now that candidate data lives in Firestore
+    // instead of being read live from Google Sheets (see
+    // scripts/migrate-candidates-to-firestore.mjs and the updated
+    // query-candidates.mjs). Doc IDs are deterministic slugs —
+    // name-state-district for district races, name-state-office for
+    // statewide races with no district (Governor, Attorney General,
+    // Secretary of State, U.S. Senate) — but nothing in these rules
+    // depends on that format; it's purely an application-level convention.
+    //
+    // Read: any signed-in coalition member. This is opposition-research
+    // data (Strengths/Vulnerabilities/Key Quotes included), so it stays
+    // behind sign-in the same way query-candidates.mjs already requires
+    // an ID token — but every tool that currently consumes this data
+    // (Research, Compare Races, District Profiles, Candidate Cards) is
+    // used by every role, not just Managers/Admins, so read access
+    // matches storms/announcements: isSignedIn(), not isManager().
+    // NOT org-scoped as of this migration — candidates are treated as a
+    // shared coalition-wide research resource, same as before org
+    // identity existed. Revisit if that assumption changes.
+    //
+    // Write: Manager or Administrator only, matching who actually
+    // maintains candidate data today (this mirrors the Prompt Sandbox and
+    // Storm review gating, not a new judgment call). The bulk migration
+    // script itself writes via the Firebase Admin SDK, which bypasses
+    // these rules entirely — these rules only govern writes coming from
+    // the app's own admin CRUD screen once that's built, or any other
+    // signed-in client path. Delete is Administrator-only, same reasoning
+    // as storms/{stormId}: a Manager mistake here is opposition-research
+    // data loss, not something to make a single click away.
+    match /candidates/{candidateId} {
+      allow read: if isSignedIn();
+      allow create, update: if isManager();
+      allow delete: if isAdmin();
+    }
+    // ══════════════════════════════════════════════════════════════════
+    // ▲▲▲  END new candidates block  ▲▲▲
+    // ══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+    // ▼▼▼  NEW — added for org identity (August 2026, priority-list item #1)  ▼▼▼
+    // ══════════════════════════════════════════════════════════════════
+    // ── orgs/{orgId} ──────────────────────────────────────────────────────
+    // The foundational org record — name, addons (e.g. sandboxTranscription
+    // from the transcription-metering design), and eventually credit
+    // balances once the admin-granted-comp-credits and per-org metering
+    // work is actually built. Seeded via scripts/migrate-users-to-orgs.mjs
+    // (Admin SDK, bypasses these rules).
+    //
+    // Read: any member of that org (isSameOrg — a signed-in user whose own
+    // users/{uid} doc has orgId == this doc's ID), or any global
+    // administrator. A member reading their own org's doc is how the
+    // client will show org name/addon status in the UI; there's no
+    // legitimate reason for a user to read a DIFFERENT org's doc, so this
+    // is deliberately narrower than candidates/storms/announcements,
+    // which are shared coalition-wide resources — orgs are not.
+    //
+    // Write: administrator only, for all operations, for now. There is no
+    // per-org "owner" or "org admin" role yet — every write (creating an
+    // org, changing its name, flipping an addon, adjusting credit fields
+    // once those exist) goes through a global Administrator. Revisit if/
+    // when a per-org admin role gets designed.
+    match /orgs/{orgId} {
+      allow read: if isSameOrg(orgId) || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+    // ══════════════════════════════════════════════════════════════════
+    // ▲▲▲  END new orgs block  ▲▲▲
     // ══════════════════════════════════════════════════════════════════
   }
 }
