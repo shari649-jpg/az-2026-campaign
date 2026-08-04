@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Inflate } from "fflate";
-import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, getDoc, setDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, getDoc, setDoc, where } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -98,6 +98,11 @@ export default function AdminPage() {
   // multiple rows can have independent in-progress forms without
   // colliding. { [orgId]: { creditType, amount, reason, submitting } }
   const [grantForms, setGrantForms]   = useState({});
+  // Per-org history (credit grants + billed transcription jobs) — lazy
+  // loaded only when a card's history is expanded, keyed by orgId so
+  // multiple cards can be open independently without re-fetching.
+  const [historyOpenIds, setHistoryOpenIds] = useState(new Set());
+  const [historyData, setHistoryData] = useState({}); // { [orgId]: { grants, jobs, loaded, loading } }
 
   useEffect(() => { if (!isManager) navigate("/"); }, [isManager]);
   useEffect(() => { if (isManager) { fetchUsers(); fetchWaitlist(); } }, [isManager]);
@@ -212,6 +217,50 @@ export default function AdminPage() {
       updateGrantForm(org.id, { submitting: false });
     }
   };
+
+  // Per-org history: creditGrants (subcollection, already scoped to this
+  // org by path) and billed transcriptionJobs (top-level collection,
+  // filtered client-side after a single-equality-filter fetch —
+  // deliberately NOT combined with a second where() or an orderBy() in
+  // the query itself, since either would require a Firestore composite
+  // index to be created before this works. Sorting/filtering happens in
+  // JS after the fetch instead, so this works immediately with zero
+  // Firebase Console setup.
+  const toggleHistory = async (orgId) => {
+    setHistoryOpenIds(prev => {
+      const next = new Set(prev);
+      if (next.has(orgId)) next.delete(orgId); else next.add(orgId);
+      return next;
+    });
+
+    if (historyData[orgId]?.loaded) return; // already fetched, just toggling visibility
+
+    setHistoryData(prev => ({ ...prev, [orgId]: { grants: [], jobs: [], loaded: false, loading: true } }));
+    try {
+      const [grantsSnap, jobsSnap] = await Promise.all([
+        getDocs(collection(db, "orgs", orgId, "creditGrants")),
+        getDocs(query(collection(db, "transcriptionJobs"), where("orgId", "==", orgId))),
+      ]);
+      const grants = grantsSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      const jobs = jobsSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(j => j.billed) // unbilled/in-progress jobs aren't history yet
+        .sort((a, b) => (b.billedAt?.seconds || 0) - (a.billedAt?.seconds || 0));
+      setHistoryData(prev => ({ ...prev, [orgId]: { grants, jobs, loaded: true, loading: false } }));
+    } catch {
+      notify("Couldn't load history for that org.", "err");
+      setHistoryData(prev => ({ ...prev, [orgId]: { grants: [], jobs: [], loaded: false, loading: false } }));
+    }
+  };
+
+  function formatMinutesSeconds(totalSeconds) {
+    if (!totalSeconds && totalSeconds !== 0) return "—";
+    const m = Math.floor(totalSeconds / 60);
+    const s = Math.round(totalSeconds % 60);
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
 
   const fetchUsers = async () => {
     setLoadingUsers(true);
@@ -1536,6 +1585,73 @@ export default function AdminPage() {
                         >
                           {form.submitting ? "Granting…" : "Grant"}
                         </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* History — credit grants + billed transcription usage.
+                      Lazy-loaded on first expand. */}
+                  <div style={{ borderTop: "1px solid #eee", marginTop: 20, paddingTop: 16 }}>
+                    <button
+                      onClick={() => toggleHistory(org.id)}
+                      style={{
+                        background: "none", border: "none", cursor: "pointer", padding: 0,
+                        fontSize: 13, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase",
+                        color: TEAL, display: "flex", alignItems: "center", gap: 6,
+                      }}
+                    >
+                      {historyOpenIds.has(org.id) ? "▾" : "▸"} History
+                    </button>
+
+                    {historyOpenIds.has(org.id) && (
+                      <div style={{ marginTop: 14 }}>
+                        {historyData[org.id]?.loading ? (
+                          <p style={{ color: "#999", fontSize: 13 }}>Loading…</p>
+                        ) : (
+                          <>
+                            <div style={{ marginBottom: 18 }}>
+                              <h4 style={{ fontSize: 12, fontWeight: 700, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 8px" }}>
+                                Credit grants
+                              </h4>
+                              {!historyData[org.id]?.grants?.length ? (
+                                <p style={{ fontSize: 13, color: "#bbb", fontStyle: "italic" }}>No grants yet.</p>
+                              ) : (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                  {historyData[org.id].grants.map(g => (
+                                    <div key={g.id} style={{ fontSize: 13, color: CHARCOAL, background: "#f9f9f9", borderRadius: 8, padding: "8px 12px" }}>
+                                      <span style={{ fontWeight: 700, color: TEAL }}>+{g.amount} {g.creditType}</span>
+                                      {" — "}{g.reason || "—"}
+                                      <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>
+                                        {g.grantedByEmail || g.grantedBy} · {formatDate(g.createdAt)}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <div>
+                              <h4 style={{ fontSize: 12, fontWeight: 700, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 8px" }}>
+                                Transcription usage
+                              </h4>
+                              {!historyData[org.id]?.jobs?.length ? (
+                                <p style={{ fontSize: 13, color: "#bbb", fontStyle: "italic" }}>No billed transcription jobs yet.</p>
+                              ) : (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                  {historyData[org.id].jobs.map(j => (
+                                    <div key={j.id} style={{ fontSize: 13, color: CHARCOAL, background: "#f9f9f9", borderRadius: 8, padding: "8px 12px" }}>
+                                      <span style={{ fontWeight: 700, color: TURQUOISE }}>-{j.billedCredits} credit{j.billedCredits === 1 ? "" : "s"}</span>
+                                      {" — "}{formatMinutesSeconds(j.audioDurationSeconds)} of audio
+                                      <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>
+                                        {formatDate(j.billedAt)}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
