@@ -1,0 +1,23 @@
+{
+  "_comment": "Fill in real org names and IDs before running the migration. orgId should be a short, stable, lowercase-hyphenated slug — it becomes the Firestore document ID under orgs/{orgId} and is never meant to change once set. defaultOrgId is where every existing user lands UNLESS their email appears in userAssignments below. Add one entry per org you want seeded; add one line per user whose email needs to go somewhere other than the default.",
+
+  "orgs": [
+    {
+      "orgId": "REPLACE_WITH_MAIN_ORG_ID",
+      "name": "REPLACE_WITH_MAIN_ORG_DISPLAY_NAME",
+      "addons": { "sandboxTranscription": true }
+    },
+    {
+      "orgId": "REPLACE_WITH_BETA_ORG_ID",
+      "name": "REPLACE_WITH_BETA_ORG_DISPLAY_NAME",
+      "addons": { "sandboxTranscription": true }
+    }
+  ],
+
+  "defaultOrgId": "REPLACE_WITH_MAIN_ORG_ID",
+
+  "userAssignments": {
+    "_comment": "email (lowercase, exact match to the users/{uid} doc's stored email field) -> orgId. Only list users who should NOT get defaultOrgId.",
+    "someone@example.com": "REPLACE_WITH_BETA_ORG_ID"
+  }
+}
