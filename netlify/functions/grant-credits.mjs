@@ -59,9 +59,9 @@ async function requireAdmin(app, idToken) {
 }
 
 const VALID_CREDIT_TYPES = new Set(["generation", "transcription"]);
-const BALANCE_FIELD = {
-  generation: "credits.generationBalance",
-  transcription: "credits.transcriptionBalance",
+const BALANCE_SUBFIELD = {
+  generation: "generationBalance",
+  transcription: "transcriptionBalance",
 };
 const MAX_GRANT_AMOUNT = 1_000_000; // sanity ceiling — catches a stray extra zero, not a real limit
 
@@ -124,14 +124,25 @@ export default async function (req) {
       return new Response(JSON.stringify({ error: `No org found with ID "${orgId}".` }), { status: 404, headers: corsHeaders(req) });
     }
 
-    const balanceField = BALANCE_FIELD[creditType];
+    const balanceSubfield = BALANCE_SUBFIELD[creditType];
     const grantRef = orgRef.collection("creditGrants").doc();
 
     // Atomic: the balance increment and the audit-trail entry either both
     // happen or neither does — no partial state where credits moved but
     // there's no record of why, or vice versa.
+    //
+    // BUG FIX (Aug 5): this previously wrote a dotted STRING as a plain
+    // object key — e.g. { "credits.transcriptionBalance": increment(n) }
+    // — which Firestore stores as a literal field named
+    // "credits.transcriptionBalance" (dot included in the name), NOT a
+    // nested credits map. Every read site expects org.credits.{field} as
+    // a real nested object, so that data was invisible everywhere it was
+    // read, even though it was "there" in the Console under the wrong
+    // kind of field. Writing an actual nested object below lets
+    // Firestore's merge:true do a proper deep merge — only the specific
+    // leaf field changes, the other balance under credits is untouched.
     await db.runTransaction(async (tx) => {
-      tx.set(orgRef, { [balanceField]: admin.firestore.FieldValue.increment(amountNum) }, { merge: true });
+      tx.set(orgRef, { credits: { [balanceSubfield]: admin.firestore.FieldValue.increment(amountNum) } }, { merge: true });
       tx.set(grantRef, {
         amount: amountNum,
         creditType,
