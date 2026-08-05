@@ -124,10 +124,24 @@ async function lookupDistricts(address) {
 }
 
 // ── District-string helpers ──────────────────────────────────────────────
-// Pulls the first number out of a district field like "CD07" or "LD15".
+// Pulls the number out of a district field like "CD07" or "LD15".
+// Leading zeros are already a non-issue — parseInt("08") === parseInt("8")
+// === 8, so "8" vs "08" style variance in how someone typed it into the
+// Sheet was never actually a risk.
+//
+// What IS a real risk: if a district field ever contains more than one
+// number (e.g. a stray "Precinct 12, LD08" instead of a clean "LD08"),
+// grabbing the first digit run found anywhere would silently grab the
+// wrong one (12, not 8). Guard against that by preferring a number that
+// appears directly after LD/CD text specifically, and only falling back
+// to "first number anywhere in the string" if that pattern isn't present
+// at all.
 function extractDistrictNumber(districtStr) {
-  const match = (districtStr || "").match(/(\d+)/);
-  return match ? parseInt(match[1], 10) : null;
+  const str = districtStr || "";
+  const prefixed = str.match(/\b(?:ld|cd)[\s-]*?(\d+)/i);
+  if (prefixed) return parseInt(prefixed[1], 10);
+  const anyNumber = str.match(/(\d+)/);
+  return anyNumber ? parseInt(anyNumber[1], 10) : null;
 }
 
 function matchesFederalHouse(candidate, cd) {
