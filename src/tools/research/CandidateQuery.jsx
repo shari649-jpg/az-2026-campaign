@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../../firebase';
+import { useAuth } from '../../context/AuthContext';
 
 function localStorageSafe(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); return true; }
@@ -160,6 +161,25 @@ function groupByseat(results) {
 
 export default function CandidateQuery() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+
+  // Cross-org Research visibility (Aug 2026) — separate from the user's
+  // actual orgId (which still governs credits/billing/role, untouched).
+  // researchOrgIds defaults to just the user's own org, so this is a
+  // no-op for the vast majority of users; it only ever contains more than
+  // one entry for someone an admin has explicitly granted extra research
+  // visibility to.
+  const researchOrgIds = useMemo(() => {
+    if (profile?.researchOrgIds?.length) return profile.researchOrgIds;
+    if (profile?.orgId) return [profile.orgId];
+    return [];
+  }, [profile]);
+
+  const [activeOrg, setActiveOrg] = useState(null);
+  useEffect(() => {
+    if (!activeOrg && researchOrgIds.length) setActiveOrg(researchOrgIds[0]);
+  }, [researchOrgIds, activeOrg]);
+
   const [query,     setQuery]     = useState('');
   const [filter,    setFilter]    = useState('all');
   const [results,   setResults]   = useState(null);
@@ -195,7 +215,22 @@ export default function CandidateQuery() {
       .filter(c => c.facts.length > 0);
   }, [results, filter]);
 
-  const seatGroupsFiltered = useMemo(() => groupByseat(filteredResults), [filteredResults]);
+  // Org-focus filtering (Aug 2026) — a candidate shows if it's tagged for
+  // the active org, OR if it isn't tagged at all yet. Untagged candidates
+  // are fail-open by design (never silently hidden) and get an
+  // "Unassigned" badge in the card header instead, so staff notice and can
+  // go tag them rather than wondering where a candidate went. NOTE: this
+  // reads candidate.focusOrgIds, which query-candidates.mjs doesn't return
+  // yet — it still reads Google Sheets, not Firestore. Until that rewire
+  // ships, every candidate is untagged and this is a harmless no-op (the
+  // switcher below just won't render for anyone with only one research
+  // org). No further changes needed here once the rewire lands.
+  const orgFilteredResults = useMemo(() => {
+    if (!activeOrg) return filteredResults;
+    return filteredResults.filter(c => !c.focusOrgIds || c.focusOrgIds.length === 0 || c.focusOrgIds.includes(activeOrg));
+  }, [filteredResults, activeOrg]);
+
+  const seatGroupsFiltered = useMemo(() => groupByseat(orgFilteredResults), [orgFilteredResults]);
 
   async function runSearch(searchQuery, filterType) {
     setLoading(true);
@@ -344,6 +379,24 @@ export default function CandidateQuery() {
         </p>
       </div>
 
+      {/* ── Org switcher (Aug 2026) ── only renders for a user granted
+          research visibility into more than one org; everyone else never
+          sees this at all. */}
+      {researchOrgIds.length > 1 && (
+        <div style={{ marginBottom: 20, maxWidth: 260 }}>
+          <label style={S.label}>Viewing</label>
+          <select
+            value={activeOrg || ''}
+            onChange={e => setActiveOrg(e.target.value)}
+            style={{ ...S.input, cursor: 'pointer' }}
+          >
+            {researchOrgIds.map(orgId => (
+              <option key={orgId} value={orgId}>{orgId}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* ── Search form ── */}
       <form onSubmit={handleSearch} style={{ marginBottom: 20 }}>
         <label style={S.label}>Search Candidates</label>
@@ -399,7 +452,7 @@ export default function CandidateQuery() {
           {/* Results header + push button */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
             <p style={{ fontSize: 15, color: B.textMid, fontWeight: 700 }}>
-              {filteredResults.length} candidate{filteredResults.length !== 1 ? 's' : ''} found{filter !== 'all' ? ` (filtered: ${filter})` : ''}
+              {orgFilteredResults.length} candidate{orgFilteredResults.length !== 1 ? 's' : ''} found{filter !== 'all' ? ` (filtered: ${filter})` : ''}
               {Object.keys(selectedFacts).length > 0 && <span style={{ color: B.teal }}> · {Object.keys(selectedFacts).length} fact{Object.keys(selectedFacts).length !== 1 ? 's' : ''} selected</span>}
               {Object.keys(selectedFacts).length === 0 && hasSelected && <span style={{ color: B.teal }}> · {selectedList.length} candidate{selectedList.length !== 1 ? 's' : ''} selected</span>}
             </p>
@@ -472,6 +525,9 @@ export default function CandidateQuery() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
                               <span style={{ fontSize: 17, fontWeight: 700, color: B.text }}>{candidate.candidate_name}</span>
                               <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: pc.bg, color: pc.text }}>{candidate.party}</span>
+                              {(!candidate.focusOrgIds || candidate.focusOrgIds.length === 0) && (
+                                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: B.surfaceAlt, color: B.textMute, border: `1px solid ${B.border}` }}>Unassigned</span>
+                              )}
                             </div>
                             <p style={{ fontSize: 13, color: B.textMute, margin: 0 }}>
                               {candidate.office}{candidate.district ? ` · ${candidate.district}` : ''}
