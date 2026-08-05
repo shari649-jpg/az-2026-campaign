@@ -63,7 +63,11 @@ async function billCompletedJobIfNeeded(app, transcriptId, audioDurationSeconds)
 
     const credits = creditsForDuration(audioDurationSeconds);
     const orgRef = db.doc(`orgs/${job.orgId}`);
-    tx.set(orgRef, { "credits.transcriptionBalance": admin.firestore.FieldValue.increment(-credits) }, { merge: true });
+    // BUG FIX (Aug 5): same dotted-string-as-object-key bug as
+    // grant-credits.mjs — a nested object write is required for
+    // Firestore to actually merge into credits.transcriptionBalance,
+    // not create a literal "credits.transcriptionBalance"-named field.
+    tx.set(orgRef, { credits: { transcriptionBalance: admin.firestore.FieldValue.increment(-credits) } }, { merge: true });
     tx.update(jobRef, {
       billed: true,
       billedCredits: credits,
