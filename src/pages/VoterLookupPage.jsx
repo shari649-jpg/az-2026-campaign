@@ -162,6 +162,19 @@ function CandidateRow({ candidate, isLast }) {
   };
   const pc = partyColors[(candidate.party || "").toUpperCase()] || { bg: "#f3f4f6", text: CHARCOAL };
 
+  // Colored-initial fallback avatar for a missing headshot — better than
+  // a blank gray box, and it's genuinely informative (party at a glance)
+  // rather than purely decorative. Red for R, blue for D, pink for
+  // anything else (Independent, Libertarian, Green, no party listed,
+  // etc.) — matching the same red/blue as the party pill above, so the
+  // two never visually contradict each other.
+  const avatarColors = {
+    D: { bg: "#1a56b0", text: "#fff" },
+    R: { bg: "#b91c1c", text: "#fff" },
+  };
+  const ac = avatarColors[(candidate.party || "").toUpperCase()] || { bg: "#db2777", text: "#fff" }; // pink
+  const initial = (candidate.name || "?").trim().charAt(0).toUpperCase();
+
   return (
     <div style={{ padding: "18px 20px", borderBottom: isLast ? "none" : "1px solid #eee" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
@@ -179,7 +192,14 @@ function CandidateRow({ candidate, isLast }) {
         {photoUrl ? (
           <img src={photoUrl} alt="" style={{ width: 64, height: 64, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
         ) : (
-          <div style={{ width: 64, height: 64, borderRadius: 10, flexShrink: 0, background: "#f0f0f0" }} />
+          <div style={{
+            width: 64, height: 64, borderRadius: 10, flexShrink: 0,
+            background: ac.bg, color: ac.text,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "var(--font-display)", fontSize: 26, fontWeight: 700,
+          }}>
+            {initial}
+          </div>
         )}
         {candidate.recordAccomplishments && (
           <p style={{ fontSize: 13.5, color: CHARCOAL, lineHeight: 1.6, margin: 0 }}>
