@@ -103,7 +103,20 @@ async function lookupDistricts(address) {
     // user-facing "couldn't find that address" rather than a server error.
     throw new Error(data.error?.message || "Couldn't resolve that address. Double-check it's a complete street address.");
   }
-  const { cd, sldu, sldl } = parseDivisions(data.divisions);
+  let { cd, sldu, sldl } = parseDivisions(data.divisions);
+
+  // Arizona-specific reconciliation: every one of AZ's 30 legislative
+  // districts elects 1 senator AND 2 representatives from the SAME
+  // numbered district (unlike most states, which draw separate House and
+  // Senate maps) — sldu and sldl are guaranteed to be the same number in
+  // this state whenever both are actually returned. Google's underlying
+  // data occasionally has a coverage gap and only returns one of the two
+  // for a given address; when that happens, the one value it DID return
+  // is still valid for both chambers, so use it for whichever one came
+  // back null rather than reporting a false "no district found."
+  if (sldu !== null && sldl === null) sldl = sldu;
+  if (sldl !== null && sldu === null) sldu = sldl;
+
   if (cd === null && sldu === null && sldl === null) {
     throw new Error("That address didn't resolve to a recognized Arizona congressional or legislative district.");
   }
