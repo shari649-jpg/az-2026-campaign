@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../../firebase';
+import { useAuth } from '../../context/AuthContext';
 
 function localStorageSafe(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); return true; }
@@ -114,6 +115,24 @@ function factsToText(c) {
 
 export default function RaceComparison() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+
+  // Cross-org Research visibility (Aug 2026) — same pattern as
+  // CandidateQuery.jsx. Separate from the user's actual orgId, which still
+  // governs credits/billing/role untouched. Defaults to just the user's
+  // own org for everyone except someone an admin has explicitly granted
+  // extra research visibility to.
+  const researchOrgIds = useMemo(() => {
+    if (profile?.researchOrgIds?.length) return profile.researchOrgIds;
+    if (profile?.orgId) return [profile.orgId];
+    return [];
+  }, [profile]);
+
+  const [activeOrg, setActiveOrg] = useState(null);
+  useEffect(() => {
+    if (!activeOrg && researchOrgIds.length) setActiveOrg(researchOrgIds[0]);
+  }, [researchOrgIds, activeOrg]);
+
   const [races,    setRaces]    = useState(null);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState(null);
@@ -203,16 +222,35 @@ export default function RaceComparison() {
     setPushed(false);
   }
 
-  const filteredRaces = useMemo(() => {
+  // Org-focus filtering (Aug 2026) — same fail-open logic as
+  // CandidateQuery.jsx: a candidate shows if focusOrgIds includes the
+  // active org, or if it's untagged entirely (shown, flagged
+  // "Unassigned" in renderCandidate below). A race group with zero
+  // visible candidates after this filter is dropped rather than shown
+  // empty. NOTE: candidate.focusOrgIds doesn't exist in the data returned
+  // by query-candidates.mjs yet (still Sheets-sourced, not Firestore) —
+  // until that rewire ships this is a harmless no-op.
+  const orgFilteredRaces = useMemo(() => {
     if (!races) return [];
+    if (!activeOrg) return races;
+    return races
+      .map(r => ({
+        ...r,
+        candidates: r.candidates.filter(c => !c.focusOrgIds || c.focusOrgIds.length === 0 || c.focusOrgIds.includes(activeOrg)),
+      }))
+      .filter(r => r.candidates.length > 0);
+  }, [races, activeOrg]);
+
+  const filteredRaces = useMemo(() => {
+    if (!orgFilteredRaces) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return races;
-    return races.filter(r =>
+    if (!q) return orgFilteredRaces;
+    return orgFilteredRaces.filter(r =>
       (r.office || '').toLowerCase().includes(q) ||
       (r.district || '').toLowerCase().includes(q) ||
       r.candidates.some(c => c.candidate_name.toLowerCase().includes(q))
     );
-  }, [races, search]);
+  }, [orgFilteredRaces, search]);
 
   function toggleExpand(name) {
     setExpanded(p => ({ ...p, [name]: !p[name] }));
@@ -333,6 +371,23 @@ export default function RaceComparison() {
           Select candidates to send to Message Machine.
         </p>
       </div>
+
+      {/* Org switcher (Aug 2026) — only renders for a user granted research
+          visibility into more than one org; everyone else never sees this. */}
+      {researchOrgIds.length > 1 && (
+        <div style={{ marginBottom: 20, maxWidth: 260 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: B.textMid, marginBottom: 6, display: 'block' }}>Viewing</label>
+          <select
+            value={activeOrg || ''}
+            onChange={e => setActiveOrg(e.target.value)}
+            style={{ ...S.input, cursor: 'pointer' }}
+          >
+            {researchOrgIds.map(orgId => (
+              <option key={orgId} value={orgId}>{orgId}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Search + Refresh row */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, alignItems: 'flex-end' }}>
@@ -538,6 +593,9 @@ export default function RaceComparison() {
                     <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: pc.bg, color: pc.text }}>
                       {candidate.party}
                     </span>
+                    {(!candidate.focusOrgIds || candidate.focusOrgIds.length === 0) && (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: B.surfaceAlt, color: B.textMute, border: `1px solid ${B.border}` }}>Unassigned</span>
+                    )}
                     {candidate.incumbent_status && (
                       <span style={{ fontSize: 11, color: B.textMute }}>{candidate.incumbent_status}</span>
                     )}
