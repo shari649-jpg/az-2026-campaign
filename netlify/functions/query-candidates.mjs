@@ -1,11 +1,13 @@
 // netlify/functions/query-candidates.mjs
-// Reads candidate data directly from Google Sheets.
-// Tab 1 — Candidates (one row per candidate):
-// A: Name  B: Office  C: Party  D: District  E: Level  F: Incumbent Status
-// G: Background  H: Record & Accomplishments  I: Strengths
-// J: Vulnerabilities  K: Key Quotes  L: Notes  N: Policy Platform
-// M: Photo Filename (matches a file in the candidate-headshots/ Firebase
-//    Storage folder, e.g. "connolly-janeen.jpg" — added for Candidate Cards)
+// Candidates (mode: search/races, and default) — read from Firestore's
+// `candidates` collection. Rewired August 2026; previously read Google
+// Sheets directly (A2:N), which meant Firestore fields added in recent
+// sessions (Wins, State, Issue Tags, Focus Org IDs, etc.) existed in the
+// database but were invisible in this live tool. That gap is now closed.
+//
+// districts (mode: districts) and issues (mode: issues) below are UNCHANGED
+// — those tabs haven't been migrated to Firestore yet, still read live
+// from the Google Sheet.
 //
 // Tab 2 — Race_Demographics (one row per race/district):
 // A: Race Type  B: District ID  C: Counties  D: Location Note  E: Registration Data
@@ -65,13 +67,9 @@ function getAuthClient() {
   });
 }
 
-async function fetchAllRows(auth) {
-  const sheets = google.sheets({ version: "v4", auth });
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range: "A2:N",
-  });
-  return response.data.values || [];
+async function fetchCandidatesFromFirestore() {
+  const snapshot = await admin.firestore().collection("candidates").get();
+  return snapshot.docs.map(doc => doc.data());
 }
 
 async function fetchDistrictRows(auth) {
@@ -132,46 +130,49 @@ function parseIssues(rows) {
     });
 }
 
-function parseRows(rows) {
-  return rows
-    .filter(row => row[0] && row[0].trim())
-    .map(row => {
-      const name            = (row[0]  || "").trim();
-      const office          = (row[1]  || "").trim();
-      const party           = (row[2]  || "").trim();
-      const district        = (row[3]  || "").trim();
-      const level           = (row[4]  || "").trim();
-      const incumbentStatus = (row[5]  || "").trim();
-      const background      = (row[6]  || "").trim();
-      const accomplishments = (row[7]  || "").trim();
-      const strengths       = (row[8]  || "").trim();
-      const vulnerabilities = (row[9]  || "").trim();
-      const keyQuotes       = (row[10] || "").trim();
-      const notes           = (row[11] || "").trim();
-      const policyPlatform  = (row[13] || "").trim();
-      const photoFilename   = (row[12] || "").trim();
+function parseCandidates(docs) {
+  return docs.map(data => {
+    const facts = [];
+    if (data.background)              facts.push({ type: "background",            category: "", text: data.background });
+    if (data.recordAccomplishments)   facts.push({ type: "accomplishment",         category: "", text: data.recordAccomplishments });
+    if (data.strengths)               facts.push({ type: "strength",               category: "", text: data.strengths });
+    if (data.vulnerabilities)         facts.push({ type: "vulnerability",          category: "", text: data.vulnerabilities });
+    if (data.keyQuotes)               facts.push({ type: "quote",                  category: "", text: data.keyQuotes });
+    if (data.notes)                   facts.push({ type: "notes",                  category: "", text: data.notes });
+    if (data.policyPlatform)          facts.push({ type: "policy",                 category: "", text: data.policyPlatform });
+    // New August 2026 — these 3 already had filter pills in CandidateQuery.jsx
+    // / RaceComparison.jsx (Handoff #31) but were never actually returned by
+    // this function since it only read Sheets columns A2:N. Closed now.
+    if (data.opponent)                facts.push({ type: "opponent",               category: "", text: data.opponent });
+    if (data.opponentVulnerabilities) facts.push({ type: "opponent_vulnerability", category: "", text: data.opponentVulnerabilities });
+    if (data.messagingHooks)          facts.push({ type: "messaging_hook",         category: "", text: data.messagingHooks });
 
-      const facts = [];
-      if (background)      facts.push({ type: "background",     category: "",   text: background });
-      if (accomplishments) facts.push({ type: "accomplishment", category: "",   text: accomplishments });
-      if (strengths)       facts.push({ type: "strength",       category: "",   text: strengths });
-      if (vulnerabilities) facts.push({ type: "vulnerability",  category: "",   text: vulnerabilities });
-      if (keyQuotes)       facts.push({ type: "quote",          category: "",   text: keyQuotes });
-      if (notes)           facts.push({ type: "notes",          category: "",   text: notes });
-      if (policyPlatform)  facts.push({ type: "policy",         category: "",   text: policyPlatform });
-
-      return {
-        candidate_name:   name,
-        office,
-        party,
-        district,
-        level,
-        incumbent_status: incumbentStatus,
-        policy_platform:  policyPlatform,
-        photo_filename:   photoFilename,
-        facts,
-      };
-    });
+    return {
+      candidate_name:   data.name || "",
+      office:           data.office || "",
+      party:            data.party || "",
+      district:         data.district || "",
+      level:            data.level || "",
+      incumbent_status: data.incumbentStatus || "",
+      policy_platform:  data.policyPlatform || "",
+      photo_filename:   data.photoFilename || "",
+      facts,
+      // Card-only fields (not searchable facts, per the categorization
+      // already decided in CandidateQuery.jsx's FILTER_TYPES comment) —
+      // not yet rendered anywhere, passed through now so the admin CRUD
+      // panel has real data the moment it's built.
+      issue_tags:       data.issueTags || "",
+      endorsements:     data.endorsements || "",
+      fundraising:      data.fundraising || "",
+      campaign_website: data.campaignWebsite || "",
+      ballotpedia_url:  data.ballotpediaUrl || "",
+      wins:             data.wins || "",
+      state:            data.state || "",
+      // Org-focus filtering — CandidateQuery.jsx / RaceComparison.jsx
+      // already read this; it's just been returning undefined until now.
+      focusOrgIds: Array.isArray(data.focusOrgIds) ? data.focusOrgIds : [],
+    };
+  });
 }
 
 function searchCandidates(candidates, query, filterType) {
@@ -275,8 +276,8 @@ export default async function (req) {
       );
     }
 
-    const rows = await fetchAllRows(auth);
-    const allCandidates = parseRows(rows);
+    const candidateDocs = await fetchCandidatesFromFirestore();
+    const allCandidates = parseCandidates(candidateDocs);
 
     if (mode === "races") {
       const races = groupByRace(allCandidates);
