@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Inflate } from "fflate";
-import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, getDoc, setDoc, where } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, getDoc, setDoc, where, writeBatch } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -103,11 +103,27 @@ export default function AdminPage() {
   // multiple cards can be open independently without re-fetching.
   const [historyOpenIds, setHistoryOpenIds] = useState(new Set());
   const [historyData, setHistoryData] = useState({}); // { [orgId]: { grants, jobs, loaded, loading } }
+  // ── Candidates tab (August 2026) ─────────────────────────────────────
+  // Bulk active/inactive toggle for candidates who've lost a primary —
+  // pulled forward from the full future candidate CRUD panel because
+  // primary nights (Aug 11, Aug 18, Sept 8, etc.) can eliminate 30+
+  // candidates at once, and one-by-one Firestore Console deletion doesn't
+  // scale to that and risks clicking the wrong doc. This never deletes —
+  // it sets `active: false`, which query-candidates.mjs filters out of
+  // default Research results. Fully reversible via "Mark Active" below.
+  const [candidates, setCandidates]           = useState([]);
+  const [candidatesLoaded, setCandidatesLoaded] = useState(false);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [candidateSearch, setCandidateSearch] = useState("");
+  const [showInactive, setShowInactive]       = useState(false);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState(new Set());
+  const [candidatesSaving, setCandidatesSaving] = useState(false);
 
   useEffect(() => { if (!isManager) navigate("/"); }, [isManager]);
   useEffect(() => { if (isManager) { fetchUsers(); fetchWaitlist(); } }, [isManager]);
   useEffect(() => { if (activeTab === "settings" && !pubRegenLoaded) fetchPubRegenSetting(); }, [activeTab]);
   useEffect(() => { if (activeTab === "orgs" && !orgsLoaded) fetchOrgs(); }, [activeTab]);
+  useEffect(() => { if (activeTab === "candidates" && !candidatesLoaded) fetchCandidates(); }, [activeTab]);
 
   const fetchPubRegenSetting = async () => {
     try {
@@ -157,6 +173,58 @@ export default function AdminPage() {
     }
     setOrgsLoading(false);
     setOrgsLoaded(true);
+  };
+
+  // ── Candidates tab ────────────────────────────────────────────────────
+  const fetchCandidates = async () => {
+    setCandidatesLoading(true);
+    try {
+      const snap = await getDocs(collection(db, "candidates"));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) => {
+        const officeCompare = (a.office || "").localeCompare(b.office || "");
+        if (officeCompare !== 0) return officeCompare;
+        return (a.name || "").localeCompare(b.name || "");
+      });
+      setCandidates(list);
+    } catch {
+      notify("Failed to load candidates.", "err");
+    }
+    setCandidatesLoading(false);
+    setCandidatesLoaded(true);
+  };
+
+  const toggleCandidateSelected = (id) => {
+    setSelectedCandidateIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Bulk write via a single batch — matches firestore.rules' existing
+  // candidates/{candidateId} rule (isManager() for create/update), so no
+  // new rule or Netlify function is needed for this. Firestore batches cap
+  // at 500 writes; a single primary night's losses will never come close.
+  const setCandidatesActiveState = async (nextActive) => {
+    if (selectedCandidateIds.size === 0) return;
+    setCandidatesSaving(true);
+    try {
+      const batch = writeBatch(db);
+      selectedCandidateIds.forEach(id => {
+        batch.update(doc(db, "candidates", id), { active: nextActive });
+      });
+      await batch.commit();
+      setCandidates(prev => prev.map(c =>
+        selectedCandidateIds.has(c.id) ? { ...c, active: nextActive } : c
+      ));
+      notify(`${selectedCandidateIds.size} candidate${selectedCandidateIds.size !== 1 ? "s" : ""} marked ${nextActive ? "active" : "inactive"}.`);
+      setSelectedCandidateIds(new Set());
+    } catch {
+      notify("Couldn't update those candidates — try again.", "err");
+    }
+    setCandidatesSaving(false);
   };
 
   // Direct client write — allowed for admins per firestore.rules'
@@ -1005,6 +1073,7 @@ export default function AdminPage() {
           { id: "headshots", label: "Candidate Headshots" },
           { id: "settings", label: "Settings" },
           { id: "orgs", label: "Orgs" },
+          { id: "candidates", label: "Candidates" },
           ].map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSearch(""); }}
               style={{
@@ -1033,7 +1102,7 @@ export default function AdminPage() {
         </div>
 
         {/* Search */}
-        {activeTab !== "headshots" && activeTab !== "orgs" && (
+        {activeTab !== "headshots" && activeTab !== "orgs" && activeTab !== "candidates" && (
           <input
             type="search"
             placeholder={activeTab === "users" ? "Search by name, email, or role…" : "Search by name, email, or organization…"}
@@ -1658,6 +1727,136 @@ export default function AdminPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* ── CANDIDATES TAB ── */}
+        {/* Bulk active/inactive toggle — primary-night cleanup. Never
+            deletes; sets `active: false`, which query-candidates.mjs
+            filters out of default Research results. Fully reversible. */}
+        {activeTab === "candidates" && (
+          <div>
+            {candidatesLoading && !candidatesLoaded ? (
+              <p style={{ color: "#888", textAlign: "center", padding: 40 }}>Loading candidates…</p>
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                  <input
+                    type="search"
+                    placeholder="Search by name, office, or district…"
+                    value={candidateSearch}
+                    onChange={e => setCandidateSearch(e.target.value)}
+                    style={{ flex: 1, minWidth: 220, boxSizing: "border-box", padding: "12px 16px", fontSize: 15, border: "2px solid #ccc", borderRadius: 10, fontFamily: "inherit", color: CHARCOAL, background: BG }}
+                  />
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#666", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    <input
+                      type="checkbox"
+                      checked={showInactive}
+                      onChange={e => setShowInactive(e.target.checked)}
+                      style={{ width: 16, height: 16, cursor: "pointer" }}
+                    />
+                    Show closed
+                  </label>
+                </div>
+
+                {(() => {
+                  const q = candidateSearch.toLowerCase().trim();
+                  const visible = candidates.filter(c => {
+                    const isActive = c.active !== false;
+                    if (!showInactive && !isActive) return false;
+                    if (!q) return true;
+                    return [c.name, c.office, c.district, c.state].join(" ").toLowerCase().includes(q);
+                  });
+
+                  if (visible.length === 0) {
+                    return <p style={{ color: "#888", textAlign: "center", padding: 40 }}>No candidates match.</p>;
+                  }
+
+                  return (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 90 }}>
+                      {visible.map(c => {
+                        const isActive = c.active !== false;
+                        const isSelected = selectedCandidateIds.has(c.id);
+                        const partyColors = c.party === "D"
+                          ? { bg: "#e8f0fe", color: "#1a56b0" }
+                          : c.party === "R"
+                            ? { bg: "#fdecea", color: "#b91c1c" }
+                            : { bg: "#f3f4f6", color: CHARCOAL };
+                        return (
+                          <div
+                            key={c.id}
+                            onClick={() => toggleCandidateSelected(c.id)}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 14, padding: "12px 16px",
+                              background: isSelected ? "#E6FAF7" : BG,
+                              border: `1.5px solid ${isSelected ? TURQUOISE : "#e0e0e0"}`,
+                              borderRadius: 10, cursor: "pointer", opacity: isActive ? 1 : 0.6,
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onClick={e => e.stopPropagation()}
+                              onChange={() => toggleCandidateSelected(c.id)}
+                              style={{ width: 18, height: 18, cursor: "pointer", flexShrink: 0 }}
+                            />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                <span style={{ fontWeight: 700, fontSize: 15, color: CHARCOAL }}>{c.name || "(no name)"}</span>
+                                {c.party && (
+                                  <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20, background: partyColors.bg, color: partyColors.color }}>{c.party}</span>
+                                )}
+                                {!isActive && (
+                                  <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20, background: "#f3f4f6", color: "#888", border: "1px solid #ddd" }}>Closed</span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: 13, color: "#888", marginTop: 2 }}>
+                                {c.office}{c.district ? ` · ${c.district}` : ""}{c.state ? ` · ${c.state}` : ""}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                {/* Floating bulk-action bar — mirrors CandidateQuery.jsx's
+                    floating selection bar pattern for visual consistency. */}
+                {selectedCandidateIds.size > 0 && (
+                  <div style={{
+                    position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+                    background: TEAL, color: "#fff", borderRadius: 12,
+                    padding: "14px 24px", display: "flex", alignItems: "center", gap: 16,
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.25)", zIndex: 50, flexWrap: "wrap", maxWidth: "90vw",
+                  }}>
+                    <span style={{ fontWeight: 700, fontSize: 15 }}>
+                      {selectedCandidateIds.size} selected
+                    </span>
+                    <button
+                      onClick={() => setCandidatesActiveState(false)}
+                      disabled={candidatesSaving}
+                      style={{ background: TERRACOTTA, color: "#fff", fontWeight: 700, padding: "9px 20px", borderRadius: 8, border: "2px solid rgba(255,255,255,0.3)", cursor: candidatesSaving ? "not-allowed" : "pointer", fontSize: 14, fontFamily: "inherit" }}
+                    >
+                      {candidatesSaving ? "Saving…" : "Mark Inactive"}
+                    </button>
+                    <button
+                      onClick={() => setCandidatesActiveState(true)}
+                      disabled={candidatesSaving}
+                      style={{ background: "rgba(255,255,255,0.15)", color: "#fff", fontWeight: 700, padding: "9px 20px", borderRadius: 8, border: "2px solid rgba(255,255,255,0.3)", cursor: candidatesSaving ? "not-allowed" : "pointer", fontSize: 14, fontFamily: "inherit" }}
+                    >
+                      Mark Active
+                    </button>
+                    <button
+                      onClick={() => setSelectedCandidateIds(new Set())}
+                      style={{ background: "transparent", color: "rgba(255,255,255,0.7)", border: "none", cursor: "pointer", fontSize: 20, padding: 0, lineHeight: 1 }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
