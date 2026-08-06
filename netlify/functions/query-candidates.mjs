@@ -171,6 +171,11 @@ function parseCandidates(docs) {
       // Org-focus filtering — CandidateQuery.jsx / RaceComparison.jsx
       // already read this; it's just been returning undefined until now.
       focusOrgIds: Array.isArray(data.focusOrgIds) ? data.focusOrgIds : [],
+      // Active/inactive (August 2026) — set via the Admin page's Candidates
+      // tab after a primary loss. Missing/true = active (no need to touch
+      // any pre-existing doc). Filtered out of default results below;
+      // never deleted, so the underlying research is never lost.
+      active: data.active !== false,
     };
   });
 }
@@ -277,7 +282,12 @@ export default async function (req) {
     }
 
     const candidateDocs = await fetchCandidatesFromFirestore();
-    const allCandidates = parseCandidates(candidateDocs);
+    // Inactive (closed) candidates are excluded from every live Research
+    // result by default — they still exist in Firestore (never deleted),
+    // just hidden from staff search/compare views. The Admin page's
+    // Candidates tab reads Firestore directly, bypassing this filter, so
+    // closed candidates remain visible and reversible there.
+    const allCandidates = parseCandidates(candidateDocs).filter(c => c.active);
 
     if (mode === "races") {
       const races = groupByRace(allCandidates);
