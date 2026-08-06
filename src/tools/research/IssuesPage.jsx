@@ -98,7 +98,7 @@ export default function IssuesPage() {
       // Was hardcoded blank — messaging_angle already appears inside issueText's
       // general blob, but never got surfaced as its own Focal Point, so Message
       // Machine's prompt never gave it the distinct emphasis that field is for.
-      focalPoint: issue.messaging_angle || '',
+      focalPoint: '',
       pushedAt: new Date().toISOString(),
     };
     const ok = localStorageSafe('rr_pending_article', payload);
