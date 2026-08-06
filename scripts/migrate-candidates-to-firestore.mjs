@@ -34,8 +34,12 @@
 // T Fundraising         fields, no API/external data source behind any
 // U Opponent             of them. Ballotpedia URL (X) is a manually-
 // V Opponent Vulnerabilities  pasted link, NOT a connection to the
-// W Campaign Website     Ballotpedia API. Fundraising (T) is a manual
+// W Campaign Website     Ballotpedia URL (X) is a manually-
 // X Ballotpedia URL      staff-entered figure/summary, not FEC data.
+// Y Focus Org IDs    ← NEW August 2026. Comma-separated org IDs
+//                       (e.g. "az-coalition, dem-cast"). Blank = shows
+//                       to every org ("Unassigned" in the UI) per the
+//                       fail-open design from Handoff #32.
 //
 // USAGE
 // ────────────────────────────────────────────────────────────────────────
@@ -143,7 +147,7 @@ async function fetchCandidateRows(auth) {
   const sheets = google.sheets({ version: "v4", auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "A2:X", // extended from A2:P (August 2026) to include the 8 new columns: Issue Tags → Ballotpedia URL
+    range: "A2:Y", // extended from A2:X (August 2026) to include Focus Org IDs
   });
   return response.data.values || [];
 }
@@ -182,6 +186,13 @@ function parseRow(row) {
   const opponentVulnerabilities = (row[21] || "").trim(); // V
   const campaignWebsite         = (row[22] || "").trim(); // W
   const ballotpediaUrl          = (row[23] || "").trim(); // X
+  // Comma-separated in the sheet (e.g. "az-coalition, dem-cast") → array
+  // in Firestore. Blank cell → empty array → fail-open "Unassigned"
+  // display in the Research tools, per the Handoff #32 design.
+  const focusOrgIds = (row[24] || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean); // Y
 
   return {
     name, office, party, district, level,
@@ -190,6 +201,7 @@ function parseRow(row) {
     policyPlatform, photoFilename, wins, state,
     issueTags, messagingHooks, endorsements, fundraising,
     opponent, opponentVulnerabilities, campaignWebsite, ballotpediaUrl,
+    focusOrgIds,
   };
 }
 
