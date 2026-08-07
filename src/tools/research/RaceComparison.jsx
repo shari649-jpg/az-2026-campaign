@@ -227,9 +227,8 @@ export default function RaceComparison() {
   // active org, or if it's untagged entirely (shown, flagged
   // "Unassigned" in renderCandidate below). A race group with zero
   // visible candidates after this filter is dropped rather than shown
-  // empty. NOTE: candidate.focusOrgIds doesn't exist in the data returned
-  // by query-candidates.mjs yet (still Sheets-sourced, not Firestore) —
-  // until that rewire ships this is a harmless no-op.
+  // empty. query-candidates.mjs was rewired to Firestore in this same
+  // session — focusOrgIds is now live data, not a no-op.
   const orgFilteredRaces = useMemo(() => {
     if (!races) return [];
     if (!activeOrg) return races;
