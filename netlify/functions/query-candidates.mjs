@@ -208,8 +208,15 @@ function searchCandidates(candidates, query, filterType) {
 function groupByRace(candidates) {
   const raceMap = {};
   candidates.forEach(c => {
-    const key = `${(c.office || "").trim()}|${(c.district || "").trim()}`;
-    if (!raceMap[key]) raceMap[key] = { office: c.office, district: c.district, candidates: [] };
+    // BUG FIX (August 2026): previously keyed only on office+district, which
+    // silently merged the SAME race across DIFFERENT states — e.g. every
+    // state's "Attorney General" landed in one group, and CD01 from Arizona,
+    // Iowa, Pennsylvania, etc. all merged into a single "Congress · CD01"
+    // card. Invisible while every candidate was AZ-only; surfaced the
+    // moment other states' candidates were migrated in. State is now part
+    // of the grouping key.
+    const key = `${(c.state || "").trim()}|${(c.office || "").trim()}|${(c.district || "").trim()}`;
+    if (!raceMap[key]) raceMap[key] = { office: c.office, district: c.district, state: c.state, candidates: [] };
     raceMap[key].candidates.push(c);
   });
   Object.values(raceMap).forEach(race => {
@@ -218,7 +225,12 @@ function groupByRace(candidates) {
       return (order[a.party] ?? 2) - (order[b.party] ?? 2);
     });
   });
+  // Group states together (alphabetical), race alphabetical within each
+  // state — per the person's explicit request once multi-state data made
+  // the previous flat office+district-only ordering confusing.
   return Object.values(raceMap).sort((a, b) => {
+    const stateCompare = (a.state || "").localeCompare(b.state || "");
+    if (stateCompare !== 0) return stateCompare;
     const officeCompare = (a.office || "").localeCompare(b.office || "");
     if (officeCompare !== 0) return officeCompare;
     return (a.district || "").localeCompare(b.district || "", undefined, { numeric: true });
