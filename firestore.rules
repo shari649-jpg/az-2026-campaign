@@ -33,6 +33,32 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgId == orgId;
     }
+    // Returns the REQUESTING user's own orgId (or null if signed out, no
+    // user doc, or no org assigned yet). Unlike isSameOrg() above (which
+    // answers a yes/no question against a GIVEN orgId), this returns the
+    // value itself — needed below to check "did this Manager only toggle
+    // their OWN org's membership" on an array field like focusOrgIds,
+    // where the thing being validated isn't a single org but a diff.
+    function myOrgId() {
+      return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgId
+        : null;
+    }
+    // candidates/{candidateId}'s focusOrgIds is a many-to-many array (one
+    // candidate can be on multiple orgs' priority lists at once — see
+    // that match block below). A Manager may add or remove ONLY their own
+    // org from that array; they must never be able to add or remove a
+    // DIFFERENT org's membership, which would let one org silently
+    // hijack or clear another org's priority list. Compares the old and
+    // new arrays: every entry that changed (added or removed) must be
+    // exactly the requester's own org. Vacuously true if focusOrgIds
+    // isn't part of this write at all, or is unchanged.
+    function focusOrgIdsChangeIsOwnOrgOnly() {
+      let oldIds = ("focusOrgIds" in resource.data) ? resource.data.focusOrgIds : [];
+      let newIds = ("focusOrgIds" in request.resource.data) ? request.resource.data.focusOrgIds : [];
+      return oldIds.removeAll(newIds).hasOnly([myOrgId()])
+          && newIds.removeAll(oldIds).hasOnly([myOrgId()]);
+    }
     // Fields on users/{uid} that only an admin may change. The owner can
     // still edit their own profile (name, handles, org, etc.), but never
     // their own role, and never the server-computed rate-limit bookkeeping
@@ -151,17 +177,39 @@ service cloud.firestore {
     // Shared team Library — any logged-in coalition member can read, save,
     // or remove items. No public access. Matches LibraryPage.jsx's canDelete:
     // owner OR manager/admin can delete; there is no update path in the app.
+    //
+    // ORG-SCOPING (added August 2026, same decision as storms above):
+    // Administrator can delete any entry, any org. A Manager can only
+    // delete another user's entry within their OWN org (their own entries
+    // are already covered by the owner-uid check regardless of org) — or
+    // on a legacy entry with no orgId yet (fail-open, same reasoning as
+    // storms: no disruptive backfill migration, self-heals as entries get
+    // saved fresh with orgId going forward). orgId, if the client sets it
+    // at save time, must match the saver's own org.
     match /saved_campaigns/{doc} {
-      allow read, create: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && (!("orgId" in request.resource.data) || isSameOrg(request.resource.data.orgId));
       allow delete: if isSignedIn() &&
-                      (("savedBy" in resource.data) && resource.data.savedBy != null && resource.data.savedBy.uid == request.auth.uid || isManager());
+                      (
+                        (("savedBy" in resource.data) && resource.data.savedBy != null && resource.data.savedBy.uid == request.auth.uid)
+                        || isAdmin()
+                        || (isManager() && (!("orgId" in resource.data) || isSameOrg(resource.data.orgId)))
+                      );
       allow update: if false;
     }
     // ── saved_articles/{doc} ─────────────────────────────────────────────
+    // Same org-scoping as saved_campaigns above — see that block's comment.
     match /saved_articles/{doc} {
-      allow read, create: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && (!("orgId" in request.resource.data) || isSameOrg(request.resource.data.orgId));
       allow delete: if isSignedIn() &&
-                      (("savedBy" in resource.data) && resource.data.savedBy != null && resource.data.savedBy.uid == request.auth.uid || isManager());
+                      (
+                        (("savedBy" in resource.data) && resource.data.savedBy != null && resource.data.savedBy.uid == request.auth.uid)
+                        || isAdmin()
+                        || (isManager() && (!("orgId" in resource.data) || isSameOrg(resource.data.orgId)))
+                      );
       allow update: if false;
     }
     // ══════════════════════════════════════════════════════════════════
@@ -172,6 +220,18 @@ service cloud.firestore {
     // OR administrator). Members can create (always forced to "draft")
     // and edit only their own draft; everything else requires Manager or
     // Administrator.
+    //
+    // ORG-SCOPING (added August 2026, same session as the Manager/Admin
+    // permission-model decision): Administrator stays fully unrestricted,
+    // any org, no change. A Manager may only edit/review storms belonging
+    // to their OWN org. Storms had no orgId field at all before tonight —
+    // rather than a disruptive backfill migration, this fails OPEN for any
+    // storm that doesn't have orgId set yet (legacy content stays editable
+    // by any Manager), and self-heals over time: orgId is validated on
+    // create (must match the creator's own org if the client sets it) and
+    // naturally gets backfilled the first time a Manager updates an old,
+    // untagged storm. Once virtually all storms carry a real orgId, this
+    // can be tightened to a hard requirement in a follow-up pass.
     match /storms/{stormId} {
       // Any signed-in coalition member can read all storms. The app's own
       // tab/filter UI is what limits what a Member sees by default; the
@@ -179,20 +239,31 @@ service cloud.firestore {
       allow read: if isSignedIn();
       // Create: must be creating as yourself. Non-staff members are
       // forced into "draft" regardless of what the client sends; Managers
-      // and Admins may create with any status.
+      // and Admins may create with any status. orgId, if the client sets
+      // it, must match the creator's own org — prevents self-tagging a
+      // storm into an org you don't belong to.
       allow create: if isSignedIn()
         && request.resource.data.createdBy.uid == request.auth.uid
+        && (!("orgId" in request.resource.data) || isSameOrg(request.resource.data.orgId))
         && (
           isManager()
           || request.resource.data.status == "draft"
         );
-      // Update: Managers/Admins can change anything, any time. A Member
-      // may only edit their OWN storm, only while it is still a draft,
-      // and only if it's STILL a draft after their edit — they cannot use
-      // an update to move themselves into pending_review/active; that
-      // transition only happens through the Manager/Admin-gated path above.
+      // Update: Admins can change anything, any org, any time. Managers
+      // can change anything but ONLY within their own org — or on legacy
+      // storms that don't have orgId set yet (fail-open, see note above).
+      // A Member may only edit their OWN storm, only while it is still a
+      // draft, and only if it's STILL a draft after their edit — they
+      // cannot use an update to move themselves into pending_review/
+      // active; that transition only happens through the Manager/Admin-
+      // gated path above.
       allow update: if isSignedIn() && (
-        isManager()
+        isAdmin()
+        ||
+        (
+          isManager()
+          && (!("orgId" in resource.data) || isSameOrg(resource.data.orgId))
+        )
         ||
         (
           resource.data.createdBy.uid == request.auth.uid
@@ -213,8 +284,20 @@ service cloud.firestore {
       // submitted for review (pending_review/active), bypassing the same
       // "locked once submitted" protection enforced on the
       // storms/{stormId} doc itself. Fixed July 2026 security pass.
+      //
+      // ORG-SCOPING (August 2026): same rule as the parent storm — Admin
+      // unrestricted, Manager scoped to their own org (or fail-open on a
+      // legacy storm with no orgId yet), checked against the PARENT
+      // storm's orgId since posts don't carry their own.
       allow create, update, delete: if isSignedIn() && (
-        isManager()
+        isAdmin()
+        || (
+          isManager()
+          && (
+            !("orgId" in get(/databases/$(database)/documents/storms/$(stormId)).data)
+            || isSameOrg(get(/databases/$(database)/documents/storms/$(stormId)).data.orgId)
+          )
+        )
         || (
           get(/databases/$(database)/documents/storms/$(stormId)).data.createdBy.uid == request.auth.uid
           && get(/databases/$(database)/documents/storms/$(stormId)).data.status == "draft"
@@ -296,9 +379,29 @@ service cloud.firestore {
     // signed-in client path. Delete is Administrator-only, same reasoning
     // as storms/{stormId}: a Manager mistake here is opposition-research
     // data loss, not something to make a single click away.
+    //
+    // focusOrgIds EXCEPTION (added August 2026, same session as the
+    // Manager/Admin org-scoping decision): general candidate fields
+    // (Fundraising, Notes, Strengths, etc.) stay open to any Manager,
+    // regardless of org — candidates are shared coalition-wide research,
+    // not owned by one org, so this is unchanged from the original design
+    // above. focusOrgIds specifically is different: it's literally which
+    // orgs get to claim this candidate as a priority, so a Manager may
+    // only toggle their OWN org's membership in that array (see
+    // focusOrgIdsChangeIsOwnOrgOnly() above) — never add or remove a
+    // DIFFERENT org's entry. Administrators remain fully unrestricted.
     match /candidates/{candidateId} {
       allow read: if isSignedIn();
-      allow create, update: if isManager();
+      allow create: if isManager() && (
+        isAdmin()
+        || !("focusOrgIds" in request.resource.data)
+        || request.resource.data.focusOrgIds.hasOnly([myOrgId()])
+      );
+      allow update: if isManager() && (
+        isAdmin()
+        || !request.resource.data.diff(resource.data).affectedKeys().hasAny(["focusOrgIds"])
+        || focusOrgIdsChangeIsOwnOrgOnly()
+      );
       allow delete: if isAdmin();
     }
     // ══════════════════════════════════════════════════════════════════
