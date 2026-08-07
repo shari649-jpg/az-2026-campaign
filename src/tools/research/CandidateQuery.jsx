@@ -8,6 +8,14 @@ function localStorageSafe(key, value) {
   catch { return false; }
 }
 
+// Sentinel value for the org switcher's "All Candidates" option — bypasses
+// focusOrgIds filtering entirely, showing every candidate regardless of
+// which org(s) they're tagged for. Available to everyone, not just users
+// with multi-org researchOrgIds access — e.g. spot-checking that a fresh
+// data migration or sheet update normalized correctly across every org's
+// candidates, not just your own org's slice of them.
+const ALL_ORGS = '__all__';
+
 const B = {
   teal:      'var(--teal)',
   tealLight: 'var(--teal-mid)',
@@ -177,7 +185,7 @@ export default function CandidateQuery() {
 
   const [activeOrg, setActiveOrg] = useState(null);
   useEffect(() => {
-    if (!activeOrg && researchOrgIds.length) setActiveOrg(researchOrgIds[0]);
+    if (!activeOrg) setActiveOrg(researchOrgIds.length ? researchOrgIds[0] : ALL_ORGS);
   }, [researchOrgIds, activeOrg]);
 
   const [query,     setQuery]     = useState('');
@@ -223,7 +231,7 @@ export default function CandidateQuery() {
   // query-candidates.mjs was rewired to Firestore in this same session —
   // focusOrgIds is now live data, not a no-op.
   const orgFilteredResults = useMemo(() => {
-    if (!activeOrg) return filteredResults;
+    if (!activeOrg || activeOrg === ALL_ORGS) return filteredResults;
     return filteredResults.filter(c => !c.focusOrgIds || c.focusOrgIds.length === 0 || c.focusOrgIds.includes(activeOrg));
   }, [filteredResults, activeOrg]);
 
@@ -376,23 +384,24 @@ export default function CandidateQuery() {
         </p>
       </div>
 
-      {/* ── Org switcher (Aug 2026) ── only renders for a user granted
-          research visibility into more than one org; everyone else never
-          sees this at all. */}
-      {researchOrgIds.length > 1 && (
-        <div style={{ marginBottom: 20, maxWidth: 260 }}>
-          <label style={S.label}>Viewing</label>
-          <select
-            value={activeOrg || ''}
-            onChange={e => setActiveOrg(e.target.value)}
-            style={{ ...S.input, cursor: 'pointer' }}
-          >
-            {researchOrgIds.map(orgId => (
-              <option key={orgId} value={orgId}>{orgId}</option>
-            ))}
-          </select>
-        </div>
-      )}
+      {/* ── Org switcher (Aug 2026) ── always visible now (previously only
+          rendered for users with multi-org researchOrgIds access). Defaults
+          to your own org's priority list; "All Candidates" bypasses
+          focusOrgIds filtering entirely — useful for spot-checking that
+          data normalized correctly across every org, not just your own. */}
+      <div style={{ marginBottom: 20, maxWidth: 260 }}>
+        <label style={S.label}>Viewing</label>
+        <select
+          value={activeOrg || ALL_ORGS}
+          onChange={e => setActiveOrg(e.target.value)}
+          style={{ ...S.input, cursor: 'pointer' }}
+        >
+          {researchOrgIds.map(orgId => (
+            <option key={orgId} value={orgId}>{orgId}</option>
+          ))}
+          <option value={ALL_ORGS}>All Candidates</option>
+        </select>
+      </div>
 
       {/* ── Search form ── */}
       <form onSubmit={handleSearch} style={{ marginBottom: 20 }}>
