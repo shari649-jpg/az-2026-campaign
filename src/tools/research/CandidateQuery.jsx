@@ -219,12 +219,9 @@ export default function CandidateQuery() {
   // the active org, OR if it isn't tagged at all yet. Untagged candidates
   // are fail-open by design (never silently hidden) and get an
   // "Unassigned" badge in the card header instead, so staff notice and can
-  // go tag them rather than wondering where a candidate went. NOTE: this
-  // reads candidate.focusOrgIds, which query-candidates.mjs doesn't return
-  // yet — it still reads Google Sheets, not Firestore. Until that rewire
-  // ships, every candidate is untagged and this is a harmless no-op (the
-  // switcher below just won't render for anyone with only one research
-  // org). No further changes needed here once the rewire lands.
+  // go tag them rather than wondering where a candidate went.
+  // query-candidates.mjs was rewired to Firestore in this same session —
+  // focusOrgIds is now live data, not a no-op.
   const orgFilteredResults = useMemo(() => {
     if (!activeOrg) return filteredResults;
     return filteredResults.filter(c => !c.focusOrgIds || c.focusOrgIds.length === 0 || c.focusOrgIds.includes(activeOrg));
