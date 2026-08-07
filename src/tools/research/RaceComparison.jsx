@@ -108,6 +108,9 @@ function candidateLabel(c) {
   if (c.party)    parts.push(c.party);
   if (c.office)   parts.push(c.office);
   if (c.district) parts.push(c.district);
+  // incumbent_status added (Aug 2026) — see CandidateQuery.jsx's identical
+  // fix for the full reasoning. Same missing signal, same fix, both files.
+  if (c.incumbent_status) parts.push(c.incumbent_status);
   return parts.join(' · ');
 }
 
@@ -461,7 +464,9 @@ export default function RaceComparison() {
         </div>
       )}
 
-      {/* Race cards */}
+      {/* Race cards — grouped by state (headers below), race alphabetical
+          within each state, per the backend's sort order (query-candidates.mjs
+          groupByRace). */}
       {!loading && filteredRaces.map((race, ri) => {
         const raceLabel   = [race.office, race.district].filter(Boolean).join(' · ');
         const dCandidates = race.candidates.filter(c => c.party?.toUpperCase() === 'D');
@@ -469,9 +474,21 @@ export default function RaceComparison() {
         const others      = race.candidates.filter(c => !['D','R'].includes((c.party || '').toUpperCase()));
         const hasContest  = dCandidates.length > 0 && (rCandidates.length > 0 || others.length > 0);
         const rightSide   = [...rCandidates, ...others];
+        const prevState   = ri > 0 ? filteredRaces[ri - 1].state : null;
+        const showStateHeader = race.state && race.state !== prevState;
 
         return (
-          <div key={ri} style={{ marginBottom: 28, border: `1.5px solid ${B.border}`, borderRadius: 12, overflow: 'hidden', background: B.surface }}>
+          <div key={ri}>
+            {showStateHeader && (
+              <div style={{
+                fontSize: 13, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
+                color: B.textMid, margin: ri === 0 ? '0 0 10px' : '32px 0 10px',
+                paddingBottom: 6, borderBottom: `2px solid ${B.border}`,
+              }}>
+                {race.state}
+              </div>
+            )}
+            <div style={{ marginBottom: 28, border: `1.5px solid ${B.border}`, borderRadius: 12, overflow: 'hidden', background: B.surface }}>
 
             {/* Race header */}
             <div style={{
@@ -566,6 +583,7 @@ export default function RaceComparison() {
                 </div>
               );
             })()}
+          </div>
           </div>
         );
 
