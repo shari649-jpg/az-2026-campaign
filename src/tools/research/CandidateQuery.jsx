@@ -143,6 +143,12 @@ function candidateLabel(c) {
   if (c.party)    parts.push(c.party);
   if (c.office)   parts.push(c.office);
   if (c.district) parts.push(c.district);
+  // incumbent_status added (Aug 2026) — without this, pushed text gave the
+  // model an office label and real accomplishments with zero signal on
+  // whether the candidate currently holds that seat, which produced false
+  // "came to Congress" framing for a challenger. The field was always
+  // complete in the data; it just never made it into this string.
+  if (c.incumbent_status) parts.push(c.incumbent_status);
   return parts.join(' · ');
 }
 
@@ -156,15 +162,26 @@ function factsToText(c) {
   return [header, ...lines].join('\n');
 }
 
-// Group candidates by office+district for contrast view
+// Group candidates by state+office+district for contrast view. State is
+// part of the key (August 2026 fix) — previously office+district only,
+// which silently merged the same race across different states (every
+// state's Attorney General in one group, etc.). Invisible while data was
+// AZ-only; surfaced once other states' candidates were migrated in.
 function groupByseat(results) {
   const seats = {};
   results.forEach(c => {
-    const key = `${(c.office || '').trim()}|${(c.district || '').trim()}`;
+    const key = `${(c.state || '').trim()}|${(c.office || '').trim()}|${(c.district || '').trim()}`;
     if (!seats[key]) seats[key] = [];
     seats[key].push(c);
   });
-  return Object.values(seats);
+  // Group states together (alphabetical), race alphabetical within each state.
+  return Object.values(seats).sort((a, b) => {
+    const stateCompare = (a[0]?.state || '').localeCompare(b[0]?.state || '');
+    if (stateCompare !== 0) return stateCompare;
+    const officeCompare = (a[0]?.office || '').localeCompare(b[0]?.office || '');
+    if (officeCompare !== 0) return officeCompare;
+    return (a[0]?.district || '').localeCompare(b[0]?.district || '', undefined, { numeric: true });
+  });
 }
 
 export default function CandidateQuery() {
