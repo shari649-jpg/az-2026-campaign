@@ -22,7 +22,14 @@ import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
-const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-sonnet-4-5";
+// Pinned to the dated model string (not the bare "claude-sonnet-4-5" alias)
+// as of the model-centralization pass (Aug 2026 TODO items 4/5) — an alias
+// can silently repoint to a newer snapshot without a code change or a
+// deploy, which is exactly the kind of drift a rollback session like
+// Handoff #32/#33 shouldn't have to re-diagnose from scratch. To test a
+// different model, set GENERATION_MODEL in Netlify — no code change needed
+// either way.
+const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-sonnet-4-5-20250929";
 // COST FIX (this session): max_tokens was previously entirely client-
 // controlled with no upper bound — only a default if omitted. Billing is
 // by tokens actually generated, not by max_tokens reserved, so this isn't
@@ -148,6 +155,16 @@ export default async function (req) {
     const data = await response.json();
     const tParse = Date.now();
     console.log(`[generate-message] timing: json_parse=${tParse - tClaudeCall}ms TOTAL=${tParse - t0}ms`);
+
+    // Real per-call token usage, logged for credit-rate truing (Aug 2026
+    // TODO item 6) — Anthropic's response already includes usage.input_tokens
+    // / usage.output_tokens; this just surfaces it in Netlify's logs instead
+    // of letting it pass through unread. Not credit-debiting itself (that's
+    // TODO item 7, a separate change) — this is purely observational, free,
+    // and safe to ship ahead of the debiting logic.
+    if (data.usage) {
+      console.log(`[generate-message] token_usage: uid=${uid} input_tokens=${data.usage.input_tokens} output_tokens=${data.usage.output_tokens} model=${GENERATION_MODEL}`);
+    }
 
     // Attach usage warning if approaching limit
     if (usage.warning) {
