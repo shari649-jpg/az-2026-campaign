@@ -19,6 +19,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
+import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, generationWarningPayload } from "./creditHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
@@ -118,6 +119,15 @@ export default async function (req) {
     const tRateLimit = Date.now();
     console.log(`[generate-message] timing: rate_limit=${tRateLimit - tAuth}ms`);
 
+    // ── Generation-credit gate ────────────────────────────────────────────
+    // Pre-call check, decided this session — see creditHelper.mjs's header
+    // for the full picture (warn under 500, hard-block at ≤0; the only
+    // current unblock path is Admin-granted comp credits, no Stripe yet).
+    const balanceCheck = await checkGenerationBalance(app, usage.orgId);
+    if (balanceCheck.blocked) {
+      return new Response(JSON.stringify(generationBlockedPayload(balanceCheck.balance)), { status: 402, headers: corsHeaders(req) });
+    }
+
     // ── Claude call ─────────────────────────────────────────────────────────
     const { max_tokens, messages, system } = body;
 
@@ -164,6 +174,24 @@ export default async function (req) {
     // and safe to ship ahead of the debiting logic.
     if (data.usage) {
       console.log(`[generate-message] token_usage: uid=${uid} input_tokens=${data.usage.input_tokens} output_tokens=${data.usage.output_tokens} model=${GENERATION_MODEL}`);
+      // Generation-credit debiting (Aug 2026 TODO item 7) — fire-and-forget
+      // is deliberately NOT used here; awaited so a billing failure is
+      // caught and logged inline, but debitGenerationCredits itself never
+      // throws, so this can't turn a billing hiccup into a failed response.
+      await debitGenerationCredits(app, {
+        orgId: usage.orgId,
+        uid,
+        functionName: "generate-message",
+        inputTokens: data.usage.input_tokens,
+        outputTokens: data.usage.output_tokens,
+      });
+    }
+
+    // Attach a generation-credit warning if the org was already low BEFORE
+    // this call (checked pre-call, above) — independent of the daily
+    // per-user usage.warning below, which tracks a different limit.
+    if (balanceCheck.warning) {
+      data.creditWarning = generationWarningPayload(balanceCheck.balance);
     }
 
     // Attach usage warning if approaching limit
