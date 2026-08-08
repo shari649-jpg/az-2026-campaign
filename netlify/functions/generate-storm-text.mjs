@@ -14,6 +14,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
+import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, generationWarningPayload } from "./creditHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
@@ -99,6 +100,13 @@ export default async function (req) {
       return new Response(JSON.stringify(usage.blockedPayload), { status: 429, headers: corsHeaders(req) });
     }
 
+    // ── Generation-credit gate ────────────────────────────────────────────
+    // Pre-call check, decided this session — see creditHelper.mjs's header.
+    const balanceCheck = await checkGenerationBalance(app, usage.orgId);
+    if (balanceCheck.blocked) {
+      return new Response(JSON.stringify(generationBlockedPayload(balanceCheck.balance)), { status: 402, headers: corsHeaders(req) });
+    }
+
     // ── Claude call ─────────────────────────────────────────────────────────
     const { max_tokens, messages, system } = body;
 
@@ -146,6 +154,18 @@ export default async function (req) {
     // TODO item 6).
     if (data.usage) {
       console.log(`[generate-storm-text] token_usage: uid=${uid} input_tokens=${data.usage.input_tokens} output_tokens=${data.usage.output_tokens} model=${GENERATION_MODEL}`);
+      // Generation-credit debiting (Aug 2026 TODO item 7).
+      await debitGenerationCredits(app, {
+        orgId: usage.orgId,
+        uid,
+        functionName: "generate-storm-text",
+        inputTokens: data.usage.input_tokens,
+        outputTokens: data.usage.output_tokens,
+      });
+    }
+
+    if (balanceCheck.warning) {
+      data.creditWarning = generationWarningPayload(balanceCheck.balance);
     }
 
     // Attach usage warning if approaching limit
