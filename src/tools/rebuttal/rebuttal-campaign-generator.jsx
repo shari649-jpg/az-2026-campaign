@@ -151,6 +151,7 @@ const ERROR_MSGS = {
   CONTENT_FLAGGED: { heading: "This topic was flagged before it reached the AI.", body: "Anthropic's API filters certain sensitive phrases — particularly around elections — before they can be processed, even when the intent is to rebut them. Try rephrasing your input as a description of the false claim rather than quoting it directly. For example: \"False narratives are circulating that claim [describe the claim].\" This signals you're building a rebuttal, not spreading misinformation." },
   RATE_LIMITED:    { heading: "Too many requests — please wait a moment.",          body: "The API has received too many requests in a short window. Wait 30–60 seconds and try again." },
   OVERLOADED:      { heading: "The AI is temporarily overloaded.",                  body: "Anthropic's servers are under heavy load. Wait a minute and try generating again." },
+  CREDITS_EXHAUSTED: { heading: "🚫 Generation credits used up", body: "Your organization's AI-generation credits are used up. An Administrator can add more from the Admin panel's Orgs tab (\"Grant comp credits\") — no purchase needed for this today." },
   GENERIC:         { heading: "Something went wrong.",                              body: "An unexpected error occurred. Check that your input isn't empty and try again. If it persists, try refreshing the page." },
 };
 
@@ -420,6 +421,7 @@ export default function RebuttalGenerator() {
   const [loading,     setLoading]     = useState(false);
   const [status,      setStatus]      = useState("");
   const [error,       setError]       = useState(null);
+  const [creditWarning, setCreditWarning] = useState(""); // org generation-credit low-balance warning (Aug 2026)
   const [copied,      setCopied]      = useState(false);
   const [saved,       setSaved]       = useState(false);
   const [library,     setLibrary]     = useState([]);
@@ -461,14 +463,14 @@ export default function RebuttalGenerator() {
   // ── Reset ───────────────────────────────────────────────────────────────
   const reset = () => {
     setNarrative(""); setProfile(null); setTone(null);
-    setOutput(""); setStatus(""); setError(null);
+    setOutput(""); setStatus(""); setError(null); setCreditWarning("");
     setCopied(false); setSaved(false);
   };
 
   // ── Generate — two sequential calls to stay under 10s timeout ────────────
   const generate = async () => {
     if (!narrative.trim()) return;
-    setLoading(true); setOutput(""); setError(null);
+    setLoading(true); setOutput(""); setError(null); setCreditWarning("");
     setCopied(false); setSaved(false);
 
     const callAPI = async (systemPrompt, userContent, maxTokens) => {
@@ -488,12 +490,20 @@ export default function RebuttalGenerator() {
       if (!res.ok) {
         const err = await res.json();
         const raw = (err?.error?.message || "").toLowerCase();
+        if (res.status === 402) {
+          const e = new Error("CREDITS_EXHAUSTED");
+          e.creditMessage = err.message; // real server-provided balance message
+          throw e;
+        }
         if (raw.includes("string did not match") || raw.includes("pattern") || res.status === 400) throw new Error("CONTENT_FLAGGED");
         if (res.status === 429) throw new Error("RATE_LIMITED");
         if (res.status === 529 || res.status === 503) throw new Error("OVERLOADED");
         throw new Error("GENERIC");
       }
       const data = await res.json();
+      if (data.creditWarning) {
+        setCreditWarning(data.creditWarning.message);
+      }
       return data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
     };
 
@@ -535,7 +545,11 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
       setStatus("Campaign ready.");
 
     } catch (e) {
-      setError(ERROR_MSGS[e.message] ?? ERROR_MSGS.GENERIC);
+      if (e.message === "CREDITS_EXHAUSTED" && e.creditMessage) {
+        setError({ heading: ERROR_MSGS.CREDITS_EXHAUSTED.heading, body: e.creditMessage });
+      } else {
+        setError(ERROR_MSGS[e.message] ?? ERROR_MSGS.GENERIC);
+      }
       setStatus("");
     } finally {
       setLoading(false);
@@ -780,6 +794,21 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
         </button>
 
         <p style={S.status}>{status}</p>
+
+        {creditWarning && (
+          <div style={{
+            background: "#fffaf0", border: "1.5px solid #e0c568", borderRadius: 8,
+            padding: "12px 16px", marginTop: "10px", display: "flex",
+            justifyContent: "space-between", alignItems: "center", gap: "12px",
+          }}>
+            <span style={{ fontSize: "14px", color: INK }}>⚠️ {creditWarning}</span>
+            <button
+              onClick={() => setCreditWarning("")}
+              aria-label="Dismiss"
+              style={{ background: "none", border: "none", cursor: "pointer", fontSize: "16px", color: INK, fontWeight: 900, fontFamily: "inherit", flexShrink: 0 }}
+            >✕</button>
+          </div>
+        )}
 
         {error && (
           <div style={S.errBox}>
