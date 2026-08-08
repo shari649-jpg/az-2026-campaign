@@ -35,6 +35,12 @@ import { ORG_IDENTITY_PREAMBLE, TOPIC_SCOPE_GUARDRAIL, AI_TELL_PHRASING_BAN } fr
 // unbounded-client-value gap.
 const MAX_TOKENS_CEILING = 8000;
 
+// Model centralization (Aug 2026 TODO items 4/5) — previously hardcoded
+// "claude-sonnet-4-5" directly in the fetch body below. Now reads
+// GENERATION_MODEL, pinned to the dated string (not the bare alias) so it
+// can't silently drift.
+const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-sonnet-4-5-20250929";
+
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
   "https://az-coalition-2026-election.netlify.app",
@@ -118,7 +124,7 @@ export default async function (req) {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
+        model: GENERATION_MODEL,
         max_tokens: Math.min(max_tokens || 4000, MAX_TOKENS_CEILING),
         system: effectiveSystem,
         messages,
@@ -126,6 +132,14 @@ export default async function (req) {
     });
 
     const data = await response.json();
+
+    // Real per-call token usage, logged for credit-rate truing (Aug 2026
+    // TODO item 6). Sandbox includes the optional transcript/title bundling
+    // work from Handoff #27 — its token counts run higher than other tools
+    // by design, worth watching separately once real usage data exists.
+    if (data.usage) {
+      console.log(`[generate-sandbox-text] token_usage: uid=${uid} input_tokens=${data.usage.input_tokens} output_tokens=${data.usage.output_tokens} model=${GENERATION_MODEL}`);
+    }
 
     if (usage.warning) {
       data.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
