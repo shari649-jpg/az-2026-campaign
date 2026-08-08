@@ -186,7 +186,7 @@ function groupByseat(results) {
 
 export default function CandidateQuery() {
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, isManager } = useAuth();
 
   // Cross-org Research visibility (Aug 2026) — separate from the user's
   // actual orgId (which still governs credits/billing/role, untouched).
@@ -546,7 +546,31 @@ export default function CandidateQuery() {
                           />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
-                              <span style={{ fontSize: 17, fontWeight: 700, color: B.text }}>{candidate.candidate_name}</span>
+                              {/* Research→Admin deep link (Aug 8 2026 addition) —
+                                  Manager/Admin only, since Members don't have
+                                  Admin page access at all. Opens directly
+                                  into the candidate's edit modal via the
+                                  ?tab=candidates&edit=<id> query param
+                                  AdminPage.jsx now reads on load. stopPropagation
+                                  so clicking the name doesn't also toggle the
+                                  card's expand/collapse. Requires candidate.id,
+                                  which query-candidates.mjs only started
+                                  returning as of this same change — a stale
+                                  cached search result predating the fix just
+                                  won't render as a link (candidate.id undefined),
+                                  not throw. */}
+                              {isManager && candidate.id ? (
+                                <a
+                                  href={`/admin?tab=candidates&edit=${candidate.id}`}
+                                  onClick={e => { e.stopPropagation(); navigate(`/admin?tab=candidates&edit=${candidate.id}`); e.preventDefault(); }}
+                                  style={{ fontSize: 17, fontWeight: 700, color: B.teal, textDecoration: 'underline', textDecorationColor: 'rgba(0,0,0,0.15)' }}
+                                  title="Open in Admin"
+                                >
+                                  {candidate.candidate_name}
+                                </a>
+                              ) : (
+                                <span style={{ fontSize: 17, fontWeight: 700, color: B.text }}>{candidate.candidate_name}</span>
+                              )}
                               <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: pc.bg, color: pc.text }}>{candidate.party}</span>
                               {(!candidate.focusOrgIds || candidate.focusOrgIds.length === 0) && (
                                 <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: B.surfaceAlt, color: B.textMute, border: `1px solid ${B.border}` }}>Unassigned</span>
