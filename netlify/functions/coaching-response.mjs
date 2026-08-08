@@ -24,6 +24,15 @@ function corsHeaders(req) {
   return { "Content-Type": "application/json", "Access-Control-Allow-Origin": allowOrigin };
 }
 
+// Model centralization (Aug 2026 TODO items 4/5) — previously hardcoded
+// "claude-sonnet-4-5" directly in both fetch bodies below (suggest mode and
+// the main engage/troll call). Now reads GENERATION_MODEL, pinned to the
+// dated string (not the bare alias) so it can't silently drift. The Coach
+// sits outside the generation-credit pool (Section 5.2a of the Admin
+// Manual), so this gets model centralization but not the token-usage
+// logging added to the five credit-pool generation functions.
+const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-sonnet-4-5-20250929";
+
 function getAdminApp() {
   if (admin.apps.length) return admin.app();
   let serviceAccount;
@@ -192,7 +201,7 @@ export default async function (req) {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 200, system, messages: [{ role: "user", content: "Classify this comment now." }] }),
+        body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: 200, system, messages: [{ role: "user", content: "Classify this comment now." }] }),
       });
       const data = await response.json();
       if (usage.warning) {
@@ -212,7 +221,7 @@ export default async function (req) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 600, system, messages }),
+      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: 600, system, messages }),
     });
 
     const data = await response.json();
