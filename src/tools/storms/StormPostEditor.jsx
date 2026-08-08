@@ -168,6 +168,13 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
       err.limitData = limitData;
       throw err;
     }
+    if (res.status === 402) {
+      const creditData = await res.json();
+      const err = new Error("credits_exhausted");
+      err.type = "credits_exhausted";
+      err.creditMessage = creditData.message;
+      throw err;
+    }
     const data = await res.json();
     if (data.error) {
       const err = new Error(data.error);
@@ -177,6 +184,9 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     if (data.usageWarning) {
       const { used, limit, remaining } = data.usageWarning;
       setGenNotice({ type: "warning", msg: `⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.` });
+    }
+    if (data.creditWarning) {
+      setGenNotice({ type: "warning", msg: `⚠️ ${data.creditWarning.message}` });
     }
     const text = data.content.map(i => i.text || "").join("");
     const cleaned = text.replace(/```json|```/g, "").trim();
@@ -244,6 +254,8 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
       setGenNotice({ type: "ratelimit", msg: "🚦 Daily AI limit reached. Your limit resets at midnight UTC." });
     } else if (e.type === "content_flagged") {
       setGenNotice({ type: "flagged", msg: "⚠️ Generation was blocked. Try adjusting the storm's title/summary and try again." });
+    } else if (e.type === "credits_exhausted") {
+      setGenNotice({ type: "creditsExhausted", msg: `🚫 ${e.creditMessage || "Your organization's AI-generation credits are used up."}` });
     } else {
       setGenNotice({ type: "error", msg: "⚠️ Generation failed — check your connection and try again." });
     }
@@ -506,8 +518,8 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
 
         {genNotice && (
           <div style={{
-            background: genNotice.type === "ratelimit" ? "#f5f0ff" : genNotice.type === "warning" ? "#fffaf0" : "#fee2e2",
-            border: `1.5px solid ${genNotice.type === "ratelimit" ? "#7c3aed" : genNotice.type === "warning" ? "#e0c568" : "#fca5a5"}`,
+            background: genNotice.type === "ratelimit" ? "#f5f0ff" : genNotice.type === "warning" ? "#fffaf0" : genNotice.type === "creditsExhausted" ? "#f2effa" : "#fee2e2",
+            border: `1.5px solid ${genNotice.type === "ratelimit" ? "#7c3aed" : genNotice.type === "warning" ? "#e0c568" : genNotice.type === "creditsExhausted" ? "#4A3163" : "#fca5a5"}`,
             borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#444", display: "flex", justifyContent: "space-between", gap: 10,
           }}>
             <span>{genNotice.msg}</span>
@@ -663,8 +675,8 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
 
             {genNotice && (
               <div style={{
-                background: genNotice.type === "ratelimit" ? "#f5f0ff" : genNotice.type === "warning" ? "#fffaf0" : "#fee2e2",
-                border: `1.5px solid ${genNotice.type === "ratelimit" ? "#7c3aed" : genNotice.type === "warning" ? "#e0c568" : "#fca5a5"}`,
+                background: genNotice.type === "ratelimit" ? "#f5f0ff" : genNotice.type === "warning" ? "#fffaf0" : genNotice.type === "creditsExhausted" ? "#f2effa" : "#fee2e2",
+                border: `1.5px solid ${genNotice.type === "ratelimit" ? "#7c3aed" : genNotice.type === "warning" ? "#e0c568" : genNotice.type === "creditsExhausted" ? "#4A3163" : "#fca5a5"}`,
                 borderRadius: 8, padding: "8px 12px", fontSize: 12.5, color: "#444", display: "flex", justifyContent: "space-between", gap: 10,
               }}>
                 <span>{genNotice.msg}</span>
