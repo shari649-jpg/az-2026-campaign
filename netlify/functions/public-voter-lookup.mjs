@@ -218,6 +218,13 @@ export default async function (req) {
     const results = { congress: [], stateSenate: [], stateHouse: [] };
     snap.forEach(doc => {
       const data = doc.data();
+      // Skip candidates marked inactive via the Admin panel's active/
+      // inactive toggle (Handoff #33) — mirrors the same active !== false
+      // check query-candidates.mjs already applies to the signed-in
+      // Research tool. Uses !== false (not a truthy check) so candidates
+      // from before this field existed, where active is undefined, still
+      // default to showing — only an explicit false hides one.
+      if (data.active === false) return;
       if (matchesFederalHouse(data, districts.cd)) results.congress.push(buildPublicCandidate(doc));
       if (matchesStateSenate(data, districts.sldu)) results.stateSenate.push(buildPublicCandidate(doc));
       if (matchesStateHouse(data, districts.sldl)) results.stateHouse.push(buildPublicCandidate(doc));
