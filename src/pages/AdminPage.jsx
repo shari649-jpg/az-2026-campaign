@@ -67,7 +67,7 @@ export default function AdminPage() {
   const [removingWaitlistId, setRemovingWaitlistId] = useState(null); // waitlistId currently mid delete call
   const [showRegistered, setShowRegistered] = useState(false); // hide completed registrations by default
   const [editingUid, setEditingUid] = useState(null); // uid currently in edit mode
-  const [editForm, setEditForm]     = useState({ fullName: "", email: "", socials: [{ platform: "", handle: "" }] });
+  const [editForm, setEditForm]     = useState({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [] });
   const [detailsUid, setDetailsUid] = useState(null); // uid currently shown in the read-only details modal
   const [actionUid, setActionUid]   = useState(null); // uid currently mid disable/enable/delete call
   const [actionError, setActionError] = useState(null); // { uid, message }
@@ -400,10 +400,21 @@ export default function AdminPage() {
       fullName: u.fullName || "",
       email: u.email || "",
       socials: existing.length ? existing.map(s => ({ platform: s.platform || "", handle: s.handle || "" })) : [{ platform: "", handle: "" }],
+      // researchOrgIds (Aug 2026 addition) — grants a user visibility into
+      // more than one org's Research candidates via the "Viewing: [org] ▾"
+      // switcher already built in CandidateQuery.jsx/RaceComparison.jsx.
+      // The field and its read-side filtering have existed since Handoff
+      // #32; this admin UI to actually SET it was the missing piece.
+      researchOrgIds: Array.isArray(u.researchOrgIds) ? u.researchOrgIds : [],
     });
+    // The Orgs tab normally loads its org list lazily, only when that tab
+    // is opened — but the researchOrgIds multi-select below needs the same
+    // org list regardless of which tab the admin is currently on, so fetch
+    // it here too if it hasn't been loaded yet this session.
+    if (!orgsLoaded && !orgsLoading) fetchOrgs();
   };
 
-  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", email: "", socials: [{ platform: "", handle: "" }] }); };
+  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [] }); };
 
   const updateSocialField = (i, field, value) => {
     setEditForm(f => ({ ...f, socials: f.socials.map((s, idx) => idx === i ? { ...s, [field]: value } : s) }));
@@ -413,6 +424,14 @@ export default function AdminPage() {
   };
   const removeSocialField = (i) => {
     setEditForm(f => ({ ...f, socials: f.socials.filter((_, idx) => idx !== i) }));
+  };
+  const toggleResearchOrgId = (orgId) => {
+    setEditForm(f => ({
+      ...f,
+      researchOrgIds: f.researchOrgIds.includes(orgId)
+        ? f.researchOrgIds.filter(id => id !== orgId)
+        : [...f.researchOrgIds, orgId],
+    }));
   };
 
   const saveEdit = async (uid) => {
@@ -427,6 +446,11 @@ export default function AdminPage() {
         fullName: editForm.fullName.trim(),
         socialAccounts,
         primarySocial,
+        // researchOrgIds (Aug 2026 addition) — always written as a real
+        // array, even when empty, rather than omitted — an admin
+        // deliberately clearing every checkbox should actually clear the
+        // field, not leave a stale array sitting on the doc from before.
+        researchOrgIds: editForm.researchOrgIds,
       };
       // Keep legacy secondarySocial in sync for any older display code that still reads it.
       if (socialAccounts[1]) payload.secondarySocial = socialAccounts[1];
@@ -1241,6 +1265,39 @@ export default function AdminPage() {
                               style={{ alignSelf: "flex-start", background: "none", border: "none", color: TEAL, fontWeight: 700, fontSize: 13, cursor: "pointer", padding: "2px 0" }}>
                               + Add another social
                             </button>
+                            {/* researchOrgIds (Aug 2026 addition) — grants this
+                                user visibility into more than one org's Research
+                                candidates, via the "Viewing: [org] ▾" switcher
+                                already built in CandidateQuery.jsx/RaceComparison.jsx.
+                                Leaving every box unchecked is the normal case —
+                                a user just sees their own org, same as today. */}
+                            <div style={{ marginTop: 4, padding: "10px 12px", background: "#f7f7f7", borderRadius: 8, border: "1.5px solid #e5e5e5" }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#888", marginBottom: 8 }}>
+                                Research: extra org visibility
+                              </div>
+                              {orgsLoading && !orgs.length ? (
+                                <div style={{ fontSize: 13, color: "#999" }}>Loading orgs…</div>
+                              ) : orgs.length === 0 ? (
+                                <div style={{ fontSize: 13, color: "#999" }}>No orgs found.</div>
+                              ) : (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                  {orgs.map(org => (
+                                    <label key={org.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: CHARCOAL, cursor: "pointer" }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={editForm.researchOrgIds.includes(org.id)}
+                                        onChange={() => toggleResearchOrgId(org.id)}
+                                        style={{ width: 15, height: 15, accentColor: TEAL, cursor: "pointer" }}
+                                      />
+                                      {org.name || org.id}
+                                    </label>
+                                  ))}
+                                </div>
+                              )}
+                              <div style={{ fontSize: 11.5, color: "#999", marginTop: 8, lineHeight: 1.5 }}>
+                                Doesn't change this user's own org, role, or credits — only what they can additionally VIEW in Research.
+                              </div>
+                            </div>
                             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                               <button onClick={() => saveEdit(u.id)} disabled={isBusy} style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: isBusy ? "not-allowed" : "pointer" }}>
                                 {isBusy ? "Saving…" : "Save"}
@@ -1266,6 +1323,11 @@ export default function AdminPage() {
                                     style={{ background: "none", border: "none", cursor: resendingVerification ? "not-allowed" : "pointer", color: TEAL, fontWeight: 700, fontSize: 11, padding: 0, textDecoration: "underline", textTransform: "none", letterSpacing: "normal" }}>
                                     Resend
                                   </button>
+                                </span>
+                              )}
+                              {Array.isArray(u.researchOrgIds) && u.researchOrgIds.length > 0 && (
+                                <span title={`Extra Research visibility: ${u.researchOrgIds.join(", ")}`} style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "#eef4ff", color: "#3454b4", border: "1px solid #b8cdf5", padding: "2px 8px", borderRadius: 4 }}>
+                                  +{u.researchOrgIds.length} org{u.researchOrgIds.length !== 1 ? "s" : ""}
                                 </span>
                               )}
                               <button onClick={() => setDetailsUid(u.id)} title="View full details"
