@@ -51,6 +51,11 @@
 
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
+import { google } from "googleapis";
+
+// Ballot-measures wiring (Aug 2026 addition) — SHEET_ID for fetchBallotMeasures()
+// below, reading the same Issues sheet tab query-candidates.mjs already reads.
+const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
@@ -71,6 +76,54 @@ function getAdminApp() {
     throw new Error("firebase-service-account.json not found — run `npm run build` to regenerate via scripts/inject-secrets.mjs.");
   }
   return admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+}
+
+function getSheetsAuthClient() {
+  let credentials;
+  try {
+    credentials = JSON.parse(readFileSync(new URL("./google-service-account.json", import.meta.url), "utf8"));
+  } catch {
+    throw new Error("google-service-account.json not found — run `npm run build` to regenerate via scripts/inject-secrets.mjs.");
+  }
+  return new google.auth.GoogleAuth({
+    credentials,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+  });
+}
+
+// Ballot measures (Aug 2026 addition) — fetches only Prop-tagged, active
+// rows from the Issues sheet, returning ONLY the two fields safe for public
+// display (name + summary). Same allowlist-not-blocklist posture as
+// buildPublicCandidate() below: Messaging Angle and GOP Vulnerabilities are
+// internal campaign strategy (the same category the Admin Manual's Section
+// 11.1 already treats as not-for-public), so they're never even read into
+// the object returned here, let alone sent — there's no field to
+// accidentally forget to strip later.
+async function fetchBallotMeasures() {
+  if (!SHEET_ID) return []; // fail open — no sheet configured, just show none rather than error the whole lookup
+  try {
+    const auth = getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth });
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "Issues!A2:J",
+    });
+    const rows = response.data.values || [];
+    return rows
+      .filter(row => row[0] && row[0].trim()) // has an issue name
+      .filter(row => (row[2] || "").trim().toUpperCase() === "Y") // active only
+      .filter(row => (row[9] || "").trim().toLowerCase() === "prop") // Issue Type column J
+      .map(row => ({
+        name: (row[0] || "").trim(),
+        summary: (row[3] || "").trim(), // Brief Statement only — never Messaging Angle/GOP Vulnerabilities
+      }));
+  } catch (err) {
+    // Never fail the whole voter lookup over the ballot-measures piece —
+    // log it, return no measures, let the rest of the response (districts,
+    // candidates) still succeed.
+    console.error("[public-voter-lookup] fetchBallotMeasures failed:", err.message);
+    return [];
+  }
 }
 
 // ── Google Civic: address -> CD/LD ──────────────────────────────────────
@@ -189,14 +242,17 @@ function matchesStateExecutive(candidate) {
   return STATE_EXECUTIVE_OFFICES.some(o => office.includes(o));
 }
 
-// Dem-only filter (Aug 2026 addition) — Party is free-text from the source
-// Sheet (e.g. "Democrat", "Democratic", "D"), not a fixed enum, so this
-// uses the same permissive substring match as every other field in this
-// file rather than an exact-value comparison that could silently miss a
-// real row typed slightly differently.
+// Dem-only filter (Aug 2026 addition). CORRECTED: Party is NOT free text —
+// confirmed against how RaceComparison.jsx/CandidateQuery.jsx already
+// filter/color candidates elsewhere in this app (c.party?.toUpperCase() ===
+// 'D'), party is a strict single-letter code ('D'/'R'/other). The original
+// version of this function used a permissive "dem"-substring match, copying
+// the free-text convention this file correctly uses for Office/Level — but
+// that convention doesn't apply here, and a substring match against a bare
+// "D" never matches, silently returning zero candidates in EVERY bucket
+// whenever demOnly was checked (found via a real live test, Aug 7 2026).
 function isDemocrat(candidate) {
-  const party = (candidate.party || "").toLowerCase();
-  return party.includes("dem");
+  return (candidate.party || "").trim().toUpperCase() === "D";
 }
 
 // ── Public field allowlist ────────────────────────────────────────────────
@@ -245,13 +301,20 @@ export default async function (req) {
 
     const app = getAdminApp();
     const db = admin.firestore(app);
-    const snap = await db.collection("candidates").where("state", "==", "AZ").get();
+    // Fetch candidates (Firestore) and ballot measures (Google Sheets) in
+    // parallel — two independent data sources, no reason to serialize them.
+    const [snap, ballotMeasures] = await Promise.all([
+      db.collection("candidates").where("state", "==", "AZ").get(),
+      fetchBallotMeasures(),
+    ]);
 
     // stateExecutive (Aug 2026 addition) — Governor / Attorney General /
     // Secretary of State. Statewide, so it's populated on every lookup
     // regardless of district (unlike the three district-scoped buckets
     // above it), as long as the address resolved to Arizona at all.
-    const results = { congress: [], stateSenate: [], stateHouse: [], stateExecutive: [] };
+    // ballotMeasures is the same shape of statewide-not-district-scoped
+    // bucket, just sourced from the Issues sheet instead of candidates.
+    const results = { congress: [], stateSenate: [], stateHouse: [], stateExecutive: [], ballotMeasures };
     snap.forEach(doc => {
       const data = doc.data();
       // Skip candidates marked inactive via the Admin panel's active/
@@ -261,10 +324,11 @@ export default async function (req) {
       // from before this field existed, where active is undefined, still
       // default to showing — only an explicit false hides one.
       if (data.active === false) return;
-      // Dem-only filter applied uniformly across all four buckets, before
-      // any office-matching — a non-Dem candidate is skipped entirely
-      // rather than filtered per-bucket, so the same rule can't
-      // accidentally apply inconsistently across office types.
+      // Dem-only filter applied uniformly across all four candidate
+      // buckets, before any office-matching — a non-Dem candidate is
+      // skipped entirely rather than filtered per-bucket, so the same rule
+      // can't accidentally apply inconsistently across office types.
+      // Ballot measures have no party, so demOnly doesn't touch that bucket.
       if (demOnly && !isDemocrat(data)) return;
       if (matchesFederalHouse(data, districts.cd)) results.congress.push(buildPublicCandidate(doc));
       if (matchesStateSenate(data, districts.sldu)) results.stateSenate.push(buildPublicCandidate(doc));
