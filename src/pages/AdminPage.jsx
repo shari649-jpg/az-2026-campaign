@@ -3,7 +3,7 @@ import { Inflate } from "fflate";
 import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, getDoc, setDoc, where, writeBatch } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import AdminHeadshots from "./AdminHeadshots";
 
 const GOLD       = "var(--gold)";
@@ -54,6 +54,7 @@ function isAtDailyLimit(u) {
 export default function AdminPage() {
   const { isManager, isAdmin, user: currentUser, profile: currentProfile } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [activeTab, setActiveTab]   = useState("users"); // "users" | "waitlist"
   const [users, setUsers]           = useState([]);
@@ -116,6 +117,15 @@ export default function AdminPage() {
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState("");
   const [showInactive, setShowInactive]       = useState(false);
+  // State + Org filters (added per person's request, Aug 8 2026) — split
+  // out of the free-text search entirely rather than kept inside it.
+  // State codes are two letters, which caused real false-positive matches
+  // when left in the same substring search as name/office/district (e.g.
+  // searching "OR" matched anything containing "or" — Governor,
+  // Corporation Commission, etc.) — an exact-match dropdown sidesteps that
+  // class of bug rather than trying to special-case the free-text search.
+  const [candidateStateFilter, setCandidateStateFilter] = useState(""); // "" = all states
+  const [candidateOrgFilter, setCandidateOrgFilter]     = useState(""); // "" = all orgs
   const [selectedCandidateIds, setSelectedCandidateIds] = useState(new Set());
   const [candidatesSaving, setCandidatesSaving] = useState(false);
   // ── Candidate field editor (Block 5 item 4, Aug 2026) ────────────────
@@ -128,12 +138,42 @@ export default function AdminPage() {
   const [editingCandidate, setEditingCandidate] = useState(null);
   const [candidateEditForm, setCandidateEditForm] = useState({});
   const [candidateFieldSaving, setCandidateFieldSaving] = useState(false);
+  // Which of the expandable long-text fields are currently expanded, per
+  // person's request (Aug 8 2026) — a Set of field keys, reset each time
+  // the modal opens on a different candidate so it doesn't carry over.
+  const [expandedCandidateFields, setExpandedCandidateFields] = useState(new Set());
 
   useEffect(() => { if (!isManager) navigate("/"); }, [isManager]);
   useEffect(() => { if (isManager) { fetchUsers(); fetchWaitlist(); } }, [isManager]);
   useEffect(() => { if (activeTab === "settings" && !pubRegenLoaded) fetchPubRegenSetting(); }, [activeTab]);
   useEffect(() => { if (activeTab === "orgs" && !orgsLoaded) fetchOrgs(); }, [activeTab]);
   useEffect(() => { if (activeTab === "candidates" && !candidatesLoaded) fetchCandidates(); }, [activeTab]);
+  useEffect(() => { if (activeTab === "candidates" && !orgsLoaded && !orgsLoading) fetchOrgs(); }, [activeTab]);
+  // Research→Admin deep link (Aug 8 2026 addition) — CandidateQuery.jsx and
+  // RaceComparison.jsx now link a candidate's name straight to
+  // /admin?tab=candidates&edit=<id> for Managers/Admins, since that page is
+  // used constantly to spot-check the database. This effect does the other
+  // half: switches to the Candidates tab, waits for the candidate list to
+  // actually load (it's fetched lazily, only once that tab is active — see
+  // the effect above), then opens that one candidate's edit modal directly.
+  // Clears the `edit` param either way once handled (found or not), so a
+  // page refresh doesn't reopen it and a stale/bad id just silently no-ops
+  // instead of getting stuck trying every render.
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam === "candidates" && activeTab !== "candidates") {
+      setActiveTab("candidates");
+      return; // re-run once activeTab updates and the candidates effect above fires
+    }
+    const editId = searchParams.get("edit");
+    if (!editId) return;
+    if (!candidatesLoaded) return; // wait for fetchCandidates to finish
+    const target = candidates.find(c => c.id === editId);
+    if (target) startEditCandidate(target);
+    const next = new URLSearchParams(searchParams);
+    next.delete("edit");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, activeTab, candidatesLoaded, candidates]);
 
   const fetchPubRegenSetting = async () => {
     try {
@@ -258,13 +298,13 @@ export default function AdminPage() {
     { key: "campaignWebsite", label: "Campaign Website", type: "text" },
     { key: "ballotpediaUrl", label: "Ballotpedia URL", type: "text" },
     { key: "photoFilename", label: "Photo Filename (upload the actual file on the Headshots tab)", type: "text" },
-    { key: "background", label: "Background", type: "textarea" },
-    { key: "recordAccomplishments", label: "Record & Accomplishments", type: "textarea" },
-    { key: "strengths", label: "Strengths", type: "textarea" },
-    { key: "vulnerabilities", label: "Vulnerabilities", type: "textarea" },
-    { key: "keyQuotes", label: "Key Quotes", type: "textarea" },
-    { key: "policyPlatform", label: "Policy Platform", type: "textarea" },
-    { key: "issueTags", label: "Issue Tags", type: "textarea" },
+    { key: "background", label: "Background", type: "textarea", expandable: true },
+    { key: "recordAccomplishments", label: "Record & Accomplishments", type: "textarea", expandable: true },
+    { key: "strengths", label: "Strengths", type: "textarea", expandable: true },
+    { key: "vulnerabilities", label: "Vulnerabilities", type: "textarea", expandable: true },
+    { key: "keyQuotes", label: "Key Quotes", type: "textarea", expandable: true },
+    { key: "policyPlatform", label: "Policy Platform", type: "textarea", expandable: true },
+    { key: "issueTags", label: "Issue Tags", type: "textarea", expandable: true },
     { key: "messagingHooks", label: "Messaging Hooks", type: "textarea" },
     { key: "endorsements", label: "Endorsements", type: "textarea" },
     { key: "fundraising", label: "Fundraising", type: "textarea" },
@@ -278,9 +318,18 @@ export default function AdminPage() {
     const form = {};
     CANDIDATE_EDIT_FIELDS.forEach(f => { form[f.key] = c[f.key] || ""; });
     setCandidateEditForm(form);
+    setExpandedCandidateFields(new Set());
     // focusOrgIds toggle section below needs the org list — same lazy-load
     // guard already used for the researchOrgIds section on the Users tab.
     if (!orgsLoaded && !orgsLoading) fetchOrgs();
+  };
+
+  const toggleExpandCandidateField = (key) => {
+    setExpandedCandidateFields(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
   };
 
   const cancelEditCandidate = () => { setEditingCandidate(null); setCandidateEditForm({}); };
@@ -1912,6 +1961,26 @@ export default function AdminPage() {
                     onChange={e => setCandidateSearch(e.target.value)}
                     style={{ flex: 1, minWidth: 220, boxSizing: "border-box", padding: "12px 16px", fontSize: 15, border: "2px solid #ccc", borderRadius: 10, fontFamily: "inherit", color: CHARCOAL, background: BG }}
                   />
+                  <select
+                    value={candidateStateFilter}
+                    onChange={e => setCandidateStateFilter(e.target.value)}
+                    style={{ padding: "12px 14px", fontSize: 14, border: "2px solid #ccc", borderRadius: 10, fontFamily: "inherit", color: CHARCOAL, background: BG, cursor: "pointer" }}
+                  >
+                    <option value="">All states</option>
+                    {[...new Set(candidates.map(c => c.state).filter(Boolean))].sort().map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={candidateOrgFilter}
+                    onChange={e => setCandidateOrgFilter(e.target.value)}
+                    style={{ padding: "12px 14px", fontSize: 14, border: "2px solid #ccc", borderRadius: 10, fontFamily: "inherit", color: CHARCOAL, background: BG, cursor: "pointer" }}
+                  >
+                    <option value="">All orgs</option>
+                    {orgs.map(org => (
+                      <option key={org.id} value={org.id}>{org.name || org.id}</option>
+                    ))}
+                  </select>
                   <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#666", cursor: "pointer", whiteSpace: "nowrap" }}>
                     <input
                       type="checkbox"
@@ -1928,8 +1997,25 @@ export default function AdminPage() {
                   const visible = candidates.filter(c => {
                     const isActive = c.active !== false;
                     if (!showInactive && !isActive) return false;
+                    // Exact match, not substring — a two-letter state code
+                    // inside the old combined free-text search produced
+                    // real false positives (see the comment on
+                    // candidateStateFilter's declaration above).
+                    if (candidateStateFilter && c.state !== candidateStateFilter) return false;
+                    // Org filter: matches this app's existing fail-open
+                    // convention for focusOrgIds everywhere else (an
+                    // untagged candidate shows to every org as
+                    // "Unassigned" rather than being hidden) — selecting an
+                    // org shows candidates explicitly tagged with it PLUS
+                    // every still-untagged candidate, not ONLY the tagged
+                    // ones, so this filter matches what that org's own
+                    // Research view actually looks like.
+                    if (candidateOrgFilter) {
+                      const tags = Array.isArray(c.focusOrgIds) ? c.focusOrgIds : [];
+                      if (tags.length > 0 && !tags.includes(candidateOrgFilter)) return false;
+                    }
                     if (!q) return true;
-                    return [c.name, c.office, c.district, c.state].join(" ").toLowerCase().includes(q);
+                    return [c.name, c.office, c.district].join(" ").toLowerCase().includes(q);
                   });
 
                   if (visible.length === 0) {
@@ -2269,28 +2355,59 @@ export default function AdminPage() {
             <p style={{ margin: "0 0 20px", fontSize: 12, color: "#999", fontFamily: "monospace" }}>{editingCandidate.id}</p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {CANDIDATE_EDIT_FIELDS.map(f => (
-                <div key={f.key}>
-                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "#888", marginBottom: 5 }}>
-                    {f.label}
-                  </label>
-                  {f.type === "textarea" ? (
-                    <textarea
-                      value={candidateEditForm[f.key] || ""}
-                      onChange={e => updateCandidateField(f.key, e.target.value)}
-                      rows={3}
-                      style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL, background: "#fff", resize: "vertical" }}
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      value={candidateEditForm[f.key] || ""}
-                      onChange={e => updateCandidateField(f.key, e.target.value)}
-                      style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL, background: "#fff" }}
-                    />
-                  )}
-                </div>
-              ))}
+              {CANDIDATE_EDIT_FIELDS.map(f => {
+                const isExpanded = expandedCandidateFields.has(f.key);
+                const value = candidateEditForm[f.key] || "";
+                return (
+                  <div key={f.key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                      <label style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "#888" }}>
+                        {f.label}
+                      </label>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        {/* Ballotpedia link — shows the current value as a
+                            clickable link next to the field, rather than
+                            replacing the editable input with one, per
+                            person's request. Only shows when there's a real
+                            value; doesn't try to validate it's a real URL
+                            beyond a non-empty check, since staff paste these
+                            by hand and a wrong value should still be
+                            editable, not silently hidden. */}
+                        {f.key === "ballotpediaUrl" && value.trim() && (
+                          <a href={value.trim().startsWith("http") ? value.trim() : `https://${value.trim()}`} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 11, fontWeight: 700, color: TEAL, textDecoration: "underline" }}>
+                            Open ↗
+                          </a>
+                        )}
+                        {f.expandable && (
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandCandidateField(f.key)}
+                            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: TEAL, padding: 0 }}
+                          >
+                            {isExpanded ? "⤡ Collapse" : "⤢ Expand"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {f.type === "textarea" ? (
+                      <textarea
+                        value={value}
+                        onChange={e => updateCandidateField(f.key, e.target.value)}
+                        rows={isExpanded ? 14 : 3}
+                        style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL, background: "#fff", resize: "vertical" }}
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={value}
+                        onChange={e => updateCandidateField(f.key, e.target.value)}
+                        style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL, background: "#fff" }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
 
               {/* focusOrgIds toggle — enforced client-side to match
                   firestore.rules' focusOrgIdsChangeIsOwnOrgOnly(): a
