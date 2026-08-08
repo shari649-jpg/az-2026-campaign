@@ -123,7 +123,7 @@ export default async function (req) {
     // Pre-call check, decided this session — see creditHelper.mjs's header
     // for the full picture (warn under 500, hard-block at ≤0; the only
     // current unblock path is Admin-granted comp credits, no Stripe yet).
-    const balanceCheck = await checkGenerationBalance(app, usage.orgId);
+    const balanceCheck = await checkGenerationBalance(app, usage.orgId, "generate-message");
     if (balanceCheck.blocked) {
       return new Response(JSON.stringify(generationBlockedPayload(balanceCheck.balance)), { status: 402, headers: corsHeaders(req) });
     }
