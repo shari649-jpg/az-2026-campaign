@@ -46,6 +46,9 @@ function todayUTC() {
  *   result.warning        - true if >= 75% used (caller should include usageWarning in response)
  *   result.blockedPayload - ready-made 429 response body if blocked
  *   result.role           - the user's role ("user" | "manager" | "administrator"), for callers that need it without a second Firestore read
+ *   result.orgId          - the user's orgId (or null if unset/pre-migration), for callers that need
+ *                           to attribute cost to an org (e.g. generation-credit debiting, Aug 2026
+ *                           TODO item 7) without a second Firestore read
  */
 // SECURITY/COST FIX (this session): previously this did a plain read
 // (ref.get()) followed by a separate write (ref.update()), with no
@@ -95,6 +98,7 @@ export async function checkAndIncrementRateLimit(app, uid) {
         remaining: 0,
         warning: false,
         role,
+        orgId: data.orgId || null,
         blockedPayload: {
           error:     "rate_limit_exceeded",
           used:      storedCalls,
@@ -126,6 +130,7 @@ export async function checkAndIncrementRateLimit(app, uid) {
       remaining,
       warning,
       role,
+      orgId: data.orgId || null,
       blockedPayload: null,
     };
   });
