@@ -30,6 +30,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
+import { debitGenerationCredits } from "./creditHelper.mjs";
 
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
@@ -86,6 +87,15 @@ const PLATFORM_LABELS = {
 const CHAR_LIMITS = {
   facebook: 63206, instagram: 2200, twitter: 280, threads: 500, tiktok: 2200, bluesky: 300,
 };
+
+// Model centralization (Aug 2026 TODO items 4/5) — previously hardcoded
+// "claude-sonnet-4-5" directly in the fetch body below. Now reads
+// GENERATION_MODEL, pinned to the dated string (not the bare alias) so it
+// can't silently drift. This function is public/unauthenticated (no uid)
+// and its cost-attribution gap (attributing usage to the storm's owning
+// org) is tracked as its own separate, still-open TODO item — this change
+// is model centralization only, not credit/usage logging.
+const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-sonnet-4-5-20250929";
 
 const RATE_LIMITS = { ip: 20, storm: 200, sitewide: 1000 };
 const ALERT_EMAIL = "shari@arizonacoalition.net";
@@ -262,12 +272,30 @@ export default async function (req) {
     const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 700, messages: [{ role: "user", content: prompt }] }),
+      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: 700, messages: [{ role: "user", content: prompt }] }),
     });
     const data = await anthropicRes.json();
     if (data.error) {
       console.error("[public-storm-regenerate] Anthropic error:", data.error);
       return new Response(JSON.stringify(generic({ error: "generation_failed" })), { status: 200, headers: corsHeaders(req) });
+    }
+
+    // Generation-credit debiting (Aug 2026 TODO item 8) — closes the
+    // long-standing gap where this function never attributed cost to
+    // anyone. Debits the STORM's owning org (storm.orgId), not a
+    // requesting user's org, since this endpoint is public/unauthenticated
+    // and has no uid at all — the storm itself is the only org-identifying
+    // thing available. Fail-open like every other org-scoping in this app:
+    // a legacy storm with no orgId yet simply isn't debited (logged, not
+    // blocked) rather than failing the visitor's regenerate request.
+    if (data.usage) {
+      await debitGenerationCredits(app, {
+        orgId: storm.orgId || null,
+        uid: null,
+        functionName: "public-storm-regenerate",
+        inputTokens: data.usage.input_tokens,
+        outputTokens: data.usage.output_tokens,
+      });
     }
 
     const text = (data.content || []).map(b => b.text || "").join("");
