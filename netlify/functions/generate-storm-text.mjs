@@ -24,6 +24,12 @@ import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 // truncation" design while closing the unbounded-client-value gap.
 const MAX_TOKENS_CEILING = 8000;
 
+// Model centralization (Aug 2026 TODO items 4/5) — previously hardcoded
+// "claude-sonnet-4-5" directly in the fetch body below. Now reads
+// GENERATION_MODEL, pinned to the dated string (not the bare alias) so it
+// can't silently drift.
+const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-sonnet-4-5-20250929";
+
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
 // in this header (no comma lists, no wildcarding with credentials), so we
@@ -131,10 +137,16 @@ export default async function (req) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: Math.min(max_tokens || 700, MAX_TOKENS_CEILING), messages, ...(effectiveSystem && { system: effectiveSystem }) }),
+      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: Math.min(max_tokens || 700, MAX_TOKENS_CEILING), messages, ...(effectiveSystem && { system: effectiveSystem }) }),
     });
 
     const data = await response.json();
+
+    // Real per-call token usage, logged for credit-rate truing (Aug 2026
+    // TODO item 6).
+    if (data.usage) {
+      console.log(`[generate-storm-text] token_usage: uid=${uid} input_tokens=${data.usage.input_tokens} output_tokens=${data.usage.output_tokens} model=${GENERATION_MODEL}`);
+    }
 
     // Attach usage warning if approaching limit
     if (usage.warning) {
