@@ -69,20 +69,43 @@ export function creditsForTokens(inputTokens, outputTokens) {
  *
  * @param {object} app          - Firebase Admin app instance
  * @param {string|null} orgId   - the org to check (null = skip, fail-open — no block, no warning)
+ * @param {string} functionName - calling function's name, for log context (e.g. "generate-rebuttal"). Optional, defaults to "unknown" so this never throws if a caller omits it.
  * @returns {Promise<{blocked: boolean, warning: boolean, balance: number|null}>}
  */
-export async function checkGenerationBalance(app, orgId) {
+export async function checkGenerationBalance(app, orgId, functionName = "unknown") {
   if (!orgId) {
     return { blocked: false, warning: false, balance: null };
   }
   const db = admin.firestore(app);
   const orgSnap = await db.doc(`orgs/${orgId}`).get();
   const balance = orgSnap.exists ? (orgSnap.data()?.credits?.generationBalance ?? 0) : 0;
-  return {
+  const result = {
     blocked: balance <= 0,
     warning: balance > 0 && balance <= GENERATION_WARNING_THRESHOLD,
     balance,
   };
+  // Real server-side logging (added Aug 8 2026 after a real incident: a
+  // user was blocked despite the org showing a positive balance minutes
+  // earlier, and there was NOTHING in the function logs to actually
+  // investigate — the block just returned a 402 to the browser with no
+  // trace of what checkGenerationBalance had actually seen at that
+  // moment). Logs every check, not just blocks, so a future incident has
+  // a real trail: orgId, functionName, the exact balance read, and the
+  // decision made from it. If a block happens again with a balance that
+  // doesn't match what the Admin panel shows, this log line is the first
+  // place to look — it'll show whether checkGenerationBalance itself saw
+  // a stale/wrong value, or whether the balance had genuinely already
+  // been spent (this is a SHARED org-wide pool, not per-user — another
+  // staffer generating concurrently can spend it between when someone
+  // "confirms" a balance and when their own request actually runs).
+  if (result.blocked) {
+    console.warn(`[creditHelper] BLOCKED: ${functionName} org=${orgId} balance=${balance} — generation refused, no tokens spent.`);
+  } else if (result.warning) {
+    console.log(`[creditHelper] check: ${functionName} org=${orgId} balance=${balance} — allowed, WARNING (≤${GENERATION_WARNING_THRESHOLD}).`);
+  } else {
+    console.log(`[creditHelper] check: ${functionName} org=${orgId} balance=${balance} — allowed.`);
+  }
+  return result;
 }
 
 // Shared error payload for a blocked call — same shape returned by every
