@@ -17,6 +17,13 @@ import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 // truncation" design while closing the unbounded-client-value gap.
 const MAX_TOKENS_CEILING = 8000;
 
+// Model centralization (Aug 2026 TODO items 4/5) — previously hardcoded
+// "claude-sonnet-4-5" directly in the fetch body below, so this function
+// couldn't be switched without a code change even though generate-message.mjs
+// already supported it via env var. Now reads the same GENERATION_MODEL var,
+// pinned to the dated string (not the bare alias) so it can't silently drift.
+const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-sonnet-4-5-20250929";
+
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
 // in this header (no comma lists, no wildcarding with credentials), so we
@@ -105,10 +112,17 @@ export default async function (req) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: Math.min(max_tokens || 600, MAX_TOKENS_CEILING), messages, system: effectiveSystem }),
+      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: Math.min(max_tokens || 600, MAX_TOKENS_CEILING), messages, system: effectiveSystem }),
     });
 
     const data = await response.json();
+
+    // Real per-call token usage, logged for credit-rate truing (Aug 2026
+    // TODO item 6). Note this function is called twice per full rebuttal
+    // generation (see file header) — each call logs its own usage.
+    if (data.usage) {
+      console.log(`[generate-rebuttal] token_usage: uid=${uid} input_tokens=${data.usage.input_tokens} output_tokens=${data.usage.output_tokens} model=${GENERATION_MODEL}`);
+    }
 
     if (usage.warning) {
       data.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
