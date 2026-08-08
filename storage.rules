@@ -79,7 +79,12 @@ service firebase.storage {
     // just guards against someone accidentally uploading raw camera
     // originals or the wrong file type.
     match /candidate-headshots/{fileName} {
-      allow read: if isSignedIn();
+      // Read opened to the public (August 2026) for the public voter-lookup
+      // tool (public-voter-lookup.mjs / VoterLookupPage.jsx) — headshots
+      // are public campaign photos, the same kind of image a candidate
+      // already puts on their own public-facing site, unlike the
+      // opposition-research fields kept behind sign-in everywhere else.
+      allow read: if true;
       allow write: if isSignedIn()
         && isStaff()
         && request.resource.size < 15 * 1024 * 1024
