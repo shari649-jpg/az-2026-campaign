@@ -102,7 +102,7 @@ export default async function (req) {
 
     // ── Generation-credit gate ────────────────────────────────────────────
     // Pre-call check, decided this session — see creditHelper.mjs's header.
-    const balanceCheck = await checkGenerationBalance(app, usage.orgId);
+    const balanceCheck = await checkGenerationBalance(app, usage.orgId, "generate-storm-text");
     if (balanceCheck.blocked) {
       return new Response(JSON.stringify(generationBlockedPayload(balanceCheck.balance)), { status: 402, headers: corsHeaders(req) });
     }
