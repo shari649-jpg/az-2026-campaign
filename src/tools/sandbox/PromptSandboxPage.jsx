@@ -528,6 +528,12 @@ export default function PromptSandboxPage() {
         setGenerating(false);
         return;
       }
+      if (res.status === 402) {
+        const creditData = await res.json();
+        setNotice({ type: "error", msg: creditData.message || "Your organization's AI-generation credits are used up." });
+        setGenerating(false);
+        return;
+      }
 
       const data = await res.json();
       if (data.error) {
@@ -540,6 +546,9 @@ export default function PromptSandboxPage() {
         const { used, limit, remaining } = data.usageWarning;
         usageMsg = `${used}/${limit} daily AI calls used — ${remaining} remaining.`;
         setNotice({ type: "warning", msg: usageMsg });
+      }
+      if (data.creditWarning) {
+        setNotice({ type: "warning", msg: data.creditWarning.message });
       }
 
       const text = data.content.map(i => i.text || "").join("");
