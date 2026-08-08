@@ -74,7 +74,11 @@ function getAuthClient() {
 
 async function fetchCandidatesFromFirestore() {
   const snapshot = await admin.firestore().collection("candidates").get();
-  return snapshot.docs.map(doc => doc.data());
+  // Doc ID preserved (Aug 8 2026 addition) — previously discarded entirely
+  // via bare doc.data(), so nothing downstream could reference which real
+  // Firestore document a search result actually was. Needed for
+  // CandidateQuery.jsx/RaceComparison.jsx's new "open in Admin" link.
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
 async function fetchDistrictRows(auth) {
@@ -154,6 +158,7 @@ function parseCandidates(docs) {
     if (data.messagingHooks)          facts.push({ type: "messaging_hook",         category: "", text: data.messagingHooks });
 
     return {
+      id:               data.id, // Firestore doc ID (Aug 8 2026 addition) — for the Research→Admin deep link
       candidate_name:   data.name || "",
       office:           data.office || "",
       party:            data.party || "",
