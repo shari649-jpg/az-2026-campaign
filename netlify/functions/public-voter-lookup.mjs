@@ -111,7 +111,15 @@ async function fetchBallotMeasures() {
     const rows = response.data.values || [];
     return rows
       .filter(row => row[0] && row[0].trim()) // has an issue name
-      .filter(row => (row[2] || "").trim().toUpperCase() === "Y") // active only
+      // Fail-open on Active, corrected same day after a real live test:
+      // originally required an exact "Y" (matching query-candidates.mjs's
+      // stricter convention for the internal Issues tab), but that meant a
+      // real Prop entry with a blank Active cell (easy to miss — it's not
+      // the column being added) silently never showed up here, with no
+      // error anywhere. This public tool now matches the fail-open
+      // convention used everywhere else in this app for "active" (e.g.
+      // candidates' active !== false) — only an explicit "N" hides a row.
+      .filter(row => (row[2] || "").trim().toUpperCase() !== "N")
       .filter(row => (row[9] || "").trim().toLowerCase() === "prop") // Issue Type column J
       .map(row => ({
         name: (row[0] || "").trim(),
@@ -224,17 +232,30 @@ function matchesStateHouse(candidate, sldl) {
   return extractDistrictNumber(candidate.district) === sldl;
 }
 
-// State executive races (Aug 2026 addition) — Governor, Attorney General,
-// Secretary of State. Statewide, not tied to any CD/LD, so this only needs
-// office/level to match — no district number extraction, unlike the three
-// matchers above. Office names matched here mirror the exact statewide-
-// office list already used elsewhere in this codebase (Handoff #31's
-// focusOrgIds backfill rules: "AZ statewide offices — Attorney General,
-// Governor, Secretary of State"), kept consistent rather than inventing a
-// second list. Same permissive substring matching as every other matcher
-// in this file, for the same reason: Office is free-text from the source
-// Sheet, not a fixed enum.
-const STATE_EXECUTIVE_OFFICES = ["governor", "attorney general", "secretary of state"];
+// State executive races (Aug 2026 addition, corrected same day after a
+// real live test showed Supt. of Public Instruction, Treasurer, Mine
+// Inspector, and Corp Commission missing). Governor, Attorney General,
+// and Secretary of State were the only offices originally listed here —
+// pulled from a comment about focusOrgIds backfill rules that was never
+// actually meant to be an exhaustive list of every AZ statewide office.
+// The real, complete list of Arizona's statewide-elected offices:
+// Governor, Secretary of State, Attorney General, State Treasurer,
+// Superintendent of Public Instruction, State Mine Inspector, and
+// Corporation Commission (multiple seats, all elected statewide).
+// Statewide, not tied to any CD/LD, so this only needs office/level to
+// match — no district number extraction, unlike the three matchers above.
+// Same permissive substring matching as every other matcher in this file,
+// for the same reason: Office is free-text from the source Sheet, not a
+// fixed enum.
+const STATE_EXECUTIVE_OFFICES = [
+  "governor",
+  "attorney general",
+  "secretary of state",
+  "treasurer",
+  "superintendent of public instruction",
+  "mine inspector",
+  "corporation commission",
+];
 function matchesStateExecutive(candidate) {
   const level = (candidate.level || "").toLowerCase();
   const office = (candidate.office || "").toLowerCase();
