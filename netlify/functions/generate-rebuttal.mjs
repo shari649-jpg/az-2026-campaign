@@ -8,6 +8,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
+import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, generationWarningPayload } from "./creditHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 
 // COST FIX (this session) — see generate-message.mjs for the full
@@ -93,6 +94,17 @@ export default async function (req) {
       return new Response(JSON.stringify(usage.blockedPayload), { status: 429, headers: corsHeaders(req) });
     }
 
+    // ── Generation-credit gate ────────────────────────────────────────────
+    // Pre-call check, decided this session — see creditHelper.mjs's header.
+    // Each of this function's two calls per rebuttal checks independently —
+    // if the first call spends the org right down to the block threshold,
+    // the second call is meant to catch that, not skip the check because
+    // "we already checked once this request."
+    const balanceCheck = await checkGenerationBalance(app, usage.orgId);
+    if (balanceCheck.blocked) {
+      return new Response(JSON.stringify(generationBlockedPayload(balanceCheck.balance)), { status: 402, headers: corsHeaders(req) });
+    }
+
     // ── Claude call ─────────────────────────────────────────────────────────
     const { messages, system, max_tokens } = body;
 
@@ -122,6 +134,20 @@ export default async function (req) {
     // generation (see file header) — each call logs its own usage.
     if (data.usage) {
       console.log(`[generate-rebuttal] token_usage: uid=${uid} input_tokens=${data.usage.input_tokens} output_tokens=${data.usage.output_tokens} model=${GENERATION_MODEL}`);
+      // Generation-credit debiting (Aug 2026 TODO item 7). Note this
+      // function is called twice per full rebuttal generation (see file
+      // header) — each call debits its own real usage independently.
+      await debitGenerationCredits(app, {
+        orgId: usage.orgId,
+        uid,
+        functionName: "generate-rebuttal",
+        inputTokens: data.usage.input_tokens,
+        outputTokens: data.usage.output_tokens,
+      });
+    }
+
+    if (balanceCheck.warning) {
+      data.creditWarning = generationWarningPayload(balanceCheck.balance);
     }
 
     if (usage.warning) {
