@@ -171,6 +171,34 @@ function matchesStateHouse(candidate, sldl) {
   return extractDistrictNumber(candidate.district) === sldl;
 }
 
+// State executive races (Aug 2026 addition) — Governor, Attorney General,
+// Secretary of State. Statewide, not tied to any CD/LD, so this only needs
+// office/level to match — no district number extraction, unlike the three
+// matchers above. Office names matched here mirror the exact statewide-
+// office list already used elsewhere in this codebase (Handoff #31's
+// focusOrgIds backfill rules: "AZ statewide offices — Attorney General,
+// Governor, Secretary of State"), kept consistent rather than inventing a
+// second list. Same permissive substring matching as every other matcher
+// in this file, for the same reason: Office is free-text from the source
+// Sheet, not a fixed enum.
+const STATE_EXECUTIVE_OFFICES = ["governor", "attorney general", "secretary of state"];
+function matchesStateExecutive(candidate) {
+  const level = (candidate.level || "").toLowerCase();
+  const office = (candidate.office || "").toLowerCase();
+  if (!level.includes("statewide")) return false;
+  return STATE_EXECUTIVE_OFFICES.some(o => office.includes(o));
+}
+
+// Dem-only filter (Aug 2026 addition) — Party is free-text from the source
+// Sheet (e.g. "Democrat", "Democratic", "D"), not a fixed enum, so this
+// uses the same permissive substring match as every other field in this
+// file rather than an exact-value comparison that could silently miss a
+// real row typed slightly differently.
+function isDemocrat(candidate) {
+  const party = (candidate.party || "").toLowerCase();
+  return party.includes("dem");
+}
+
 // ── Public field allowlist ────────────────────────────────────────────────
 // The ONLY place fields are selected for public output. Add a field here
 // deliberately when it's confirmed safe for public display — never
@@ -203,6 +231,10 @@ export default async function (req) {
     if (!address) {
       return new Response(JSON.stringify({ error: "Enter an address to look up." }), { status: 400, headers: corsHeaders(req) });
     }
+    // Dem-only filter (Aug 2026 addition) — opt-in via the request body,
+    // defaults to off (shows every party) so this stays backward-compatible
+    // with any existing caller that doesn't send it.
+    const demOnly = body.demOnly === true;
 
     let districts;
     try {
@@ -215,7 +247,11 @@ export default async function (req) {
     const db = admin.firestore(app);
     const snap = await db.collection("candidates").where("state", "==", "AZ").get();
 
-    const results = { congress: [], stateSenate: [], stateHouse: [] };
+    // stateExecutive (Aug 2026 addition) — Governor / Attorney General /
+    // Secretary of State. Statewide, so it's populated on every lookup
+    // regardless of district (unlike the three district-scoped buckets
+    // above it), as long as the address resolved to Arizona at all.
+    const results = { congress: [], stateSenate: [], stateHouse: [], stateExecutive: [] };
     snap.forEach(doc => {
       const data = doc.data();
       // Skip candidates marked inactive via the Admin panel's active/
@@ -225,9 +261,15 @@ export default async function (req) {
       // from before this field existed, where active is undefined, still
       // default to showing — only an explicit false hides one.
       if (data.active === false) return;
+      // Dem-only filter applied uniformly across all four buckets, before
+      // any office-matching — a non-Dem candidate is skipped entirely
+      // rather than filtered per-bucket, so the same rule can't
+      // accidentally apply inconsistently across office types.
+      if (demOnly && !isDemocrat(data)) return;
       if (matchesFederalHouse(data, districts.cd)) results.congress.push(buildPublicCandidate(doc));
       if (matchesStateSenate(data, districts.sldu)) results.stateSenate.push(buildPublicCandidate(doc));
       if (matchesStateHouse(data, districts.sldl)) results.stateHouse.push(buildPublicCandidate(doc));
+      if (matchesStateExecutive(data)) results.stateExecutive.push(buildPublicCandidate(doc));
     });
 
     return new Response(JSON.stringify({
