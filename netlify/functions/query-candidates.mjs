@@ -17,6 +17,11 @@
 // A: Issue  B: Heat Rating  C: Active: Y/N  D: Brief Statement  E: Relevant Stats
 // F: Races, Districts, Counties Affected  G: GOP Vulnerabilities
 // H: Messaging Angle, AZ Angle  I: Notes
+// J: Issue Type  ← NEW August 2026. Free text; "Prop" (case-insensitive)
+//    marks a statewide ballot proposition, which is what wires this issue
+//    into the public voter-lookup tool's ballot-measures section
+//    (public-voter-lookup.mjs) — everything else stays internal-only, same
+//    as before. Blank = not a ballot measure, treated the same as today.
 //
 // NOTE ON CREDENTIAL LOADING: the Google service-account credential is read
 // from a local google-service-account.json file rather than process.env.
@@ -85,7 +90,7 @@ async function fetchIssueRows(auth) {
   const sheets = google.sheets({ version: "v4", auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Issues!A2:I",
+    range: "Issues!A2:J",
   });
   return response.data.values || [];
 }
@@ -126,6 +131,7 @@ function parseIssues(rows) {
         gop_vulnerabilities:(row[6] || "").trim(),
         messaging_angle:    (row[7] || "").trim(),
         notes:              (row[8] || "").trim(),
+        issue_type:         (row[9] || "").trim(),
       };
     });
 }
