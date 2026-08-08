@@ -481,7 +481,8 @@ export default function RapidResponseReader() {
   const [url, setUrl]               = useState("");
   const [loading, setLoading]       = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
-  const [error, setError]           = useState(null); // null | "scrape" | "parse"
+  const [error, setError]           = useState(null); // null | "scrape" | "parse" | "credits"
+  const [creditsMessage, setCreditsMessage] = useState(""); // real server message when error === "credits"
   const [showManual, setShowManual] = useState(false);
   const [article, setArticle]       = useState(null);
   const [library, setLibrary]       = useState([]);
@@ -492,7 +493,8 @@ export default function RapidResponseReader() {
   // ── Search tab (Handoff #16 punch list) ──
   const [searchQuery, setSearchQuery]     = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchError, setSearchError]     = useState(null); // null | "auth" | "ratelimit" | "failed"
+  const [searchError, setSearchError]     = useState(null); // null | "auth" | "ratelimit" | "failed" | "credits"
+  const [searchCreditsMessage, setSearchCreditsMessage] = useState(""); // real server message when searchError === "credits"
   const [searchResults, setSearchResults] = useState(null); // null (not yet searched) | array
 
   useEffect(() => {
@@ -562,10 +564,21 @@ export default function RapidResponseReader() {
         return;
       }
 
+      if (res.status === 402) {
+        const creditData = await res.json();
+        setCreditsMessage(creditData.message || "Your organization's AI-generation credits are used up.");
+        setLoading(false);
+        setError("credits");
+        return;
+      }
+
       const data = await res.json();
       if (data.usageWarning) {
         const { used, limit, remaining } = data.usageWarning;
         notify(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.`, "warn");
+      }
+      if (data.creditWarning) {
+        notify(`⚠️ ${data.creditWarning.message}`, "warn");
       }
       const raw = data.result?.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
       const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
@@ -611,10 +624,21 @@ export default function RapidResponseReader() {
         return;
       }
 
+      if (res.status === 402) {
+        const creditData = await res.json();
+        setCreditsMessage(creditData.message || "Your organization's AI-generation credits are used up.");
+        setLoading(false);
+        setError("credits");
+        return;
+      }
+
       const data = await res.json();
       if (data.usageWarning) {
         const { used, limit, remaining } = data.usageWarning;
         notify(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.`, "warn");
+      }
+      if (data.creditWarning) {
+        notify(`⚠️ ${data.creditWarning.message}`, "warn");
       }
       const raw = data.result?.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
       const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
@@ -647,12 +671,22 @@ export default function RapidResponseReader() {
 
       if (res.status === 401 || res.status === 403) { setSearchLoading(false); setSearchError("auth"); return; }
       if (res.status === 429) { setSearchLoading(false); setSearchError("ratelimit"); return; }
+      if (res.status === 402) {
+        const creditData = await res.json();
+        setSearchCreditsMessage(creditData.message || "Your organization's AI-generation credits are used up.");
+        setSearchLoading(false);
+        setSearchError("credits");
+        return;
+      }
       if (!res.ok) { setSearchLoading(false); setSearchError("failed"); return; }
 
       const data = await res.json();
       if (data.usageWarning) {
         const { used, limit, remaining } = data.usageWarning;
         notify(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.`, "warn");
+      }
+      if (data.creditWarning) {
+        notify(`⚠️ ${data.creditWarning.message}`, "warn");
       }
       setSearchResults(Array.isArray(data.results) ? data.results : []);
     } catch {
@@ -876,6 +910,18 @@ export default function RapidResponseReader() {
               </div>
             )}
 
+            {error === "credits" && (
+              <div style={{ ...S.card, padding: "24px", textAlign: "center" }}>
+                <p style={{ fontSize: 15, fontWeight: 700, color: B.text, marginBottom: 6 }}>
+                  🚫 Generation credits used up
+                </p>
+                <p style={{ fontSize: 14, color: B.textMute }}>
+                  {creditsMessage || "Your organization's AI-generation credits are used up."}{" "}
+                  An Administrator can add more from the Admin panel's Orgs tab ("Grant comp credits") — no purchase needed for this today.
+                </p>
+              </div>
+            )}
+
             {/* Manual entry */}
             {showManual && (
               <ManualEntry
@@ -976,6 +1022,18 @@ export default function RapidResponseReader() {
                     Contact your coalition administrator
                   </a>{" "}
                   if you need more access.
+                </p>
+              </div>
+            )}
+
+            {searchError === "credits" && (
+              <div style={{ ...S.card, padding: "24px", textAlign: "center" }}>
+                <p style={{ fontSize: 15, fontWeight: 700, color: B.text, marginBottom: 6 }}>
+                  🚫 Generation credits used up
+                </p>
+                <p style={{ fontSize: 14, color: B.textMute }}>
+                  {searchCreditsMessage || "Your organization's AI-generation credits are used up."}{" "}
+                  An Administrator can add more from the Admin panel's Orgs tab ("Grant comp credits") — no purchase needed for this today.
                 </p>
               </div>
             )}
