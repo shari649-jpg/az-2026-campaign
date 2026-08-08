@@ -9,6 +9,7 @@ import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { parse as parseHtml } from "node-html-parser";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
+import { debitGenerationCredits } from "./creditHelper.mjs";
 
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
@@ -30,6 +31,12 @@ function optionsHeaders(req) {
   const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return { "Access-Control-Allow-Origin": allowOrigin, "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 }
+
+// Model centralization (Aug 2026 TODO items 4/5) — previously hardcoded
+// "claude-sonnet-4-5" directly in all three fetch bodies below (analyze,
+// search, analyze_text). Now reads GENERATION_MODEL, pinned to the dated
+// string (not the bare alias) so it can't silently drift.
+const GENERATION_MODEL = process.env.GENERATION_MODEL || "claude-sonnet-4-5-20250929";
 
 function getAdminApp() {
   if (admin.apps.length) return admin.app();
@@ -204,10 +211,22 @@ export default async function (req) {
       const analysisRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 2000, messages: [{ role: "user", content: ANALYSIS_PROMPT(pageText) }] }),
+        body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: 2000, messages: [{ role: "user", content: ANALYSIS_PROMPT(pageText) }] }),
       });
 
       const analysisData = await analysisRes.json();
+      // Real per-call token usage, logged for credit-rate truing (Aug 2026 TODO item 6).
+      if (analysisData.usage) {
+        console.log(`[rapid-response] token_usage: action=fetch_and_analyze uid=${uid} input_tokens=${analysisData.usage.input_tokens} output_tokens=${analysisData.usage.output_tokens} model=${GENERATION_MODEL}`);
+        // Generation-credit debiting (Aug 2026 TODO item 7).
+        await debitGenerationCredits(app, {
+          orgId: usage.orgId,
+          uid,
+          functionName: "rapid-response:fetch_and_analyze",
+          inputTokens: analysisData.usage.input_tokens,
+          outputTokens: analysisData.usage.output_tokens,
+        });
+      }
       if (usage.warning) analysisData.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
       return new Response(JSON.stringify({ result: analysisData }), { status: 200, headers: corsHeaders(req) });
     }
@@ -230,7 +249,7 @@ export default async function (req) {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-5",
+          model: GENERATION_MODEL,
           max_tokens: 1500,
           tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearchUses }],
           messages: [{ role: "user", content: SEARCH_PROMPT(query) }],
@@ -238,6 +257,24 @@ export default async function (req) {
       });
 
       const searchData = await searchRes.json();
+      // Real per-call token usage, logged for credit-rate truing (Aug 2026
+      // TODO item 6). Note: web_search tool calls add server-side search
+      // tokens on top of normal input/output tokens — worth remembering
+      // when truing up the credit rate against this action specifically.
+      if (searchData.usage) {
+        console.log(`[rapid-response] token_usage: action=search uid=${uid} input_tokens=${searchData.usage.input_tokens} output_tokens=${searchData.usage.output_tokens} model=${GENERATION_MODEL}`);
+        // Generation-credit debiting (Aug 2026 TODO item 7). Debited even
+        // if the response later fails to parse as valid JSON below — the
+        // Claude call itself still happened and cost real tokens regardless
+        // of whether usable results came back.
+        await debitGenerationCredits(app, {
+          orgId: usage.orgId,
+          uid,
+          functionName: "rapid-response:search",
+          inputTokens: searchData.usage.input_tokens,
+          outputTokens: searchData.usage.output_tokens,
+        });
+      }
       if (searchData.error) {
         return new Response(JSON.stringify({ error: "search_failed" }), { status: 502, headers: corsHeaders(req) });
       }
@@ -289,10 +326,22 @@ Format:
       const analysisRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 2000, messages: [{ role: "user", content: prompt }] }),
+        body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: 2000, messages: [{ role: "user", content: prompt }] }),
       });
 
       const analysisData = await analysisRes.json();
+      // Real per-call token usage, logged for credit-rate truing (Aug 2026 TODO item 6).
+      if (analysisData.usage) {
+        console.log(`[rapid-response] token_usage: action=analyze_text uid=${uid} input_tokens=${analysisData.usage.input_tokens} output_tokens=${analysisData.usage.output_tokens} model=${GENERATION_MODEL}`);
+        // Generation-credit debiting (Aug 2026 TODO item 7).
+        await debitGenerationCredits(app, {
+          orgId: usage.orgId,
+          uid,
+          functionName: "rapid-response:analyze_text",
+          inputTokens: analysisData.usage.input_tokens,
+          outputTokens: analysisData.usage.output_tokens,
+        });
+      }
       if (usage.warning) analysisData.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
       return new Response(JSON.stringify({ result: analysisData }), { status: 200, headers: corsHeaders(req) });
     }
