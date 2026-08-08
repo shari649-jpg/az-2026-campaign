@@ -538,6 +538,7 @@ export default function App() {
   const [pushError, setPushError]   = useState("");
   const [notif, setNotif]           = useState(null);
   const [genError, setGenError]     = useState(null); // persistent error panel for generation failures
+  const [creditsExhaustedMsg, setCreditsExhaustedMsg] = useState(""); // real server message for genError === "credits"
   const [contradictionFlags, setContradictionFlags] = useState({}); // { [platformId]: "explanation" } — self-contradictions the model noticed (Handoff #22), never blocking, just surfaced for a human to decide
   const [hashtags, setHashtags]     = useState(null);
   const [hashLoading, setHashLoading] = useState(false);
@@ -862,6 +863,13 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
       err.limitData = limitData;
       throw err;
     }
+    if (res.status === 402) {
+      const creditData = await res.json();
+      const err = new Error("credits_exhausted");
+      err.type = "credits_exhausted";
+      err.creditMessage = creditData.message;
+      throw err;
+    }
     const data = await res.json();
     if (data.error) {
       const err = new Error(data.error);
@@ -871,6 +879,9 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     if (data.usageWarning) {
       const { used, limit, remaining } = data.usageWarning;
       notify(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.`, "warn");
+    }
+    if (data.creditWarning) {
+      notify(`⚠️ ${data.creditWarning.message}`, "warn");
     }
     const text = data.content.map(i=>i.text||"").join("");
     const cleaned = text.replace(/```json|```/g,"").trim();
@@ -949,11 +960,20 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         setUrlFetching(false);
         return;
       }
+      if (res.status === 402) {
+        const creditData = await res.json();
+        setUrlError(creditData.message || "Your organization's AI-generation credits are used up. Contact an Administrator to add more.");
+        setUrlFetching(false);
+        return;
+      }
 
       const data = await res.json();
       if (data.usageWarning) {
         const { used, limit, remaining } = data.usageWarning;
         notify(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.`, "warn");
+      }
+      if (data.creditWarning) {
+        notify(`⚠️ ${data.creditWarning.message}`, "warn");
       }
       const raw = data.result?.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
       const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
@@ -1013,6 +1033,9 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         setGenError("flagged");
       } else if (e.type === "rate_limit_exceeded") {
         setGenError("ratelimit");
+      } else if (e.type === "credits_exhausted") {
+        setCreditsExhaustedMsg(e.creditMessage || "");
+        setGenError("credits");
       } else if (e.type === "truncated") {
         setGenError("truncated");
       } else {
@@ -1050,6 +1073,9 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         setGenError("flagged");
       } else if (e.type === "rate_limit_exceeded") {
         setGenError("ratelimit");
+      } else if (e.type === "credits_exhausted") {
+        setCreditsExhaustedMsg(e.creditMessage || "");
+        setGenError("credits");
       } else if (e.type === "truncated") {
         setGenError("truncated");
       } else {
@@ -1334,9 +1360,9 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
         <div className="slide-down" role="alert" aria-live="assertive" style={{
           position:"fixed", bottom: 24, left:"50%", transform:"translateX(-50%)", zIndex:150,
           maxWidth: 520, width:"calc(100% - 48px)",
-          background: genError === "flagged" ? "#7f1d1d" : genError === "ratelimit" ? "#4c1d95" : genError === "truncated" ? "#92400e" : "#7a3820",
+          background: genError === "flagged" ? "#7f1d1d" : genError === "ratelimit" ? "#4c1d95" : genError === "credits" ? "#4A3163" : genError === "truncated" ? "#92400e" : "#7a3820",
           color:"#fff",
-          border:`2px solid ${genError === "flagged" ? "#b91c1c" : genError === "ratelimit" ? "#7c3aed" : genError === "truncated" ? "#c2670a" : "var(--terracotta)"}`,
+          border:`2px solid ${genError === "flagged" ? "#b91c1c" : genError === "ratelimit" ? "#7c3aed" : genError === "credits" ? "#0E7A8C" : genError === "truncated" ? "#c2670a" : "var(--terracotta)"}`,
           borderRadius:12, padding:"14px 48px 14px 20px",
           boxShadow:"0 8px 32px rgba(0,0,0,0.45)",
         }}>
@@ -1346,13 +1372,15 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
             fontSize:20, color:"rgba(255,255,255,0.8)", fontWeight:900, fontFamily:"inherit", lineHeight:1,
           }}>✕</button>
           <p style={{ fontSize:16, fontWeight:900, marginBottom:4 }}>
-            {genError === "flagged" ? "⚠️ Generation blocked" : genError === "ratelimit" ? "🚦 Daily limit reached" : genError === "truncated" ? "✂️ Response cut off" : "⚠️ Generation failed"}
+            {genError === "flagged" ? "⚠️ Generation blocked" : genError === "ratelimit" ? "🚦 Daily limit reached" : genError === "credits" ? "🚫 Generation credits used up" : genError === "truncated" ? "✂️ Response cut off" : "⚠️ Generation failed"}
           </p>
           <p style={{ fontSize:14, color:"rgba(255,255,255,0.85)", lineHeight:1.5 }}>
             {genError === "flagged"
               ? "The AI declined this request. Edit the Issue / Content field and try again."
               : genError === "ratelimit"
               ? "You've used all your AI calls for today. Resets at midnight UTC. Contact an admin for more access."
+              : genError === "credits"
+              ? (creditsExhaustedMsg || "Your organization's AI-generation credits are used up. Contact an Administrator to add more.")
               : genError === "truncated"
               ? "Claude's reply was cut off before it finished — usually from a lot of source content. Try fewer platforms at once, or trim what's in Issue/Content."
               : "Request timed out. Try again — or select fewer platforms at once, then generate the rest separately."}
@@ -1497,6 +1525,34 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   <a href="mailto:info@arizonacoalition.net?subject=Daily%20AI%20limit%20reached" style={{ color:"#7c3aed", fontWeight:700, textDecoration:"none" }}>
                     Contact your coalition administrator
                   </a>.
+                </p>
+              </div>
+            )}
+
+            {genError === "credits" && (
+              <div role="alert" style={{
+                background:"#f2effa", border:`3px solid #4A3163`,
+                borderRadius:12, padding:"20px 24px", marginBottom:28,
+                position:"relative",
+              }}>
+                <button
+                  onClick={() => setGenError(null)}
+                  aria-label="Dismiss error"
+                  style={{
+                    position:"absolute", top:14, right:16,
+                    background:"none", border:"none", cursor:"pointer",
+                    fontSize:22, color:"#4A3163", fontWeight:900, lineHeight:1,
+                    fontFamily:"inherit",
+                  }}
+                >✕</button>
+                <p style={{ fontSize:18, fontWeight:900, color:"#4A3163", marginBottom:10 }}>
+                  🚫 Generation credits used up
+                </p>
+                <p style={{ fontSize:16, color:T.textMid, lineHeight:1.6, marginBottom:10 }}>
+                  {creditsExhaustedMsg || "Your organization's AI-generation credits are used up."}
+                </p>
+                <p style={{ fontSize:15, color:T.textMid, lineHeight:1.6 }}>
+                  An Administrator can add more from the Admin panel's Orgs tab ("Grant comp credits") — no purchase needed for this today.
                 </p>
               </div>
             )}
