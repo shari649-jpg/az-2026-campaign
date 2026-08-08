@@ -52,7 +52,7 @@ function isAtDailyLimit(u) {
 }
 
 export default function AdminPage() {
-  const { isManager, isAdmin, user: currentUser } = useAuth();
+  const { isManager, isAdmin, user: currentUser, profile: currentProfile } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab]   = useState("users"); // "users" | "waitlist"
@@ -118,6 +118,16 @@ export default function AdminPage() {
   const [showInactive, setShowInactive]       = useState(false);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState(new Set());
   const [candidatesSaving, setCandidatesSaving] = useState(false);
+  // ── Candidate field editor (Block 5 item 4, Aug 2026) ────────────────
+  // Full per-candidate edit modal — extends the existing active/inactive
+  // bulk toggle above with the 17 fields that had NO in-app edit path at
+  // all before this (Firestore Console only). editingCandidate holds the
+  // full candidate object (for reference/id); candidateEditForm is the
+  // working copy of just the editable fields, so Cancel can discard
+  // changes without needing to re-fetch.
+  const [editingCandidate, setEditingCandidate] = useState(null);
+  const [candidateEditForm, setCandidateEditForm] = useState({});
+  const [candidateFieldSaving, setCandidateFieldSaving] = useState(false);
 
   useEffect(() => { if (!isManager) navigate("/"); }, [isManager]);
   useEffect(() => { if (isManager) { fetchUsers(); fetchWaitlist(); } }, [isManager]);
@@ -225,6 +235,98 @@ export default function AdminPage() {
       notify("Couldn't update those candidates — try again.", "err");
     }
     setCandidatesSaving(false);
+  };
+
+  // ── Candidate field editor ──────────────────────────────────────────
+  // Every field the migration script (scripts/migrate-candidates-to-
+  // firestore.mjs) writes, EXCEPT photo_filename (has its own dedicated
+  // upload flow on the Headshots tab already — included here anyway as a
+  // plain text override, since clearing a wrong value shouldn't require a
+  // full re-upload) and focusOrgIds (its own dedicated toggle section
+  // below, not a plain text field). Order matches roughly how a staffer
+  // would actually fill these in: identity fields first, then the
+  // longer research/messaging content.
+  const CANDIDATE_EDIT_FIELDS = [
+    { key: "name", label: "Name", type: "text" },
+    { key: "office", label: "Office", type: "text" },
+    { key: "party", label: "Party (D / R / other)", type: "text" },
+    { key: "district", label: "District", type: "text" },
+    { key: "level", label: "Level", type: "text" },
+    { key: "state", label: "State", type: "text" },
+    { key: "incumbentStatus", label: "Incumbent Status", type: "text" },
+    { key: "wins", label: "Wins", type: "text" },
+    { key: "campaignWebsite", label: "Campaign Website", type: "text" },
+    { key: "ballotpediaUrl", label: "Ballotpedia URL", type: "text" },
+    { key: "photoFilename", label: "Photo Filename (upload the actual file on the Headshots tab)", type: "text" },
+    { key: "background", label: "Background", type: "textarea" },
+    { key: "recordAccomplishments", label: "Record & Accomplishments", type: "textarea" },
+    { key: "strengths", label: "Strengths", type: "textarea" },
+    { key: "vulnerabilities", label: "Vulnerabilities", type: "textarea" },
+    { key: "keyQuotes", label: "Key Quotes", type: "textarea" },
+    { key: "policyPlatform", label: "Policy Platform", type: "textarea" },
+    { key: "issueTags", label: "Issue Tags", type: "textarea" },
+    { key: "messagingHooks", label: "Messaging Hooks", type: "textarea" },
+    { key: "endorsements", label: "Endorsements", type: "textarea" },
+    { key: "fundraising", label: "Fundraising", type: "textarea" },
+    { key: "opponent", label: "Opponent", type: "textarea" },
+    { key: "opponentVulnerabilities", label: "Opponent Vulnerabilities", type: "textarea" },
+    { key: "notes", label: "Notes", type: "textarea" },
+  ];
+
+  const startEditCandidate = (c) => {
+    setEditingCandidate(c);
+    const form = {};
+    CANDIDATE_EDIT_FIELDS.forEach(f => { form[f.key] = c[f.key] || ""; });
+    setCandidateEditForm(form);
+    // focusOrgIds toggle section below needs the org list — same lazy-load
+    // guard already used for the researchOrgIds section on the Users tab.
+    if (!orgsLoaded && !orgsLoading) fetchOrgs();
+  };
+
+  const cancelEditCandidate = () => { setEditingCandidate(null); setCandidateEditForm({}); };
+
+  const updateCandidateField = (key, value) => {
+    setCandidateEditForm(f => ({ ...f, [key]: value }));
+  };
+
+  const saveCandidateEdit = async () => {
+    if (!editingCandidate) return;
+    setCandidateFieldSaving(true);
+    try {
+      const payload = {};
+      CANDIDATE_EDIT_FIELDS.forEach(f => { payload[f.key] = candidateEditForm[f.key]; });
+      await updateDoc(doc(db, "candidates", editingCandidate.id), payload);
+      setCandidates(prev => prev.map(c => c.id === editingCandidate.id ? { ...c, ...payload } : c));
+      notify(`${payload.name || "Candidate"} updated.`);
+      cancelEditCandidate();
+    } catch {
+      notify("Couldn't save that candidate — try again.", "err");
+    }
+    setCandidateFieldSaving(false);
+  };
+
+  // focusOrgIds toggle — matches firestore.rules' focusOrgIdsChangeIsOwnOrgOnly()
+  // exactly: an Administrator can toggle any org's membership; a Manager
+  // may ONLY toggle their OWN org (their org's checkbox is enabled, every
+  // other org's is disabled) — enforced here in the UI, not just left to
+  // fail server-side, per the Admin Manual's own stated principle
+  // (Section 11.2: "anything the interface prevents should also be
+  // independently verified server-side" — the inverse matters too: a
+  // Manager shouldn't have to click something that was always going to be
+  // rejected to find out it wasn't allowed).
+  const canToggleFocusOrg = (orgId) => isAdmin || (isManager && currentProfile?.orgId === orgId);
+
+  const toggleCandidateFocusOrg = async (candidate, orgId) => {
+    if (!canToggleFocusOrg(orgId)) return;
+    const current = Array.isArray(candidate.focusOrgIds) ? candidate.focusOrgIds : [];
+    const next = current.includes(orgId) ? current.filter(id => id !== orgId) : [...current, orgId];
+    try {
+      await updateDoc(doc(db, "candidates", candidate.id), { focusOrgIds: next });
+      setCandidates(prev => prev.map(c => c.id === candidate.id ? { ...c, focusOrgIds: next } : c));
+      if (editingCandidate?.id === candidate.id) setEditingCandidate(c => ({ ...c, focusOrgIds: next }));
+    } catch {
+      notify("Couldn't update org focus for that candidate — try again.", "err");
+    }
   };
 
   // Direct client write — allowed for admins per firestore.rules'
@@ -1876,6 +1978,17 @@ export default function AdminPage() {
                                 {c.office}{c.district ? ` · ${c.district}` : ""}{c.state ? ` · ${c.state}` : ""}
                               </div>
                             </div>
+                            {Array.isArray(c.focusOrgIds) && c.focusOrgIds.length > 0 && (
+                              <span title={`Focus orgs: ${c.focusOrgIds.join(", ")}`} style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", background: "#eef4ff", color: "#3454b4", border: "1px solid #b8cdf5", padding: "2px 8px", borderRadius: 4, flexShrink: 0 }}>
+                                {c.focusOrgIds.length} org{c.focusOrgIds.length !== 1 ? "s" : ""}
+                              </span>
+                            )}
+                            <button
+                              onClick={e => { e.stopPropagation(); startEditCandidate(c); }}
+                              style={{ flexShrink: 0, background: "none", border: `1.5px solid ${TEAL}`, color: TEAL, fontWeight: 700, fontSize: 12, padding: "6px 14px", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}
+                            >
+                              Edit
+                            </button>
                           </div>
                         );
                       })}
@@ -2138,6 +2251,106 @@ export default function AdminPage() {
           </div>
         );
       })()}
+
+      {/* ── Candidate field editor (Block 5 item 4) ── */}
+      {editingCandidate && (
+        <div
+          onClick={cancelEditCandidate}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: BG, borderRadius: 16, padding: "32px 32px", maxWidth: 640, width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+              <h2 style={{ margin: 0, fontSize: 20, color: TEAL, fontFamily: "inherit" }}>{editingCandidate.name || "(no name)"}</h2>
+              <button onClick={cancelEditCandidate} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "#aaa", lineHeight: 1 }}>×</button>
+            </div>
+            <p style={{ margin: "0 0 20px", fontSize: 12, color: "#999", fontFamily: "monospace" }}>{editingCandidate.id}</p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {CANDIDATE_EDIT_FIELDS.map(f => (
+                <div key={f.key}>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "#888", marginBottom: 5 }}>
+                    {f.label}
+                  </label>
+                  {f.type === "textarea" ? (
+                    <textarea
+                      value={candidateEditForm[f.key] || ""}
+                      onChange={e => updateCandidateField(f.key, e.target.value)}
+                      rows={3}
+                      style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL, background: "#fff", resize: "vertical" }}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={candidateEditForm[f.key] || ""}
+                      onChange={e => updateCandidateField(f.key, e.target.value)}
+                      style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL, background: "#fff" }}
+                    />
+                  )}
+                </div>
+              ))}
+
+              {/* focusOrgIds toggle — enforced client-side to match
+                  firestore.rules' focusOrgIdsChangeIsOwnOrgOnly(): a
+                  Manager's checkbox is disabled for every org except their
+                  own, so a rejected write is never the way they find out
+                  they can't do something. */}
+              <div style={{ marginTop: 4, padding: "12px 14px", background: "#f7f7f7", borderRadius: 8, border: "1.5px solid #e5e5e5" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#888", marginBottom: 8 }}>
+                  Focus Org IDs — which orgs prioritize this candidate
+                </div>
+                {orgsLoading && !orgs.length ? (
+                  <div style={{ fontSize: 13, color: "#999" }}>Loading orgs…</div>
+                ) : orgs.length === 0 ? (
+                  <div style={{ fontSize: 13, color: "#999" }}>No orgs found.</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {orgs.map(org => {
+                      const checked = Array.isArray(editingCandidate.focusOrgIds) && editingCandidate.focusOrgIds.includes(org.id);
+                      const canToggle = canToggleFocusOrg(org.id);
+                      return (
+                        <label key={org.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: canToggle ? CHARCOAL : "#aaa", cursor: canToggle ? "pointer" : "not-allowed" }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={!canToggle}
+                            onChange={() => toggleCandidateFocusOrg(editingCandidate, org.id)}
+                            style={{ width: 15, height: 15, accentColor: TEAL, cursor: canToggle ? "pointer" : "not-allowed" }}
+                          />
+                          {org.name || org.id}
+                          {!canToggle && <span style={{ fontSize: 11, color: "#bbb" }}>(not your org)</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                <div style={{ fontSize: 11.5, color: "#999", marginTop: 8, lineHeight: 1.5 }}>
+                  Blank = shows to every org as "Unassigned." A Manager can only toggle their own org; an Administrator can toggle any. Saves immediately per checkbox — not part of the Save button below.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginTop: 22, position: "sticky", bottom: 0, background: BG, paddingTop: 12 }}>
+              <button
+                onClick={saveCandidateEdit}
+                disabled={candidateFieldSaving}
+                style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: candidateFieldSaving ? "not-allowed" : "pointer", opacity: candidateFieldSaving ? 0.6 : 1 }}
+              >
+                {candidateFieldSaving ? "Saving…" : "Save"}
+              </button>
+              <button
+                onClick={cancelEditCandidate}
+                disabled={candidateFieldSaving}
+                style={{ background: "none", color: "#888", border: "2px solid #ccc", borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: candidateFieldSaving ? "not-allowed" : "pointer" }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
