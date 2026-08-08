@@ -185,7 +185,7 @@ export default async function (req) {
     // Checked once here rather than per-action, since all three actions
     // below (fetch_and_analyze, search, analyze_text) make exactly one
     // Claude call each and share the same credit pool.
-    const balanceCheck = await checkGenerationBalance(app, usage.orgId);
+    const balanceCheck = await checkGenerationBalance(app, usage.orgId, "rapid-response");
     if (balanceCheck.blocked) {
       return new Response(JSON.stringify(generationBlockedPayload(balanceCheck.balance)), { status: 402, headers: corsHeaders(req) });
     }
