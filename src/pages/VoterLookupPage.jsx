@@ -1,248 +1,370 @@
-// src/pages/VoterLookupPage.jsx
+// netlify/functions/public-voter-lookup.mjs
 //
-// Fully public — no login, no AppShell. Reached via /voter-lookup (see
-// App.jsx's public routes section). A voter types their address, this
-// page calls public-voter-lookup.mjs (which resolves the address to a
-// congressional + state legislative district via Google's Civic
-// Information API, then returns only an allowlisted subset of matching
-// candidates — see that function's header comment for the full field
-// list and why it's an allowlist, not a blocklist).
+// WHAT THIS DOES
+// ────────────────────────────────────────────────────────────────────────
+// Public, unauthenticated endpoint (deliberately NOT gated behind
+// requireSignedIn — this is meant to be used by any visitor to the public
+// voter-lookup page, no account needed). Takes a plain typed address,
+// resolves it to a congressional district and state legislative district
+// via Google's Civic Information API (divisionsByAddress — the free,
+// Census-TIGER-backed endpoint; see the pricing/decisions report's API
+// scoping notes), then returns the matching candidates from Firestore —
+// but ONLY an explicit allowlist of 7 fields, never the full candidate
+// record. Opposition-research fields (Strengths, Vulnerabilities, Key
+// Quotes, Notes, Policy Platform, Opponent, Opponent Vulnerabilities,
+// Fundraising, etc.) are never touched by this function at all.
 //
-// Mobile-first by design intent (per conversation, Aug 4 2026) — this is
-// expected to be used mostly on phones, so layout is single-column,
-// touch targets are generous, and headshots load lazily per-card rather
-// than blocking the whole results render.
+// WHY AN ALLOWLIST, NOT A BLOCKLIST
+// ────────────────────────────────────────────────────────────────────────
+// buildPublicCandidate() below picks 7 named fields off the raw Firestore
+// doc and returns ONLY those — it never spreads or forwards the full
+// doc.data(). This means a new sensitive field added to the schema later
+// (as already happened this week with Opponent/Opponent Vulnerabilities)
+// is automatically excluded here by default, without anyone needing to
+// remember to add it to an exclusion list under deadline pressure.
+//
+// MATCHING LOGIC — READ BEFORE FIRST REAL USE
+// ────────────────────────────────────────────────────────────────────────
+// Office/Level are free-text fields typed into the source Google Sheet,
+// not a fixed enum — there is no confirmed exact string list to match
+// against. matchesFederalHouse/matchesStateSenate/matchesStateHouse below
+// use permissive substring matching (case-insensitive) on Level and
+// Office, plus numeric extraction from District (e.g. "CD07" -> 7,
+// "LD15" -> 15) rather than exact string equality, specifically because
+// getting this wrong silently returns zero or wrong candidates with no
+// obvious error. TEST THIS against real addresses/districts once live —
+// if a real candidate doesn't show up, the fix is almost certainly
+// widening one of these substring checks to match how that specific row
+// was actually typed into the Sheet, not a deeper bug.
+//
+// SETUP REQUIRED BEFORE THIS WORKS
+// ────────────────────────────────────────────────────────────────────────
+// 1. Enable the "Civic Information API" on the same Google Cloud project
+//    used for Sheets access (or a new one) — console.cloud.google.com ->
+//    APIs & Services -> Enable APIs -> search "Civic Information API".
+// 2. Create an API key restricted to that API (Credentials -> Create
+//    Credentials -> API Key -> Restrict key -> Civic Information API
+//    only). This is a different key/setup than the Maps/Places key the
+//    state's own district-locator tool uses — no Places/Maps billing
+//    needed here at all.
+// 3. Add it as a Netlify env var: GOOGLE_CIVIC_API_KEY.
 
-import { useState } from "react";
-import { ref, getDownloadURL } from "firebase/storage";
-import { storage } from "../firebase";
+import admin from "firebase-admin";
+import { readFileSync } from "node:fs";
+import { google } from "googleapis";
 
-const TEAL      = "var(--teal)";
-const TEAL_DARK = "var(--teal-mid)";
-const GOLD      = "var(--gold)";
-const CHARCOAL  = "var(--charcoal)";
-const TURQUOISE = "var(--turquoise)";
+// Ballot-measures wiring (Aug 2026 addition) — SHEET_ID for fetchBallotMeasures()
+// below, reading the same Issues sheet tab query-candidates.mjs already reads.
+const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
-const RACE_SECTIONS = [
-  { key: "stateExecutive", title: "State Executive", sub: () => "Governor · Attorney General · Secretary of State" },
-  { key: "congress",    title: "U.S. House",  sub: d => `Congressional District ${d.congressional}` },
-  { key: "stateSenate", title: "State Senate", sub: d => `Legislative District ${d.stateSenate}` },
-  { key: "stateHouse",  title: "State House",  sub: d => `Legislative District ${d.stateHouse}` },
+const ALLOWED_ORIGINS = [
+  "https://arizonacoalition.net",
+  "https://az-coalition-2026-election.netlify.app",
 ];
+function corsHeaders(req) {
+  const origin = req.headers.get("origin");
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return { "Content-Type": "application/json", "Access-Control-Allow-Origin": allowOrigin };
+}
 
-export default function VoterLookupPage() {
-  const [address, setAddress] = useState("");
-  const [demOnly, setDemOnly] = useState(false);
-  const [state, setState] = useState("idle");
-  const [error, setError] = useState(null);
-  const [data, setData] = useState(null);
+function getAdminApp() {
+  if (admin.apps.length) return admin.app();
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(readFileSync(new URL("./firebase-service-account.json", import.meta.url), "utf8"));
+  } catch {
+    throw new Error("firebase-service-account.json not found — run `npm run build` to regenerate via scripts/inject-secrets.mjs.");
+  }
+  return admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+}
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!address.trim()) return;
-    setState("loading");
-    setError(null);
+function getSheetsAuthClient() {
+  let credentials;
+  try {
+    credentials = JSON.parse(readFileSync(new URL("./google-service-account.json", import.meta.url), "utf8"));
+  } catch {
+    throw new Error("google-service-account.json not found — run `npm run build` to regenerate via scripts/inject-secrets.mjs.");
+  }
+  return new google.auth.GoogleAuth({
+    credentials,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+  });
+}
+
+// Ballot measures (Aug 2026 addition) — fetches only Prop-tagged, active
+// rows from the Issues sheet, returning ONLY the two fields safe for public
+// display (name + summary). Same allowlist-not-blocklist posture as
+// buildPublicCandidate() below: Messaging Angle and GOP Vulnerabilities are
+// internal campaign strategy (the same category the Admin Manual's Section
+// 11.1 already treats as not-for-public), so they're never even read into
+// the object returned here, let alone sent — there's no field to
+// accidentally forget to strip later.
+async function fetchBallotMeasures() {
+  if (!SHEET_ID) return []; // fail open — no sheet configured, just show none rather than error the whole lookup
+  try {
+    const auth = getSheetsAuthClient();
+    const sheets = google.sheets({ version: "v4", auth });
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "Issues!A2:J",
+    });
+    const rows = response.data.values || [];
+    return rows
+      .filter(row => row[0] && row[0].trim()) // has an issue name
+      // Fail-open on Active, corrected same day after a real live test:
+      // originally required an exact "Y" (matching query-candidates.mjs's
+      // stricter convention for the internal Issues tab), but that meant a
+      // real Prop entry with a blank Active cell (easy to miss — it's not
+      // the column being added) silently never showed up here, with no
+      // error anywhere. This public tool now matches the fail-open
+      // convention used everywhere else in this app for "active" (e.g.
+      // candidates' active !== false) — only an explicit "N" hides a row.
+      .filter(row => (row[2] || "").trim().toUpperCase() !== "N")
+      .filter(row => (row[9] || "").trim().toLowerCase() === "prop") // Issue Type column J
+      .map(row => ({
+        name: (row[0] || "").trim(),
+        summary: (row[3] || "").trim(), // Brief Statement only — never Messaging Angle/GOP Vulnerabilities
+      }));
+  } catch (err) {
+    // Never fail the whole voter lookup over the ballot-measures piece —
+    // log it, return no measures, let the rest of the response (districts,
+    // candidates) still succeed.
+    console.error("[public-voter-lookup] fetchBallotMeasures failed:", err.message);
+    return [];
+  }
+}
+
+// ── Google Civic: address -> CD/LD ──────────────────────────────────────
+// Extracts the numeric district from OCD-IDs like:
+//   ocd-division/country:us/state:az/cd:6           -> { type: "cd", num: 6 }
+//   ocd-division/country:us/state:az/sldu:15         -> { type: "sldu", num: 15 }  (state senate — upper chamber)
+//   ocd-division/country:us/state:az/sldl:15         -> { type: "sldl", num: 15 }  (state house — lower chamber)
+function parseDivisions(divisions) {
+  const result = { cd: null, sldu: null, sldl: null };
+  for (const ocdId of Object.keys(divisions || {})) {
+    const cdMatch = ocdId.match(/\/cd:(\d+)/);
+    const slduMatch = ocdId.match(/\/sldu:(\d+)/);
+    const sldlMatch = ocdId.match(/\/sldl:(\d+)/);
+    if (cdMatch) result.cd = parseInt(cdMatch[1], 10);
+    if (slduMatch) result.sldu = parseInt(slduMatch[1], 10);
+    if (sldlMatch) result.sldl = parseInt(sldlMatch[1], 10);
+  }
+  return result;
+}
+
+async function lookupDistricts(address) {
+  const apiKey = process.env.GOOGLE_CIVIC_API_KEY;
+  if (!apiKey) throw new Error("Voter lookup isn't configured yet — an Administrator needs to add GOOGLE_CIVIC_API_KEY in Netlify's environment variables.");
+
+  const url = `https://www.googleapis.com/civicinfo/v2/divisionsByAddress?address=${encodeURIComponent(address)}&key=${apiKey}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!res.ok) {
+    // Google returns 400 for addresses it can't parse at all — treat as a
+    // user-facing "couldn't find that address" rather than a server error.
+    throw new Error(data.error?.message || "Couldn't resolve that address. Double-check it's a complete street address.");
+  }
+  let { cd, sldu, sldl } = parseDivisions(data.divisions);
+
+  // Arizona-specific reconciliation: every one of AZ's 30 legislative
+  // districts elects 1 senator AND 2 representatives from the SAME
+  // numbered district (unlike most states, which draw separate House and
+  // Senate maps) — sldu and sldl are guaranteed to be the same number in
+  // this state whenever both are actually returned. Google's underlying
+  // data occasionally has a coverage gap and only returns one of the two
+  // for a given address; when that happens, the one value it DID return
+  // is still valid for both chambers, so use it for whichever one came
+  // back null rather than reporting a false "no district found."
+  if (sldu !== null && sldl === null) sldl = sldu;
+  if (sldl !== null && sldu === null) sldu = sldl;
+
+  if (cd === null && sldu === null && sldl === null) {
+    throw new Error("That address didn't resolve to a recognized Arizona congressional or legislative district.");
+  }
+  return { cd, sldu, sldl };
+}
+
+// ── District-string helpers ──────────────────────────────────────────────
+// Pulls the number out of a district field like "CD07" or "LD15".
+// Leading zeros are already a non-issue — parseInt("08") === parseInt("8")
+// === 8, so "8" vs "08" style variance in how someone typed it into the
+// Sheet was never actually a risk.
+//
+// What IS a real risk: if a district field ever contains more than one
+// number (e.g. a stray "Precinct 12, LD08" instead of a clean "LD08"),
+// grabbing the first digit run found anywhere would silently grab the
+// wrong one (12, not 8). Guard against that by preferring a number that
+// appears directly after LD/CD text specifically, and only falling back
+// to "first number anywhere in the string" if that pattern isn't present
+// at all.
+function extractDistrictNumber(districtStr) {
+  const str = districtStr || "";
+  const prefixed = str.match(/\b(?:ld|cd)[\s-]*?(\d+)/i);
+  if (prefixed) return parseInt(prefixed[1], 10);
+  const anyNumber = str.match(/(\d+)/);
+  return anyNumber ? parseInt(anyNumber[1], 10) : null;
+}
+
+function matchesFederalHouse(candidate, cd) {
+  if (cd === null) return false;
+  const level = (candidate.level || "").toLowerCase();
+  const office = (candidate.office || "").toLowerCase();
+  if (!level.includes("federal")) return false;
+  if (office.includes("senate")) return false; // exclude U.S. Senate races — those are statewide, not CD-specific
+  return extractDistrictNumber(candidate.district) === cd;
+}
+
+function matchesStateSenate(candidate, sldu) {
+  if (sldu === null) return false;
+  const level = (candidate.level || "").toLowerCase();
+  const office = (candidate.office || "").toLowerCase();
+  if (!level.includes("legislative") && !level.includes("statewide")) return false;
+  if (!office.includes("senate")) return false;
+  return extractDistrictNumber(candidate.district) === sldu;
+}
+
+function matchesStateHouse(candidate, sldl) {
+  if (sldl === null) return false;
+  const level = (candidate.level || "").toLowerCase();
+  const office = (candidate.office || "").toLowerCase();
+  if (!level.includes("legislative") && !level.includes("statewide")) return false;
+  if (office.includes("senate")) return false; // everything legislative that ISN'T senate is treated as house
+  return extractDistrictNumber(candidate.district) === sldl;
+}
+
+// State executive races (Aug 2026 addition, corrected same day after a
+// real live test showed Supt. of Public Instruction, Treasurer, Mine
+// Inspector, and Corp Commission missing). Governor, Attorney General,
+// and Secretary of State were the only offices originally listed here —
+// pulled from a comment about focusOrgIds backfill rules that was never
+// actually meant to be an exhaustive list of every AZ statewide office.
+// The real, complete list of Arizona's statewide-elected offices:
+// Governor, Secretary of State, Attorney General, State Treasurer,
+// Superintendent of Public Instruction, State Mine Inspector, and
+// Corporation Commission (multiple seats, all elected statewide).
+// Statewide, not tied to any CD/LD, so this only needs office/level to
+// match — no district number extraction, unlike the three matchers above.
+// Same permissive substring matching as every other matcher in this file,
+// for the same reason: Office is free-text from the source Sheet, not a
+// fixed enum.
+const STATE_EXECUTIVE_OFFICES = [
+  "governor",
+  "attorney general",
+  "secretary of state",
+  "treasurer",
+  "superintendent of public instruction",
+  "mine inspector",
+  "corporation commission",
+];
+function matchesStateExecutive(candidate) {
+  const level = (candidate.level || "").toLowerCase();
+  const office = (candidate.office || "").toLowerCase();
+  if (!level.includes("statewide")) return false;
+  return STATE_EXECUTIVE_OFFICES.some(o => office.includes(o));
+}
+
+// Dem-only filter (Aug 2026 addition). CORRECTED: Party is NOT free text —
+// confirmed against how RaceComparison.jsx/CandidateQuery.jsx already
+// filter/color candidates elsewhere in this app (c.party?.toUpperCase() ===
+// 'D'), party is a strict single-letter code ('D'/'R'/other). The original
+// version of this function used a permissive "dem"-substring match, copying
+// the free-text convention this file correctly uses for Office/Level — but
+// that convention doesn't apply here, and a substring match against a bare
+// "D" never matches, silently returning zero candidates in EVERY bucket
+// whenever demOnly was checked (found via a real live test, Aug 7 2026).
+function isDemocrat(candidate) {
+  return (candidate.party || "").trim().toUpperCase() === "D";
+}
+
+// ── Public field allowlist ────────────────────────────────────────────────
+// The ONLY place fields are selected for public output. Add a field here
+// deliberately when it's confirmed safe for public display — never
+// broaden this by spreading the raw doc.
+function buildPublicCandidate(doc) {
+  const d = doc.data();
+  return {
+    name: d.name || "",
+    office: d.office || "",
+    party: d.party || "",
+    district: d.district || "",
+    incumbentStatus: d.incumbentStatus || "",
+    recordAccomplishments: d.recordAccomplishments || "",
+    photoFilename: d.photoFilename || "",
+  };
+}
+
+export default async function (req) {
+  if (req.method === "OPTIONS") {
+    return new Response("", {
+      status: 200,
+      headers: { ...corsHeaders(req), "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "POST, OPTIONS" },
+    });
+  }
+  if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+
+  try {
+    const body = await req.json();
+    const address = (body.address || "").trim();
+    if (!address) {
+      return new Response(JSON.stringify({ error: "Enter an address to look up." }), { status: 400, headers: corsHeaders(req) });
+    }
+    // Dem-only filter (Aug 2026 addition) — opt-in via the request body,
+    // defaults to off (shows every party) so this stays backward-compatible
+    // with any existing caller that doesn't send it.
+    const demOnly = body.demOnly === true;
+
+    let districts;
     try {
-      const res = await fetch("/.netlify/functions/public-voter-lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: address.trim(), demOnly }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Couldn't look that up.");
-      setData(json);
-      setState("ready");
+      districts = await lookupDistricts(address);
     } catch (err) {
-      setError(err.message || "Something went wrong. Please try again.");
-      setState("error");
+      return new Response(JSON.stringify({ error: err.message }), { status: 400, headers: corsHeaders(req) });
     }
+
+    const app = getAdminApp();
+    const db = admin.firestore(app);
+    // Fetch candidates (Firestore) and ballot measures (Google Sheets) in
+    // parallel — two independent data sources, no reason to serialize them.
+    const [snap, ballotMeasures] = await Promise.all([
+      db.collection("candidates").where("state", "==", "AZ").get(),
+      fetchBallotMeasures(),
+    ]);
+
+    // stateExecutive (Aug 2026 addition) — Governor / Attorney General /
+    // Secretary of State. Statewide, so it's populated on every lookup
+    // regardless of district (unlike the three district-scoped buckets
+    // above it), as long as the address resolved to Arizona at all.
+    // ballotMeasures is the same shape of statewide-not-district-scoped
+    // bucket, just sourced from the Issues sheet instead of candidates.
+    const results = { congress: [], stateSenate: [], stateHouse: [], stateExecutive: [], ballotMeasures };
+    snap.forEach(doc => {
+      const data = doc.data();
+      // Skip candidates marked inactive via the Admin panel's active/
+      // inactive toggle (Handoff #33) — mirrors the same active !== false
+      // check query-candidates.mjs already applies to the signed-in
+      // Research tool. Uses !== false (not a truthy check) so candidates
+      // from before this field existed, where active is undefined, still
+      // default to showing — only an explicit false hides one.
+      if (data.active === false) return;
+      // Dem-only filter applied uniformly across all four candidate
+      // buckets, before any office-matching — a non-Dem candidate is
+      // skipped entirely rather than filtered per-bucket, so the same rule
+      // can't accidentally apply inconsistently across office types.
+      // Ballot measures have no party, so demOnly doesn't touch that bucket.
+      if (demOnly && !isDemocrat(data)) return;
+      if (matchesFederalHouse(data, districts.cd)) results.congress.push(buildPublicCandidate(doc));
+      if (matchesStateSenate(data, districts.sldu)) results.stateSenate.push(buildPublicCandidate(doc));
+      if (matchesStateHouse(data, districts.sldl)) results.stateHouse.push(buildPublicCandidate(doc));
+      if (matchesStateExecutive(data)) results.stateExecutive.push(buildPublicCandidate(doc));
+    });
+
+    return new Response(JSON.stringify({
+      success: true,
+      districts: { congressional: districts.cd, stateSenate: districts.sldu, stateHouse: districts.sldl },
+      results,
+    }), { status: 200, headers: corsHeaders(req) });
+
+  } catch (err) {
+    console.error("[public-voter-lookup] FAILED:", err.message);
+    return new Response(JSON.stringify({ error: "Something went wrong looking up that address. Please try again." }), { status: 500, headers: corsHeaders(req) });
   }
-
-  function handleChange() {
-    if (state === "ready" || state === "error") {
-      setState("idle");
-      setData(null);
-      setError(null);
-    }
-  }
-
-  return (
-    <div style={pageStyle}>
-      <LogoBlock />
-
-      <div style={{ ...cardStyle, marginBottom: 20 }}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: TEAL, margin: "0 0 8px" }}>
-          Find your candidates
-        </h1>
-        <p style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.6, margin: "0 0 18px" }}>
-          Enter your home address to see who's running for Governor, Attorney General, Secretary of State, Congress, State Senate, and State House in your district.
-        </p>
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <input
-            type="text"
-            inputMode="text"
-            placeholder="123 Main St, Tucson, AZ 85701"
-            value={address}
-            onChange={e => { setAddress(e.target.value); handleChange(); }}
-            style={{
-              width: "100%", boxSizing: "border-box", padding: "14px 16px", fontSize: 16,
-              border: "2px solid #ddd", borderRadius: 10, fontFamily: "inherit", color: CHARCOAL,
-            }}
-          />
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: CHARCOAL, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={demOnly}
-              onChange={e => { setDemOnly(e.target.checked); handleChange(); }}
-              style={{ width: 18, height: 18, accentColor: TEAL, cursor: "pointer" }}
-            />
-            Show Democratic candidates only
-          </label>
-          <button
-            type="submit"
-            disabled={state === "loading" || !address.trim()}
-            style={{
-              width: "100%", padding: "14px 16px", fontSize: 16, fontWeight: 700, fontFamily: "inherit",
-              background: state === "loading" ? "#ccc" : TEAL, color: "#fff", border: "none", borderRadius: 10,
-              cursor: state === "loading" ? "not-allowed" : "pointer",
-            }}
-          >
-            {state === "loading" ? "Looking up your district…" : "Find my candidates"}
-          </button>
-        </form>
-        <p style={{ fontSize: 11.5, color: "#999", margin: "12px 0 0", lineHeight: 1.5 }}>
-          Your address is used only to determine your districts and is not stored.
-        </p>
-      </div>
-
-      {state === "error" && (
-        <div style={{ ...cardStyle, textAlign: "center", padding: "28px" }}>
-          <p style={{ fontSize: 14.5, color: "#991b1b", lineHeight: 1.6, margin: 0 }}>{error}</p>
-        </div>
-      )}
-
-      {state === "ready" && data && (
-        <div style={{ width: "100%", maxWidth: 520, display: "flex", flexDirection: "column", gap: 20 }}>
-          {RACE_SECTIONS.map(section => {
-            const candidates = data.results[section.key] || [];
-            return (
-              <div key={section.key}>
-                <div style={{
-                  background: `linear-gradient(135deg, ${TEAL}, ${TEAL_DARK})`,
-                  borderRadius: "12px 12px 0 0", padding: "16px 20px",
-                }}>
-                  <div style={{ fontFamily: "var(--font-display)", fontSize: 19, color: "#fff", marginBottom: 4 }}>
-                    {section.title}
-                  </div>
-                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: GOLD }}>
-                    {section.sub(data.districts)}
-                  </div>
-                </div>
-                <div style={{ background: "#fff", borderRadius: "0 0 12px 12px", boxShadow: "0 16px 48px rgba(0,0,0,0.15)" }}>
-                  {candidates.length === 0 ? (
-                    <p style={{ padding: "20px", fontSize: 14, color: "#999", margin: 0 }}>No candidates found for this race yet.</p>
-                  ) : (
-                    candidates.map((c, i) => (
-                      <CandidateRow key={i} candidate={c} isLast={i === candidates.length - 1} />
-                    ))
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
 }
-
-function CandidateRow({ candidate, isLast }) {
-  const [photoUrl, setPhotoUrl] = useState(null);
-  const [photoTried, setPhotoTried] = useState(false);
-
-  if (!photoTried && candidate.photoFilename) {
-    setPhotoTried(true);
-    getDownloadURL(ref(storage, `candidate-headshots/${candidate.photoFilename}`))
-      .then(url => setPhotoUrl(url))
-      .catch(() => {});
-  }
-
-  const partyColors = {
-    D: { bg: "#eff6ff", text: "#1a56b0" },
-    R: { bg: "#fff1f1", text: "#b91c1c" },
-  };
-  const pc = partyColors[(candidate.party || "").toUpperCase()] || { bg: "#f3f4f6", text: CHARCOAL };
-
-  // Colored-initial fallback avatar for a missing headshot — better than
-  // a blank gray box, and it's genuinely informative (party at a glance)
-  // rather than purely decorative. Red for R, blue for D, pink for
-  // anything else (Independent, Libertarian, Green, no party listed,
-  // etc.) — matching the same red/blue as the party pill above, so the
-  // two never visually contradict each other.
-  const avatarColors = {
-    D: { bg: "#1a56b0", text: "#fff" },
-    R: { bg: "#b91c1c", text: "#fff" },
-  };
-  const ac = avatarColors[(candidate.party || "").toUpperCase()] || { bg: "#db2777", text: "#fff" }; // pink
-  const initial = (candidate.name || "?").trim().charAt(0).toUpperCase();
-
-  return (
-    <div style={{ padding: "18px 20px", borderBottom: isLast ? "none" : "1px solid #eee" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
-        <h3 style={{ fontFamily: "var(--font-display)", fontSize: 17, color: TEAL, margin: 0 }}>{candidate.name}</h3>
-        <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: pc.bg, color: pc.text }}>
-          {candidate.party}
-        </span>
-      </div>
-      {candidate.incumbentStatus && (
-        <div style={{ fontSize: 11, fontWeight: 700, color: TURQUOISE, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-          {candidate.incumbentStatus}
-        </div>
-      )}
-      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-        {photoUrl ? (
-          <img src={photoUrl} alt="" style={{ width: 64, height: 64, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
-        ) : (
-          <div style={{
-            width: 64, height: 64, borderRadius: 10, flexShrink: 0,
-            background: ac.bg, color: ac.text,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: "var(--font-display)", fontSize: 26, fontWeight: 700,
-          }}>
-            {initial}
-          </div>
-        )}
-        {candidate.recordAccomplishments && (
-          <p style={{ fontSize: 13.5, color: CHARCOAL, lineHeight: 1.6, margin: 0 }}>
-            {candidate.recordAccomplishments}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function LogoBlock() {
-  return (
-    <div style={{ textAlign: "center", marginBottom: 28 }}>
-      <img src="/azc-logo-teal.png" alt="Arizona Coalition" style={{ height: 64, marginBottom: 12 }} />
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 24, color: "#fff", letterSpacing: "-0.01em" }}>Arizona Coalition</div>
-      <div style={{ fontFamily: "var(--font-body)", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: GOLD, marginTop: 4 }}>
-        Voter Guide · 2026
-      </div>
-    </div>
-  );
-}
-
-const pageStyle = {
-  minHeight: "100vh",
-  background: `linear-gradient(160deg, ${TEAL} 0%, ${TEAL_DARK} 100%)`,
-  display: "flex", flexDirection: "column",
-  alignItems: "center", padding: "32px 16px 48px",
-};
-
-const cardStyle = {
-  background: "#fff", borderRadius: 16, padding: "24px 22px",
-  width: "100%", maxWidth: 520,
-  boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
-};
