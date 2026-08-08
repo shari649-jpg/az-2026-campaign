@@ -100,7 +100,7 @@ export default async function (req) {
     // if the first call spends the org right down to the block threshold,
     // the second call is meant to catch that, not skip the check because
     // "we already checked once this request."
-    const balanceCheck = await checkGenerationBalance(app, usage.orgId);
+    const balanceCheck = await checkGenerationBalance(app, usage.orgId, "generate-rebuttal");
     if (balanceCheck.blocked) {
       return new Response(JSON.stringify(generationBlockedPayload(balanceCheck.balance)), { status: 402, headers: corsHeaders(req) });
     }
