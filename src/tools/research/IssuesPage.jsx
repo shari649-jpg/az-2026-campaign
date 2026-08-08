@@ -125,6 +125,7 @@ export default function IssuesPage() {
           <strong style={{ color: B.teal }}>Browse statewide and district-level issue briefs.</strong>{' '}
           Each brief includes relevant stats, GOP vulnerabilities, and a ready-to-use messaging angle.
           Hotter chili ratings mean higher current relevance. Send any brief straight to Message Machine.
+          Issues tagged <strong>Prop</strong> in the source Sheet's Issue Type column (🗳️ Ballot Prop badge, above) also surface as ballot measures in the public voter-lookup tool — only the issue name and public summary are shown there, never the messaging angle or GOP vulnerabilities.
         </p>
       </div>
 
@@ -203,7 +204,14 @@ export default function IssuesPage() {
               style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', cursor: 'pointer', userSelect: 'none' }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 800, color: B.teal }}>{issue.issue}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: B.teal }}>
+                  {issue.issue}
+                  {(issue.issue_type || '').trim().toLowerCase() === 'prop' && (
+                    <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6, background: B.gold, color: '#5a4200', verticalAlign: 'middle' }}>
+                      🗳️ BALLOT PROP
+                    </span>
+                  )}
+                </div>
                 {issue.brief_statement && (
                   <div style={{ fontSize: 13, color: B.textMute, marginTop: 3, lineHeight: 1.5 }}>{issue.brief_statement}</div>
                 )}
