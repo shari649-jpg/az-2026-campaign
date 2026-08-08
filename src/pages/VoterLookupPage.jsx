@@ -24,6 +24,7 @@ const CHARCOAL  = "var(--charcoal)";
 const TURQUOISE = "var(--turquoise)";
 
 const RACE_SECTIONS = [
+  { key: "stateExecutive", title: "State Executive", sub: () => "Governor · Attorney General · Secretary of State" },
   { key: "congress",    title: "U.S. House",  sub: d => `Congressional District ${d.congressional}` },
   { key: "stateSenate", title: "State Senate", sub: d => `Legislative District ${d.stateSenate}` },
   { key: "stateHouse",  title: "State House",  sub: d => `Legislative District ${d.stateHouse}` },
@@ -31,6 +32,7 @@ const RACE_SECTIONS = [
 
 export default function VoterLookupPage() {
   const [address, setAddress] = useState("");
+  const [demOnly, setDemOnly] = useState(false);
   const [state, setState] = useState("idle");
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
@@ -44,7 +46,7 @@ export default function VoterLookupPage() {
       const res = await fetch("/.netlify/functions/public-voter-lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: address.trim() }),
+        body: JSON.stringify({ address: address.trim(), demOnly }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || "Couldn't look that up.");
@@ -73,7 +75,7 @@ export default function VoterLookupPage() {
           Find your candidates
         </h1>
         <p style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.6, margin: "0 0 18px" }}>
-          Enter your home address to see who's running for Congress, State Senate, and State House in your district.
+          Enter your home address to see who's running for Governor, Attorney General, Secretary of State, Congress, State Senate, and State House in your district.
         </p>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <input
@@ -87,6 +89,15 @@ export default function VoterLookupPage() {
               border: "2px solid #ddd", borderRadius: 10, fontFamily: "inherit", color: CHARCOAL,
             }}
           />
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: CHARCOAL, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={demOnly}
+              onChange={e => { setDemOnly(e.target.checked); handleChange(); }}
+              style={{ width: 18, height: 18, accentColor: TEAL, cursor: "pointer" }}
+            />
+            Show Democratic candidates only
+          </label>
           <button
             type="submit"
             disabled={state === "loading" || !address.trim()}
