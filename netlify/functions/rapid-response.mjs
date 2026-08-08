@@ -9,7 +9,7 @@ import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { parse as parseHtml } from "node-html-parser";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
-import { debitGenerationCredits } from "./creditHelper.mjs";
+import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, generationWarningPayload } from "./creditHelper.mjs";
 
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
@@ -180,6 +180,16 @@ export default async function (req) {
       return new Response(JSON.stringify(usage.blockedPayload), { status: 429, headers: corsHeaders(req) });
     }
 
+    // ── Generation-credit gate ────────────────────────────────────────────
+    // Pre-call check, decided this session — see creditHelper.mjs's header.
+    // Checked once here rather than per-action, since all three actions
+    // below (fetch_and_analyze, search, analyze_text) make exactly one
+    // Claude call each and share the same credit pool.
+    const balanceCheck = await checkGenerationBalance(app, usage.orgId);
+    if (balanceCheck.blocked) {
+      return new Response(JSON.stringify(generationBlockedPayload(balanceCheck.balance)), { status: 402, headers: corsHeaders(req) });
+    }
+
     const { action, url, text, manualMeta } = body;
 
     // ── fetch_and_analyze ───────────────────────────────────────────────────
@@ -227,6 +237,7 @@ export default async function (req) {
           outputTokens: analysisData.usage.output_tokens,
         });
       }
+      if (balanceCheck.warning) analysisData.creditWarning = generationWarningPayload(balanceCheck.balance);
       if (usage.warning) analysisData.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
       return new Response(JSON.stringify({ result: analysisData }), { status: 200, headers: corsHeaders(req) });
     }
@@ -291,6 +302,7 @@ export default async function (req) {
       }
 
       const payload = { results };
+      if (balanceCheck.warning) payload.creditWarning = generationWarningPayload(balanceCheck.balance);
       if (usage.warning) payload.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
       return new Response(JSON.stringify(payload), { status: 200, headers: corsHeaders(req) });
     }
@@ -342,6 +354,7 @@ Format:
           outputTokens: analysisData.usage.output_tokens,
         });
       }
+      if (balanceCheck.warning) analysisData.creditWarning = generationWarningPayload(balanceCheck.balance);
       if (usage.warning) analysisData.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
       return new Response(JSON.stringify({ result: analysisData }), { status: 200, headers: corsHeaders(req) });
     }
