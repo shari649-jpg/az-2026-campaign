@@ -138,6 +138,31 @@ async function congressFetch(path, params = {}) {
   return response.json();
 }
 
+// Congress.gov defaults to 20 results per page (max 250) on list-shaped
+// endpoints. The House has 435 voting members plus several non-voting
+// delegates — a single unpaginated call to a roll call's /members endpoint
+// silently truncates to the first 20, which is what caused nearly every
+// real incumbent to show "No record" even when their bioguideId was
+// correctly resolved. This walks every page (limit=250, offset stepping)
+// and merges `results`, capped at 3 pages (750 records) as a sane safety
+// ceiling well above the House's actual membership count.
+async function congressFetchAllResults(path) {
+  let allResults = [];
+  let offset = 0;
+  const limit = 250;
+  let meta = null;
+  for (let page = 0; page < 3; page++) {
+    const result = await congressFetch(path, { limit, offset });
+    if (!result) break;
+    if (!meta) meta = result; // keep the first page's top-level fields (result, voteQuestion, etc.)
+    const pageResults = result.results || [];
+    allResults = allResults.concat(pageResults);
+    if (pageResults.length < limit) break; // fewer than a full page = last page
+    offset += limit;
+  }
+  return meta ? { ...meta, results: allResults } : null;
+}
+
 // ── Federal House candidate matching — same permissive substring
 // convention already established in public-voter-lookup.mjs, reused
 // deliberately rather than re-invented, since Office/Level are free text
@@ -299,7 +324,7 @@ export default async function (req) {
       let positionsByBioguide = {};
       let voteMeta = null;
       if (withinCoverage) {
-        const membersResult = await congressFetch(`/house-vote/${rv.congress}/${rv.sessionNumber}/${rv.rollNumber}/members`);
+        const membersResult = await congressFetchAllResults(`/house-vote/${rv.congress}/${rv.sessionNumber}/${rv.rollNumber}/members`);
         voteMeta = membersResult ? {
           result: membersResult.result || null,
           voteQuestion: membersResult.voteQuestion || null,
