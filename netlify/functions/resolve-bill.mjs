@@ -96,6 +96,8 @@ Two possible response shapes:
 2. If the input describes a general ISSUE or TOPIC rather than one specific bill (e.g. "semiconductor manufacturing", "immigration reform", "prescription drug prices"), respond with a short list (3-6) of the most relevant, well-known federal bills addressing that issue:
 {"mode":"list","bills":[{"congress":<number>,"billType":"<...>","billNumber":<number>,"title":"<official short title>","summary":"<one sentence, plain language>"}]}
 
+IMPORTANT for list mode: this tool can currently only show House vote results, not Senate. When multiple real bills address the issue, prefer House-originated bills (billType HR, HJRES, HCONRES, HRES) over Senate-originated ones (S, SJRES, SCONRES, SRES) in your list. Only include a Senate bill if it's genuinely the most relevant/well-known bill on the issue with no comparable House-side bill — don't pad the list with Senate bills purely for variety.
+
 If you cannot confidently identify any real federal bill, respond with:
 {"mode":"none","reason":"<brief explanation>"}
 
