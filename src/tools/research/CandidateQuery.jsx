@@ -584,7 +584,7 @@ export default function CandidateQuery() {
                                 <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: B.surfaceAlt, color: B.textMute, border: `1px solid ${B.border}` }}>Unassigned</span>
                               )}
                             </div>
-                            <p style={{ fontSize: 13, color: B.textMid, margin: 0 }}>
+                            <p style={{ fontSize: 13, color: B.textMute, margin: 0 }}>
                               {candidate.office}{candidate.district ? ` · ${candidate.district}` : ''}
                             </p>
                           </div>
