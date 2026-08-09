@@ -31,7 +31,14 @@
   --border-strong:  var(--charcoal);
   --text:           var(--charcoal-dark);
   --text-mid:       var(--charcoal);
-  --text-mute:      #8A7F92;
+  /* --text-mute — darkened Aug 9 2026 (was #8A7F92). The old value only
+     hit ~3.8:1 contrast against the white/near-white surfaces it's used
+     on throughout the app (research cards, badges, captions), below the
+     4.5:1 WCAG AA minimum for normal-size text. This value holds ~5.9:1
+     against white and ~4.8:1 even against the lightest chrome surface
+     (--surface-alt), while staying in the same muted plum-gray family as
+     the rest of the text palette. */
+  --text-mute:      #6B5F78;
 
   --primary:        var(--purple);
   --primary-dark:   var(--purple-dark);
