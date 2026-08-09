@@ -49,7 +49,7 @@ export default function BillLookup() {
   const [error, setError] = useState(null);
   const [billList, setBillList] = useState(null);   // issue-search mode: pick from a list
   const [votesResult, setVotesResult] = useState(null); // resolved bill + roll calls
-  const [expandedRollCall, setExpandedRollCall] = useState(0); // index of the one open accordion panel; only one open at a time to keep this usable on mobile
+  const [expandedRollCall, setExpandedRollCall] = useState(-1); // -1 = all collapsed by default; only one open at a time to keep this usable on mobile
 
   async function handleSearch(e) {
     e.preventDefault();
@@ -78,7 +78,7 @@ export default function BillLookup() {
       });
       setVotesResult(result);
       setBillList(null);
-      setExpandedRollCall(0);
+      setExpandedRollCall(-1);
     } catch (err) {
       setError(err.message);
     }
