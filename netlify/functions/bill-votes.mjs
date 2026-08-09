@@ -158,6 +158,25 @@ async function congressFetch(path, params = {}) {
 // correctly resolved. This walks every page (limit=250, offset stepping)
 // and merges `results`, capped at 3 pages (750 records) as a sane safety
 // ceiling well above the House's actual membership count.
+// Response-shape extraction for the /house-vote/.../members endpoint.
+// This beta endpoint's real wrapping was NOT what Congress.gov's own
+// Swagger example page showed for a neighboring endpoint (a live test
+// came back with no top-level `results` array at all) — rather than
+// guess again and cost another deploy-and-test round trip, this tries
+// every plausible wrapper Congress.gov uses elsewhere in this API family,
+// and logs the raw top-level keys if none of them match, so a next look
+// at the logs gives a definitive answer instead of another guess.
+function extractMemberResults(data) {
+  if (!data) return [];
+  if (Array.isArray(data.results)) return data.results;
+  if (Array.isArray(data.houseRollCallVoteMemberVotes?.results)) return data.houseRollCallVoteMemberVotes.results;
+  if (Array.isArray(data.houseRollCallVoteMemberVote?.results)) return data.houseRollCallVoteMemberVote.results;
+  if (Array.isArray(data.votes)) return data.votes;
+  if (Array.isArray(data.members)) return data.members;
+  console.warn(`[bill-votes] house-vote members: no recognized results array. Top-level keys:`, JSON.stringify(Object.keys(data)), `full body:`, JSON.stringify(data).slice(0, 2000));
+  return [];
+}
+
 async function congressFetchAllResults(path) {
   let allResults = [];
   let offset = 0;
@@ -167,7 +186,7 @@ async function congressFetchAllResults(path) {
     const result = await congressFetch(path, { limit, offset });
     if (!result) break;
     if (!meta) meta = result; // keep the first page's top-level fields (result, voteQuestion, etc.)
-    const pageResults = result.results || [];
+    const pageResults = extractMemberResults(result);
     allResults = allResults.concat(pageResults);
     if (pageResults.length < limit) break; // fewer than a full page = last page
     offset += limit;
