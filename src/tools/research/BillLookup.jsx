@@ -77,16 +77,24 @@ export default function BillLookup() {
         congress: bill.congress, billType: bill.billType, billNumber: bill.billNumber,
       });
       setVotesResult(result);
-      setBillList(null);
       setExpandedRollCall(-1);
+      // billList is deliberately NOT cleared here anymore — kept in memory
+      // so a "← Back to results" control can return to the same picklist
+      // without re-querying Perplexity, in case the picked bill wasn't the
+      // right one.
     } catch (err) {
       setError(err.message);
     }
     setLoading(false);
   }
 
+  function backToList() {
+    setVotesResult(null);
+    setError(null);
+  }
+
   return (
-    <div style={{ fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: B.text }}>
+    <div style={{ fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: B.text, padding: '0 20px' }}>
       <div style={{ background: `${B.teal}08`, border: `1px solid ${B.teal}25`, borderRadius: 10, padding: '14px 20px', marginBottom: 20 }}>
         <p style={{ fontSize: 16, color: B.textMid, lineHeight: 1.7, margin: 0 }}>
           <strong style={{ color: B.teal }}>Bill Lookup (testing) —</strong>{' '}
@@ -117,8 +125,10 @@ export default function BillLookup() {
         </div>
       )}
 
-      {/* Issue-search picklist */}
-      {billList && (
+      {/* Issue-search picklist — hidden while viewing a bill's results, but
+          kept in memory (not cleared) so "← Back to results" can return to
+          it without re-querying Perplexity. */}
+      {billList && !votesResult && (
         <div style={{ marginBottom: 20 }}>
           <p style={{ fontWeight: 700, marginBottom: 10 }}>Several bills matched — pick one:</p>
           {billList.map((b, i) => (
@@ -136,6 +146,15 @@ export default function BillLookup() {
       {/* Resolved bill + vote results */}
       {votesResult && (
         <div>
+          {billList && (
+            <button onClick={backToList} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 14, padding: '8px 16px',
+              borderRadius: 8, border: `1.5px solid ${B.border}`, background: B.surface, color: B.teal,
+              fontWeight: 700, fontSize: 15, cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              ← Back to results
+            </button>
+          )}
           <div style={{ background: B.surfaceAlt, borderRadius: '10px 10px 0 0', padding: '16px 20px', border: `1px solid ${B.border}`, borderBottom: 'none' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: B.teal, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               {votesResult.bill.billType} {votesResult.bill.billNumber} · {votesResult.bill.congress}th Congress
