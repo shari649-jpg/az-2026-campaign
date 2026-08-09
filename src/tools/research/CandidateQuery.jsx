@@ -501,14 +501,23 @@ export default function CandidateQuery() {
             const seat = `${group[0].office || ''}${group[0].district ? ' · ' + group[0].district : ''}`;
 
             return (
-              <div key={gi} style={{ marginBottom: isContrast ? 28 : 0 }}>
-                {/* Contrast header */}
-                {isContrast && (
-                  <div style={{ background: B.teal, color: '#fff', borderRadius: '10px 10px 0 0', padding: '10px 18px', fontSize: 13, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div key={gi} style={{ marginBottom: 28 }}>
+                {/* Seat header — always rendered (not just for contrast
+                    groups). Previously a single-candidate group (a race
+                    where only one side has a result on file) had no header
+                    at all, so that candidate's card ran directly beneath
+                    whichever contrast group happened to render before it —
+                    reading as if it belonged to that group's race, even
+                    though groupByseat() above already keys strictly on
+                    state|office|district and never actually mixes races.
+                    Every group now gets a labeled header, contrast or not,
+                    matching the pattern RaceComparison.jsx already uses. */}
+                <div style={{ background: isContrast ? B.teal : B.surfaceAlt, color: isContrast ? '#fff' : B.textMid, borderRadius: '10px 10px 0 0', padding: '10px 18px', fontSize: 13, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {isContrast && (
                     <span style={{ background: B.gold, color: B.teal, borderRadius: 6, padding: '2px 10px', fontSize: 12 }}>⚡ Contrast</span>
-                    {seat} — {group.length} candidates
-                  </div>
-                )}
+                  )}
+                  {seat} — {group.length} candidate{group.length !== 1 ? 's' : ''}
+                </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                   {group.map((candidate, ci) => {
@@ -522,14 +531,13 @@ export default function CandidateQuery() {
                         key={candidate.candidate_name}
                         style={{
                           ...S.card,
-                          borderRadius: isContrast
-                            ? ci === 0
-                              ? '0 0 0 0'
-                              : ci === group.length - 1
-                                ? '0 0 10px 10px'
-                                : 0
-                            : 10,
-                          borderTop: isContrast && ci > 0 ? 'none' : undefined,
+                          // Every group now has a header above it (see
+                          // above), so the top corners are always flattened
+                          // against that header — the isContrast-only
+                          // branch this used to have is gone along with
+                          // the isContrast-only header.
+                          borderRadius: ci === group.length - 1 ? '0 0 10px 10px' : 0,
+                          borderTop: ci > 0 ? 'none' : undefined,
                           borderLeft: isSelected ? `4px solid ${B.turquoise}` : undefined,
                           background: isSelected ? '#f0fdf9' : B.surface,
                         }}
@@ -576,7 +584,7 @@ export default function CandidateQuery() {
                                 <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: B.surfaceAlt, color: B.textMute, border: `1px solid ${B.border}` }}>Unassigned</span>
                               )}
                             </div>
-                            <p style={{ fontSize: 13, color: B.textMute, margin: 0 }}>
+                            <p style={{ fontSize: 13, color: B.textMid, margin: 0 }}>
                               {candidate.office}{candidate.district ? ` · ${candidate.district}` : ''}
                             </p>
                           </div>
