@@ -516,15 +516,21 @@ export default function RaceComparison() {
                 </div>
               )}
 
-              {/* Right: Republicans + others */}
+              {/* Right: Republicans + others. Full-width single-column
+                  layout when there's no Democrat is already handled by the
+                  gridTemplateColumns logic above — this block alone covers
+                  both the two-column and single-column cases, so there is
+                  no separate "only one side exists" fallback here. (A
+                  redundant fallback previously duplicated this exact render
+                  whenever dCandidates was empty — e.g. an uncontested-by-a-
+                  Democrat race like two Republicans running unopposed —
+                  which is what caused every candidate in that race to
+                  visibly appear twice.) */}
               {rightSide.length > 0 && (
                 <div>
                   {rightSide.map(candidate => renderCandidate(candidate))}
                 </div>
               )}
-
-              {/* If only one side exists, show full width */}
-              {dCandidates.length === 0 && rightSide.map(candidate => renderCandidate(candidate))}
             </div>
 
             {/* District strip — one per race group */}
