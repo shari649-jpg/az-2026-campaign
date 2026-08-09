@@ -3,6 +3,7 @@ import CandidateQuery from './CandidateQuery';
 import RaceComparison from './RaceComparison';
 import DistrictProfiles from './DistrictProfiles';
 import IssuesPage from './IssuesPage';
+import BillLookup from './BillLookup';
 
 const B = {
   teal:      'var(--teal)',
@@ -37,6 +38,11 @@ const TABS = [
     id:    'issues',
     label: '🌶️ Issues',
     desc:  'Statewide & local issue briefs with messaging angles',
+  },
+  {
+    id:    'billLookup',
+    label: '🏛️ Bill Lookup',
+    desc:  '(testing) Search a bill or issue, see how candidates voted',
   },
 ];
 
@@ -106,6 +112,7 @@ export default function ResearchPage() {
       {activeTab === 'races'  && <RaceComparison />}
       {activeTab === 'geo'    && <DistrictProfiles />}
       {activeTab === 'issues' && <IssuesPage />}
+      {activeTab === 'billLookup' && <BillLookup />}
     </div>
   );
 }
