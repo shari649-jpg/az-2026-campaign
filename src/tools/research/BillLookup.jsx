@@ -37,10 +37,18 @@ async function callFunction(name, body) {
 
 function VoteBadge({ position }) {
   if (!position) return <span style={{ color: B.textMute, fontSize: 13 }}>No record</span>;
-  const isYea = /yea|yes|aye/i.test(position);
-  const isNay = /nay|no/i.test(position);
-  const color = isYea ? B.green : isNay ? B.red : B.textMid;
-  return <span style={{ color, fontWeight: 700, fontSize: 13 }}>{position}</span>;
+  // Exact matching, not fuzzy substring — a loose /nay|no/i check previously
+  // misclassified "Not Voting" as a "No" vote, since "no" is literally the
+  // first two letters of "Not". That's a real accuracy problem for a tool
+  // making claims about how someone voted: "didn't vote" (absent/abstained)
+  // and "voted no" are very different things to say about a candidate.
+  // House Clerk vote-cast values are consistently one of these four.
+  const normalized = position.trim().toLowerCase();
+  if (normalized === 'yea' || normalized === 'aye') return <span style={{ color: B.green, fontWeight: 700, fontSize: 13 }}>{position}</span>;
+  if (normalized === 'nay' || normalized === 'no') return <span style={{ color: B.red, fontWeight: 700, fontSize: 13 }}>{position}</span>;
+  if (normalized === 'present' || normalized === 'not voting') return <span style={{ color: B.textMid, fontWeight: 700, fontSize: 13 }}>{position}</span>;
+  // Anything else unexpected: show it plainly rather than guessing a color.
+  return <span style={{ color: B.textMid, fontWeight: 700, fontSize: 13 }}>{position}</span>;
 }
 
 function CandidateVoteRow({ cv }) {
