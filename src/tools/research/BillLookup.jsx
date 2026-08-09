@@ -43,6 +43,17 @@ function VoteBadge({ position }) {
   return <span style={{ color, fontWeight: 700, fontSize: 13 }}>{position}</span>;
 }
 
+function CandidateVoteRow({ cv }) {
+  return (
+    <tr style={{ borderTop: `1px solid ${B.border}` }}>
+      <td style={{ padding: '10px 8px' }}>
+        {cv.name} <span style={{ color: B.textMute, fontSize: 14 }}>({cv.party}-{cv.state}, {cv.district})</span>
+      </td>
+      <td style={{ padding: '10px 8px', textAlign: 'right' }}><VoteBadge position={cv.position} /></td>
+    </tr>
+  );
+}
+
 export default function BillLookup() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -50,6 +61,7 @@ export default function BillLookup() {
   const [billList, setBillList] = useState(null);   // issue-search mode: pick from a list
   const [votesResult, setVotesResult] = useState(null); // resolved bill + roll calls
   const [expandedRollCall, setExpandedRollCall] = useState(-1); // -1 = all collapsed by default; only one open at a time to keep this usable on mobile
+  const [expandedNotInCongress, setExpandedNotInCongress] = useState({}); // keyed by roll call index — separate from the roll-call accordion, so opening one doesn't affect the other
 
   async function handleSearch(e) {
     e.preventDefault();
@@ -161,6 +173,7 @@ export default function BillLookup() {
             </div>
             <h3 style={{ margin: '4px 0 8px', fontSize: 20 }}>{votesResult.bill.title}</h3>
             {votesResult.bill.sponsor && <p style={{ fontSize: 15, color: B.textMid, margin: '0 0 4px' }}>Sponsor: {votesResult.bill.sponsor.name}</p>}
+            {votesResult.bill.introducedDate && <p style={{ fontSize: 15, color: B.textMid, margin: '0 0 4px' }}>Introduced: {votesResult.bill.introducedDate}</p>}
             {votesResult.bill.latestAction && <p style={{ fontSize: 15, color: B.textMid, margin: 0 }}>Latest action ({votesResult.bill.latestAction.date}): {votesResult.bill.latestAction.text}</p>}
             {votesResult.subjects?.policyArea && (
               <p style={{ fontSize: 15, marginTop: 10 }}>
@@ -206,19 +219,47 @@ export default function BillLookup() {
                       ) : (
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
                           <tbody>
-                            {rc.candidateVotes.map((cv, j) => (
-                              <tr key={j} style={{ borderTop: j > 0 ? `1px solid ${B.border}` : 'none' }}>
-                                <td style={{ padding: '10px 8px' }}>
-                                  {cv.name} <span style={{ color: B.textMute, fontSize: 14 }}>({cv.party}-{cv.state}, {cv.district})</span>
-                                </td>
-                                <td style={{ padding: '10px 8px', textAlign: 'right' }}>
-                                  {cv.notInCongressForThisVote ? <span style={{ color: B.textMute, fontSize: 15 }}>Not in Congress for this vote</span> : <VoteBadge position={cv.position} />}
-                                </td>
-                              </tr>
+                            {rc.candidateVotes.filter(cv => !cv.notInCongressForThisVote).map((cv, j) => (
+                              <CandidateVoteRow key={j} cv={cv} />
                             ))}
                           </tbody>
                         </table>
                       )}
+
+                      {(() => {
+                        const notInCongress = rc.candidateVotes.filter(cv => cv.notInCongressForThisVote);
+                        if (notInCongress.length === 0) return null;
+                        const isNicOpen = !!expandedNotInCongress[i];
+                        return (
+                          <div style={{ marginTop: 14 }}>
+                            <button
+                              onClick={() => setExpandedNotInCongress(prev => ({ ...prev, [i]: !prev[i] }))}
+                              style={{
+                                width: '100%', textAlign: 'left', padding: '10px 14px', borderRadius: 8,
+                                border: `1px solid ${B.border}`, background: B.surfaceAlt, color: B.textMid,
+                                fontWeight: 700, fontSize: 15, cursor: 'pointer', fontFamily: 'inherit',
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              }}
+                            >
+                              <span>Not in Congress yet ({notInCongress.length})</span>
+                              <span>{isNicOpen ? '▲' : '▼'}</span>
+                            </button>
+                            {isNicOpen && (
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15, marginTop: 6 }}>
+                                <tbody>
+                                  {notInCongress.map((cv, j) => (
+                                    <tr key={j} style={{ borderTop: j > 0 ? `1px solid ${B.border}` : 'none' }}>
+                                      <td style={{ padding: '8px', color: B.textMute }}>
+                                        {cv.name} <span style={{ fontSize: 13 }}>({cv.party}-{cv.state}, {cv.district})</span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
