@@ -28,6 +28,7 @@ const PURPLE      = "var(--purple)";
 const TEAL        = "var(--teal)";
 const CHARCOAL    = "var(--charcoal)";
 const TERRACOTTA  = "var(--terracotta)";
+const TEXT_MUTE   = "var(--text-mute)";
 const GOLD        = "var(--gold)";
 const BORDER      = "var(--border)";
 const SURFACE_ALT = "var(--surface-alt)";
@@ -776,8 +777,8 @@ export default function PromptSandboxPage() {
       {/* Source material — the content to build posts FROM, kept separate
           from the instructions below so pasting in an article or
           transcript never risks burying or overwriting a saved rule-block. */}
-      <label style={labelStyle}>Source material <span style={{ fontWeight: 400, color: "#8A7F92" }}>(optional)</span></label>
-      <p style={{ fontSize: 12.5, color: "#8A7F92", marginTop: -2, marginBottom: 8 }}>
+      <label style={labelStyle}>Source material <span style={{ fontWeight: 400, color: TEXT_MUTE }}>(optional)</span></label>
+      <p style={{ fontSize: 12.5, color: TEXT_MUTE, marginTop: -2, marginBottom: 8 }}>
         Facts, quotes, or details the posts should be grounded in — a transcript, an article, a press release. Not saved as part of a preset, since this is usually one-off for whatever you're working on right now.
       </p>
       <p style={{ fontSize: 12.5, color: PURPLE, fontWeight: 700, marginTop: -2, marginBottom: 8 }}>
@@ -862,7 +863,7 @@ export default function PromptSandboxPage() {
       </button>
 
       {callCount !== null && (
-        <p style={{ fontSize: 12.5, color: "#8A7F92", marginBottom: 20 }}>
+        <p style={{ fontSize: 12.5, color: TEXT_MUTE, marginBottom: 20 }}>
           This run used <strong>{callCount}</strong> API call{callCount === 1 ? "" : "s"} total
           {useJudge ? " (generation + expand retries, if any + 1 verification check per post)" : " (generation + expand retries, if any)"} — each counts against your daily limit.
         </p>
@@ -919,7 +920,7 @@ export default function PromptSandboxPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: r.valid ? TEAL : TERRACOTTA }}>
                     {r.text.length} characters{!r.valid && " — outside range"}
-                    {r.hashtag && <span style={{ color: "#8A7F92", fontWeight: 400 }}> · #{r.hashtag} added on copy</span>}
+                    {r.hashtag && <span style={{ color: TEXT_MUTE, fontWeight: 400 }}> · #{r.hashtag} added on copy</span>}
                   </span>
                   <button onClick={() => copyPost(idx, r)} style={{
                     background: "none", border: `1px solid ${PURPLE}`, color: PURPLE,
@@ -939,7 +940,7 @@ export default function PromptSandboxPage() {
                   </p>
                 )}
                 {r.judgeUnavailable && (
-                  <p style={{ marginTop: 10, fontSize: 12, color: "#8A7F92", fontStyle: "italic" }}>
+                  <p style={{ marginTop: 10, fontSize: 12, color: TEXT_MUTE, fontStyle: "italic" }}>
                     AI verification check didn't return a usable answer for this post — not flagged, but not confirmed clean either.
                   </p>
                 )}
