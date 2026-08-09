@@ -244,9 +244,21 @@ export default async function (req) {
     // See file header's "KNOWN SCOPE LIMIT" note on the single-page (250)
     // fetch instead of full pagination.
     const actionsResult = await congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}/actions`, { limit: 250 });
-    const houseRecordedVotes = (actionsResult?.actions || [])
+    const houseRecordedVotesRaw = (actionsResult?.actions || [])
       .flatMap(a => a.recordedVotes || [])
       .filter(rv => rv.chamber === "House");
+    // De-duplicate — the same roll call sometimes gets referenced by more
+    // than one action entry on a heavily-amended bill (e.g. a procedural
+    // action and the final-passage action both pointing at the same roll
+    // number), which without this produced visibly duplicated roll-call
+    // blocks in the UI for the exact same vote.
+    const seenRollCalls = new Set();
+    const houseRecordedVotes = houseRecordedVotesRaw.filter(rv => {
+      const key = `${rv.congress}-${rv.sessionNumber}-${rv.rollNumber}`;
+      if (seenRollCalls.has(key)) return false;
+      seenRollCalls.add(key);
+      return true;
+    });
 
     const senateRecordedVoteCount = (actionsResult?.actions || [])
       .flatMap(a => a.recordedVotes || [])
@@ -259,15 +271,22 @@ export default async function (req) {
       const snap = await db.doc(`candidates/${candidateId}`).get();
       candidateDocs = snap.exists ? [snap] : [];
     } else {
-      const snap = await db.collection("candidates").where("active", "==", true).get();
-      candidateDocs = snap.docs.filter(d => isFederalHouseCandidate(d.data()));
+      const snap = await db.collection("candidates").get();
+      // NOT a strict `.where("active","==",true)` query — this app's
+      // established convention (candidates, ballot measures, etc.) is
+      // fail-open: active !== false, since most docs never set the field
+      // explicitly at all. A strict equality query silently excluded
+      // almost every real candidate — this is what caused only one
+      // candidate to ever show up. Match the same convention everywhere
+      // else in this app uses, not a new stricter one.
+      candidateDocs = snap.docs.filter(d => d.data().active !== false && isFederalHouseCandidate(d.data()));
     }
 
     const candidatesWithBioguide = await Promise.all(
       candidateDocs.map(async (doc) => {
         const data = doc.data();
         const bioguideId = await resolveBioguideId(db, doc, data);
-        return { id: doc.id, name: data.name, district: data.district, party: data.party, incumbentStatus: data.incumbentStatus, bioguideId };
+        return { id: doc.id, name: data.name, state: data.state, district: data.district, party: data.party, incumbentStatus: data.incumbentStatus, bioguideId };
       })
     );
 
@@ -304,6 +323,7 @@ export default async function (req) {
         candidateVotes: candidatesWithBioguide.map(c => ({
           candidateId: c.id,
           name: c.name,
+          state: c.state,
           district: c.district,
           party: c.party,
           position: c.bioguideId ? (positionsByBioguide[c.bioguideId] || null) : null,
