@@ -130,12 +130,24 @@ async function congressFetch(path, params = {}) {
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
 
   const response = await fetch(url.toString());
+  // Diagnostic logging — added after real votes weren't coming back for
+  // any incumbent, with no clear cause visible from the UI alone. Logs
+  // the exact URL (key redacted) and outcome for every Congress.gov call,
+  // so a real failure (404/other) shows up directly in Netlify's function
+  // logs instead of just silently producing an empty result downstream.
+  const loggedUrl = url.toString().replace(apiKey, "[REDACTED]");
   if (!response.ok) {
-    if (response.status === 404) return null; // not found is a real, expected outcome (e.g. bad bill number) — not an error to throw
+    if (response.status === 404) {
+      console.warn(`[bill-votes] Congress.gov 404: ${loggedUrl}`);
+      return null; // not found is a real, expected outcome (e.g. bad bill number) — not an error to throw
+    }
     const errText = await response.text().catch(() => "");
+    console.error(`[bill-votes] Congress.gov API error ${response.status}: ${loggedUrl} — ${errText}`);
     throw new Error(`Congress.gov API error: ${response.status} ${errText}`.trim());
   }
-  return response.json();
+  const data = await response.json();
+  console.log(`[bill-votes] Congress.gov OK: ${loggedUrl} — results=${Array.isArray(data.results) ? data.results.length : 'n/a'}`);
+  return data;
 }
 
 // Congress.gov defaults to 20 results per page (max 250) on list-shaped
@@ -321,6 +333,7 @@ export default async function (req) {
     const rollCalls = [];
     for (const rv of houseRecordedVotes) {
       const withinCoverage = rv.congress >= HOUSE_VOTE_COVERAGE_MIN_CONGRESS;
+      console.log(`[bill-votes] processing House recordedVote:`, JSON.stringify(rv), `withinCoverage=${withinCoverage}`);
       let positionsByBioguide = {};
       let voteMeta = null;
       if (withinCoverage) {
