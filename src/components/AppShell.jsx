@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import ConversationCoach from "./ConversationCoach";
 import { loadActiveAnnouncement } from "../lib/announcementLibrary";
+import ResearchPage from "../tools/research/ResearchPage";
 
 const NAV_ITEMS = [
   { path: "/",               short: "Home" },
@@ -85,6 +86,28 @@ export default function AppShell() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { user, profile, logout, isAdmin, isManager } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // ── Keep Research Hub mounted across navigation (Aug 2026) ────────────
+  // Research's own tabs (candidate search results, bill lookups, etc.)
+  // used to reset every time the person navigated away and back, because
+  // React Router unmounts <Outlet />'s content on every route change —
+  // there's no built-in way to navigate away from a route without
+  // destroying its component tree. Fix: render <ResearchPage /> here in
+  // AppShell instead of through the normal route switch, and just hide it
+  // with CSS when the person isn't on /research — it never unmounts once
+  // mounted, so all of its own internal state (and each of its tabs')
+  // survives real navigation, not just tab-switching within the page.
+  // The actual /research Route in App.jsx is kept registered (so the auth
+  // guard, layout, and direct links/back-forward still work) but renders
+  // nothing — this component is the real content now. Mounted lazily
+  // (only once the person has actually visited /research) so a person who
+  // never opens Research never pays for its on-mount data fetches.
+  const onResearch = location.pathname === "/research";
+  const [researchMounted, setResearchMounted] = useState(onResearch);
+  useEffect(() => {
+    if (onResearch) setResearchMounted(true);
+  }, [onResearch]);
 
   // ── Scheduled header announcement (start/end date-time banner) ──
   // Polled rather than realtime (onSnapshot) — consistent with the rest of
@@ -617,7 +640,14 @@ export default function AppShell() {
       {/* ── Page content ── */}
       <ScrollToTopOnNavigate />
       <main style={{ flex: 1 }}>
-        <Outlet />
+        {researchMounted && (
+          <div style={{ display: onResearch ? "block" : "none" }}>
+            <ResearchPage />
+          </div>
+        )}
+        <div style={{ display: onResearch ? "none" : "block" }}>
+          <Outlet />
+        </div>
       </main>
 
       <ScrollButtons />
