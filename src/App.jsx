@@ -9,7 +9,6 @@ import WaitlistPage from "./pages/WaitlistPage";
 import AdminPage from "./pages/AdminPage";
 import ProfilePage from "./pages/ProfilePage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
-import ResearchPage from "./tools/research/ResearchPage";
 import MessagingPage from "./tools/messaging/MessagingPage";
 import RebuttalPage from "./tools/rebuttal/RebuttalPage";
 import RapidResponsePage from "./tools/rapid-response/RapidResponsePage";
@@ -45,7 +44,12 @@ export default function App() {
             </AuthGuard>
           }>
             <Route path="/"                element={<HomePage />} />
-            <Route path="/research"        element={<ResearchPage />} />
+            {/* /research renders nothing here — AppShell keeps a
+                persistent <ResearchPage /> mounted itself (see its header
+                comment) so navigating away and back doesn't reset it. This
+                route stays registered so the auth guard, layout, direct
+                links, and back/forward navigation still work correctly. */}
+            <Route path="/research"        element={null} />
             <Route path="/messaging"       element={<MessagingPage />} />
             <Route path="/rebuttal"        element={<RebuttalPage />} />
             <Route path="/rapid-response"  element={<RapidResponsePage />} />
