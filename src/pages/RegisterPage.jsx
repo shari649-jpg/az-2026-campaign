@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
-import { doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { auth, db } from "../firebase";
 
@@ -131,25 +131,45 @@ export default function RegisterPage() {
         policyAcceptance: { version: "2026-07-04", acceptedAt: serverTimestamp() },
       });
 
-      // Mark invite token as used via Netlify function
+      // Grants org membership or provisions an individual "org of one" —
+      // via a trusted server-side Admin SDK call, since firestore.rules
+      // deliberately forbids a user from setting orgId on themselves at
+      // the create step above. Re-reads accountType/orgId from the real
+      // invite token server-side rather than trusting anything client-
+      // side, and also absorbs marking the invite used + the waitlist
+      // entry registered (previously two separate calls here) — see
+      // provision-account.mjs's header for the full reasoning.
+      //
+      // Unlike those old best-effort calls, a failure here is treated as
+      // real: the Firebase Auth account and base profile doc already
+      // exist at this point, but an unprovisioned account (no orgId at
+      // all) is a genuinely broken state, not a cosmetic miss — so this
+      // surfaces an error instead of silently continuing to the success
+      // screen.
+      let provisionResult;
       try {
-        await fetch("/.netlify/functions/validate-token", {
+        const freshIdToken = await user.getIdToken();
+        const provisionRes = await fetch("/.netlify/functions/provision-account", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, action: "consume" }),
+          body: JSON.stringify({ idToken: freshIdToken, token }),
         });
-      } catch {}
-
-      // Mark the originating waitlist entry as registered so it no longer
-      // shows as outstanding/unresolved in the Admin panel's Waitlist tab.
-      if (inviteData?.waitlistId) {
-        try {
-          await updateDoc(doc(db, "waitlist", inviteData.waitlistId), {
-            status: "registered",
-            registeredAt: serverTimestamp(),
-          });
-        } catch {}
+        provisionResult = await provisionRes.json().catch(() => ({}));
+        if (!provisionRes.ok || !provisionResult.success) {
+          throw new Error(provisionResult.error || "Account setup didn't complete.");
+        }
+      } catch (err) {
+        setError(
+          `Your account was created, but setup didn't finish (${err.message}). ` +
+          `Contact info@arizonacoalition.net for help before trying to sign in.`
+        );
+        setLoading(false);
+        return;
       }
+
+      // requiresPurchase (individual accounts only) is enforced by
+      // AuthGuard.jsx once they actually sign in — not handled here,
+      // since this page's job ends at "account exists and is provisioned."
 
       // The welcome email used to be sent here, immediately at registration.
       // That was wrong: it told the person "you're in, open the hub" before
