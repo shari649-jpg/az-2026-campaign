@@ -120,6 +120,11 @@ export default function BillLookup() {
           pick Federal or Arizona State below, then type a bill name or an issue. Covers House and
           Senate votes for both levels. New this session — flag anything that looks off.
         </p>
+        <p style={{ fontSize: 15, color: B.textMid, lineHeight: 1.6, margin: '10px 0 0', fontWeight: 700 }}>
+          Voting records shown are for CURRENT INCUMBENTS only. If a candidate held office before but
+          isn't currently serving, their past voting record will not show — they'll appear in "Not in
+          the Legislature/Congress yet" instead, even if they cast a real vote while previously in office.
+        </p>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
@@ -309,8 +314,13 @@ export default function BillLookup() {
                             {isNicOpen && (
                               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15, marginTop: 6 }}>
                                 <tbody>
+                                  <tr>
+                                    <td style={{ padding: '8px', color: B.textMute, fontStyle: 'italic', fontSize: 13 }}>
+                                      Not currently an incumbent — includes anyone who's never held this seat AND anyone who held office before but isn't currently serving. Their real past votes, if any, aren't shown here.
+                                    </td>
+                                  </tr>
                                   {notInCongress.map((cv, j) => (
-                                    <tr key={j} style={{ borderTop: j > 0 ? `1px solid ${B.border}` : 'none' }}>
+                                    <tr key={j} style={{ borderTop: `1px solid ${B.border}` }}>
                                       <td style={{ padding: '8px', color: B.textMute }}>
                                         {cv.name} <span style={{ fontSize: 13 }}>({cv.party}-{cv.state}, {cv.district})</span>
                                       </td>
