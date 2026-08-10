@@ -1,38 +1,43 @@
 // netlify/functions/legislative-lookup.mjs
 //
-// Shared LegiScan + Congress.gov fetch/lookup helpers. Extracted out of
-// bill-votes.mjs (Aug 2026) so resolve-bill.mjs can reuse the SAME,
-// already-debugged session/bill lookup logic to verify Perplexity's
-// suggestions before showing them — see resolve-bill.mjs's header for why
-// that verification step exists. Splitting this out matters because a
-// second hand-copied version of this logic would silently drift out of
-// sync with real bug fixes made here (the multi-session search fix, the
-// HR/HB naming-trap table) the next time one of them gets updated but not
-// the other.
+// Shared LegiScan fetch/lookup helpers. Extracted out of bill-votes.mjs
+// (Aug 2026) so resolve-bill.mjs and bill-votes.mjs share the SAME,
+// already-debugged lookup logic rather than hand-copied versions that
+// could drift out of sync.
+//
+// AUG 2026 REARCHITECTURE — CONGRESS.GOV DROPPED, SEARCH-FIRST DESIGN
+// ────────────────────────────────────────────────────────────────────────
+// This file previously also wrapped Congress.gov's API and a
+// findLegiscanSessionIds()/findLegiscanBill() pair that scanned every
+// session's master list to translate a Congress.gov-style bill identifier
+// (guessed by Perplexity, from memory) into a real LegiScan bill_id.
+//
+// That whole approach is gone. The new pipeline starts from LegiScan's own
+// real full-text search (legiscanSearch(), below) — Perplexity is no
+// longer asked to identify a bill by number at all, only to reformulate a
+// query when the raw search comes up empty (see resolve-bill.mjs). Because
+// search already returns a real bill_id directly, there's no more need to
+// (a) guess which session a bill lives in — getBill(id) returns session_id
+// on the record itself — or (b) verify a Perplexity guess against
+// Congress.gov, since every candidate now comes from LegiScan's own index
+// in the first place, not from an LLM's memory.
+//
+// Net effect: Congress.gov is no longer used anywhere in the bill-lookup
+// feature (CONGRESS_API_KEY is unused here — direct decision, Aug 2026,
+// since LegiScan's own subject tags cover the same informational role the
+// official CRS Policy Area tag did, and nothing in this feature depends on
+// CRS specifically). The HR/HB naming-trap table
+// (BILLTYPE_TO_LEGISCAN_PREFIX) and congressToStartYear() are gone too —
+// they only existed to translate INTO Congress.gov's schema, which nothing
+// needs anymore now that both search and detail are LegiScan-only, for
+// both federal and state bills.
 //
 // This module does NOT do auth, rate-limiting, or credit gating — same
 // pattern as perplexity-search.mjs. Callers are responsible for that.
 //
 // Modern Netlify Functions runtime (ESM).
 
-const CONGRESS_API_BASE = "https://api.congress.gov/v3";
 const LEGISCAN_API_BASE = "https://api.legiscan.com/";
-
-export async function congressFetch(path, params = {}) {
-  const apiKey = process.env.CONGRESS_API_KEY;
-  if (!apiKey) throw new Error("CONGRESS_API_KEY not configured — set it in Netlify's environment variables.");
-  const url = new URL(`${CONGRESS_API_BASE}${path}`);
-  url.searchParams.set("api_key", apiKey);
-  url.searchParams.set("format", "json");
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const response = await fetch(url.toString());
-  if (!response.ok) {
-    if (response.status === 404) return null;
-    const errText = await response.text().catch(() => "");
-    throw new Error(`Congress.gov API error: ${response.status} ${errText}`.trim());
-  }
-  return response.json();
-}
 
 export async function legiscanFetch(op, params = {}) {
   const apiKey = process.env.LEGISCAN_API_KEY;
@@ -56,95 +61,45 @@ export async function legiscanFetch(op, params = {}) {
   return data;
 }
 
-// Congress.gov billType -> LegiScan bill-number prefix. See
-// bill-votes.mjs's original header for the confirmed HR/HB naming trap —
-// Congress.gov's "H.R." (a House Bill) becomes LegiScan's "HB", while
-// LegiScan's OWN "HR" means House Resolution, something else entirely.
-export const BILLTYPE_TO_LEGISCAN_PREFIX = {
-  HR: "HB",
-  S: "SB",
-  HRES: "HR",
-  SRES: "SR",
-  HJRES: "HJR",
-  SJRES: "SJR",
-  HCONRES: "HCR",
-  SCONRES: "SCR",
-};
-
-// A Congress numbered N started in the calendar year 1789 + (N-1)*2.
-export function congressToStartYear(congress) {
-  return 1789 + (congress - 1) * 2;
-}
-
-// Returns ALL LegiScan session_ids matching a target year, not just the
-// first — a state can have more than one session tagged to the same
-// calendar year (a regular session plus special session(s)), and a bill
-// can live in any of them.
-export async function findLegiscanSessionIds(state, targetYear) {
-  const data = await legiscanFetch("getSessionList", { state });
-  const sessions = data?.sessions || [];
-  const matches = sessions.filter(s => s.year_start === targetYear);
-  if (matches.length === 0) {
-    console.warn(`[legislative-lookup] no LegiScan ${state} session found for target year_start=${targetYear}.`);
+// ── Full-text bill search (op=getSearch) — the new front door for
+// resolve-bill.mjs, replacing Perplexity-recalls-a-bill-number entirely.
+// ────────────────────────────────────────────────────────────────────────
+// Confirmed against LegiScan's own API User Manual (not guessed): state
+// is a two-letter state abbreviation OR "US" for Congress OR "ALL" for a
+// nationwide search; query is a full-text query (LegiScan supports real
+// search operators — AND/OR/NOT/ADJ/+/-); results are relevance-scored
+// 0-100, up to 50 per page, sorted by relevance (not recency — resolve-
+// bill.mjs re-sorts by last_action_date itself, since that's what "most
+// recent first" should actually mean for a person browsing results, not a
+// coarser "which year" grouping).
+//
+// The manual's own example JSON renders each numbered result as a
+// "0"/"1"/"2"... keyed object nested under searchresult (the same pattern
+// masterlist already uses elsewhere in this file's callers), but at least
+// one third-party normalized schema documents searchresult.results as a
+// plain array. Handled defensively here — try array first, fall back to
+// numbered-object — and a real sample is logged on first use so this can
+// be confirmed/adjusted from actual production output, same "log real
+// output, calibrate after one real call" convention already used for
+// getSessionPeople and getRollCall in bill-votes.mjs. Don't remove that
+// logging until it's actually been confirmed against a live response.
+export async function legiscanSearch(state, query) {
+  const data = await legiscanFetch("getSearch", { state, query });
+  const searchresult = data?.searchresult || {};
+  let items;
+  if (Array.isArray(searchresult.results)) {
+    items = searchresult.results;
+  } else if (searchresult.results && typeof searchresult.results === "object") {
+    items = Object.values(searchresult.results);
+  } else {
+    // Older/alternate shape: numbered keys directly under searchresult,
+    // sibling to "summary" — same pattern as getMasterList's masterlist.
+    items = Object.keys(searchresult)
+      .filter(k => k !== "summary")
+      .map(k => searchresult[k]);
   }
-  return matches.map(s => s.session_id);
-}
-
-// Searches every candidate session (see above) for the bill, in order,
-// returning the session it actually lived in plus its LegiScan bill_id.
-export async function findLegiscanBill(sessionIds, legiscanBillNumber) {
-  for (const sessionId of sessionIds) {
-    const data = await legiscanFetch("getMasterList", { id: sessionId });
-    const masterlist = data?.masterlist || {};
-    for (const key of Object.keys(masterlist)) {
-      const entry = masterlist[key];
-      if (entry?.number && entry.number.toUpperCase() === legiscanBillNumber.toUpperCase()) {
-        return { sessionId, billId: entry.bill_id };
-      }
-    }
+  if (items.length > 0) {
+    console.log(`[legislative-lookup] LegiScan getSearch sample (first 3 of ${items.length}) for state=${state} query="${query}":`, JSON.stringify(items.slice(0, 3)));
   }
-  return null;
-}
-
-// ── Verification helper for resolve-bill.mjs ──────────────────────────
-// Given a bill identifier Perplexity claimed exists, checks it against
-// the REAL authoritative source and returns the bill's real title (and
-// existence) — NOT vote data, just enough to confirm "this bill is real"
-// and show its actual title instead of trusting Perplexity's own summary
-// wording, which is exactly what caught it hallucinating a title for
-// HB2401 (a real bill number, but for an unrelated fuel-formulations
-// bill, not the ESA/voucher bill Perplexity described — confirmed via
-// Perplexity's own explanation: it confused an A.R.S. statute citation
-// number with a bill number).
-export async function verifyBillExists(bill) {
-  try {
-    if (bill.level === "federal") {
-      const billTypePath = String(bill.billType).toLowerCase();
-      const result = await congressFetch(`/bill/${bill.congress}/${billTypePath}/${bill.billNumber}`);
-      if (!result?.bill) return { verified: false };
-      // No cheap official short-description source for federal at this
-      // step (CRS summaries are a separate call, only fetched for a bill
-      // the person actually opens, not for every list candidate — adding
-      // it here would mean up to 6 extra Congress.gov calls per issue
-      // search). realSummary is deliberately null, not Perplexity's
-      // original text — see the real bug this fixed: showing a verified
-      // real title next to an unverified, possibly-wrong summary is worse
-      // than showing no summary at all.
-      return { verified: true, realTitle: result.bill.title, realSummary: null };
-    } else {
-      const sessionIds = await findLegiscanSessionIds(bill.state, bill.year);
-      if (sessionIds.length === 0) return { verified: false };
-      const legiscanBillNumber = `${bill.billType}${bill.billNumber}`; // state mode billType is already LegiScan-native, no translation needed
-      const found = await findLegiscanBill(sessionIds, legiscanBillNumber);
-      if (!found) return { verified: false };
-      const billResult = await legiscanFetch("getBill", { id: found.billId });
-      if (!billResult?.bill) return { verified: false };
-      // LegiScan's own description IS available in this same call, at no
-      // extra request cost — use it as the real summary.
-      return { verified: true, realTitle: billResult.bill.title, realSummary: billResult.bill.description || null };
-    }
-  } catch (err) {
-    console.error(`[legislative-lookup] verifyBillExists error for ${JSON.stringify(bill)}:`, err.message);
-    return { verified: false }; // fail closed — an unverifiable bill doesn't get shown as if it were confirmed real
-  }
+  return items; // each: { relevance, state, bill_number, bill_id, url, last_action_date, last_action, title, ... }
 }
