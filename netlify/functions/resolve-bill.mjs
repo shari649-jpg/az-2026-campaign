@@ -61,6 +61,38 @@
 // second state whose chamber naming differs would need its own bill-type
 // vocabulary, not reuse of AZ's.
 //
+// VERIFICATION STEP — WHY THIS EXISTS (Aug 2026, real confirmed incident)
+// ────────────────────────────────────────────────────────────────────────
+// Perplexity can hallucinate a plausible-sounding title/summary for a
+// REAL bill number that has nothing to do with the query. Confirmed case:
+// searching "education vouchers" surfaced "HB 2401 — education;
+// empowerment scholarship accounts" — HB 2401 is real, but it's actually
+// "Fuel formulations; biennial review," completely unrelated. Asked
+// directly, Perplexity explained its own mistake: Arizona's ESA program
+// is governed by A.R.S. § 15-2401 — Perplexity had confused that STATUTE
+// CITATION number with a BILL number that happens to share the digits.
+//
+// Rather than try to prompt this away entirely (a losing battle — no
+// prompt wording fully prevents this class of mistake) or make the
+// resolver overly conservative (which would suppress genuinely good
+// results and just trade one failure mode for another), every bill this
+// function is about to return — single or list mode — now gets checked
+// against the REAL source (verifyBillExists() from
+// legislative-lookup.mjs, the same LegiScan/Congress.gov lookup
+// bill-votes.mjs itself uses) before being shown:
+//   - If the bill doesn't actually exist for that congress/year+number,
+//     it's DROPPED from the list rather than shown as a confident-looking
+//     but fake option.
+//   - If it does exist, its title is REPLACED with the real, authoritative
+//     title — so even if Perplexity's description was wrong, the person
+//     sees the true title immediately (in the case above, they'd see
+//     "Fuel formulations; biennial review" right there in the list and
+//     could skip it without ever clicking through) instead of being
+//     misled by a fabricated summary that sounded right.
+// This preserves recall (nothing is filtered by topical relevance, only
+// by real existence) while fixing the actual reliability problem —
+// exactly the balance to keep if this logic is ever touched again.
+//
 // AUTH / RATE LIMIT / COST
 // ────────────────────────────────────────────────────────────────────────
 // Same requireSignedIn pattern as every other internal tool (this is not
@@ -80,6 +112,7 @@ import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, generationWarningPayload } from "./creditHelper.mjs";
 import { callPerplexity, extractPerplexityText } from "./perplexity-search.mjs";
+import { verifyBillExists } from "./legislative-lookup.mjs";
 
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
@@ -140,7 +173,9 @@ Two possible response shapes:
 If you cannot confidently identify any real ${state} state bill, respond with:
 {"mode":"none","reason":"<brief explanation>"}
 
-billType MUST be exactly one of: HB, SB, HR, SR, HJR, SJR, HCR, SCR — these are LegiScan's own bill-type codes (HB = House Bill, SB = Senate Bill, HR = House Resolution, SR = Senate Resolution, HJR/SJR = Joint Resolution, HCR/SCR = Concurrent Resolution). year is the calendar year the legislative session started (e.g. 2025), NOT a "Congress number" — states don't have those. year and billNumber MUST be actual integers you are confident about, not placeholders. Do not fabricate a bill number if you are not genuinely confident — use mode "none" instead; a wrong bill number is worse than admitting uncertainty.`;
+billType MUST be exactly one of: HB, SB, HR, SR, HJR, SJR, HCR, SCR — these are LegiScan's own bill-type codes (HB = House Bill, SB = Senate Bill, HR = House Resolution, SR = Senate Resolution, HJR/SJR = Joint Resolution, HCR/SCR = Concurrent Resolution). year is the calendar year the legislative session started (e.g. 2025), NOT a "Congress number" — states don't have those. year and billNumber MUST be actual integers you are confident about, not placeholders.
+
+CRITICAL: do not confuse a BILL NUMBER with a STATUTE/CODE CITATION NUMBER. A program's governing law section (e.g. "A.R.S. § 15-2401") is NOT the same thing as a bill number (e.g. "HB 2401") even when the digits match — they refer to completely different things, and treating them as the same is a real, confirmed mistake to avoid. If you're recalling a bill number from a statute section it's associated with rather than from the bill itself, treat that as low confidence, not a real match. Do not fabricate a bill number if you are not genuinely confident — use mode "none" instead; a wrong bill number is worse than admitting uncertainty.`;
 }
 
 function validateBillShape(b) {
@@ -249,6 +284,36 @@ export default async function (req) {
     } catch (err) {
       console.error("[resolve-bill] failed to parse resolver output:", err.message, "raw text:", text);
       return new Response(JSON.stringify({ success: false, error: "Couldn't confidently identify a bill from that. Try naming it more specifically, e.g. an official or commonly-used bill title." }), { status: 422, headers: corsHeaders(req) });
+    }
+
+    // ── Verification pass — see file header's "VERIFICATION STEP" note.
+    // Every bill mode="single" or mode="list" is about to return gets
+    // checked against the real source before being shown: dropped if it
+    // doesn't actually exist, title replaced with the real one if it does.
+    // This is what actually catches Perplexity's confident-but-wrong
+    // guesses, not just the prompt wording above. ─────────────────────────
+    if (resolved.mode === "single") {
+      const check = await verifyBillExists(resolved.bill);
+      if (!check.verified) {
+        console.warn(`[resolve-bill] single-mode bill failed verification, treating as not found:`, JSON.stringify(resolved.bill));
+        resolved = { mode: "none", reason: "Couldn't verify that bill actually exists — try naming it more specifically." };
+      } else {
+        resolved.bill.title = check.realTitle; // real title wins over Perplexity's own wording, even if the bill was real
+      }
+    } else if (resolved.mode === "list") {
+      const checks = await Promise.all(resolved.bills.map(b => verifyBillExists(b)));
+      const verifiedBills = resolved.bills
+        .map((b, i) => checks[i].verified ? { ...b, title: checks[i].realTitle } : null)
+        .filter(Boolean);
+      const droppedCount = resolved.bills.length - verifiedBills.length;
+      if (droppedCount > 0) {
+        console.warn(`[resolve-bill] dropped ${droppedCount} of ${resolved.bills.length} list-mode suggestions that failed verification.`);
+      }
+      if (verifiedBills.length === 0) {
+        resolved = { mode: "none", reason: "Found some possible matches, but none of them checked out against the real bill records. Try rephrasing the search." };
+      } else {
+        resolved = { mode: "list", bills: verifiedBills };
+      }
     }
 
     // ── Credit debit — mind the Perplexity/Anthropic field-name mismatch,
