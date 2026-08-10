@@ -1,109 +1,85 @@
 // netlify/functions/resolve-bill.mjs
 //
-// WHAT THIS DOES
+// WHAT THIS DOES (rearchitected Aug 2026 — search-first, LegiScan-only)
 // ────────────────────────────────────────────────────────────────────────
-// Front door of the bill-lookup feature (Aug 2026 scoping — see the
-// Congress.gov integration design discussion). Takes free text — either a
+// Front door of the bill-lookup feature. Takes free text — either a
 // specific bill name ("CHIPS Act") or a general issue ("semiconductor
-// manufacturing") — and uses Perplexity to resolve it to one of two
-// response shapes:
+// manufacturing") — and returns a ranked, tiered list of REAL candidate
+// bills for the frontend to show as a picklist. The frontend always shows
+// a list (even a list of one) and lets the person confirm — no auto-
+// selection, by direct decision, since even a single strong match can be
+// the wrong bill and this tool makes claims about how people voted.
 //
-//   mode: "single" — Perplexity was confident about ONE specific bill.
-//     Skip straight to results; the frontend should immediately call
-//     bill-votes.mjs (not yet built as of this file) with the returned
-//     identifier.
-//   mode: "list"    — Perplexity found several bills relevant to an issue.
-//     The frontend shows these as a picklist; the user's selection then
-//     also feeds into bill-votes.mjs the same way.
-//
-// This function does NOT talk to Congress.gov and does NOT return vote
-// data — it only identifies WHICH bill(s) are relevant. bill-votes.mjs
-// (separate function, next piece of this build) is what actually pulls
-// the authoritative record and vote breakdown once a bill is picked. This
-// split matters because Congress.gov's official API has NO keyword/text
-// search at all (confirmed against its real docs) — Perplexity is doing a
-// job Congress.gov's API structurally cannot do, and Congress.gov is doing
-// a job Perplexity shouldn't be trusted for (authoritative structured
-// legislative data). Don't collapse these into one function later without
-// re-reading this note.
-//
-// RESPONSE CONTRACT (for bill-votes.mjs to consume)
+// WHY THIS REPLACES THE OLD "PERPLEXITY IDENTIFIES A BILL" DESIGN
 // ────────────────────────────────────────────────────────────────────────
-// Two levels, two shapes, both passed through a `level` field:
+// The original version of this file asked Perplexity to recall a specific
+// bill number from its own training memory, then verified that guess
+// against a real source before showing it. That verification step caught
+// bills that didn't exist, but NOT a real, existing, but topically
+// irrelevant bill — confirmed incident: "education vouchers" surfaced a
+// real highway sound-barrier appropriations bill, because Perplexity
+// confused a statute citation number with a bill number.
 //
-//   Federal: { level:"federal", congress: number, billType: <Congress.gov
-//     code>, billNumber: number, title: string }. billType is one of
-//     Congress.gov's own official codes — HR, S, HJRES, SJRES, HCONRES,
-//     SCONRES, HRES, SRES. Unchanged from the original federal-only build.
+// The fix isn't a better verification step — it's not asking an LLM to
+// recall bill identifiers from memory at all. This version searches
+// LegiScan's own real, relevance-ranked full-text index FIRST, with the
+// person's raw query. Perplexity is only ever called as a fallback, to
+// reformulate the query into better search terms when the raw query
+// returns nothing usable — and even then it only ever returns query TEXT,
+// never a bill identifier. Every bill this function can possibly return
+// came from LegiScan's real index in the first place, so there's nothing
+// left to hallucinate into the response. (Direct efficiency decision, Aug
+// 2026: most searches now cost zero Perplexity calls at all, since a
+// decent raw-query search usually finds real hits without needing the
+// reformulation fallback — see the credit-gating note below.)
 //
-//   State:   { level:"state", state:"AZ", year: number, billType:
-//     <LegiScan-native code>, billNumber: number, title: string }.
-//     States have no Congress.gov equivalent (federal-only API) and no
-//     "Congress number" — LegiScan indexes state sessions by literal
-//     calendar year, and there's no other authoritative source to pull a
-//     separate code system from, so billType here IS LegiScan's own
-//     prefix directly: HB, SB, HR, SR, HJR, SJR, HCR, SCR. (These 8
-//     letter-codes happen to overlap in spelling with the federal ones in
-//     a couple of cases but mean different things — HR here means House
-//     Resolution the same as it does for federal, this isn't the
-//     HR-vs-HB trap that lives in bill-votes.mjs's federal->LegiScan
-//     translation table; that trap only exists when converting FROM
-//     Congress.gov's codes, and state mode never uses Congress.gov codes
-//     at all.)
-//
-// `state` defaults to "AZ" (this org's actual candidate base) but is a
-// real parameter, not hardcoded into the prompt logic — a future org
-// tracking a different state would pass a different value. Worth knowing
-// if that ever happens: LegiScan does NOT use HB/SB uniformly across all
-// states (California's lower chamber bills are "AB", Assembly Bill, not
-// "HB") — Arizona genuinely does use HB/SB (its chambers are House and
-// Senate, same naming as federal), so this isn't a problem today, but a
-// second state whose chamber naming differs would need its own bill-type
-// vocabulary, not reuse of AZ's.
-//
-// VERIFICATION STEP — WHY THIS EXISTS (Aug 2026, real confirmed incident)
+// CONGRESS.GOV IS NOT USED HERE (OR ANYWHERE IN THIS FEATURE)
 // ────────────────────────────────────────────────────────────────────────
-// Perplexity can hallucinate a plausible-sounding title/summary for a
-// REAL bill number that has nothing to do with the query. Confirmed case:
-// searching "education vouchers" surfaced "HB 2401 — education;
-// empowerment scholarship accounts" — HB 2401 is real, but it's actually
-// "Fuel formulations; biennial review," completely unrelated. Asked
-// directly, Perplexity explained its own mistake: Arizona's ESA program
-// is governed by A.R.S. § 15-2401 — Perplexity had confused that STATUTE
-// CITATION number with a BILL number that happens to share the digits.
+// Direct decision, Aug 2026: LegiScan tracks Congress with the same
+// schema it uses for states (confirmed — real federal bills appear under
+// LegiScan's own "US" state code), so federal and state search/detail are
+// now fully symmetric, both LegiScan-only. This also removes the need to
+// translate LegiScan's bill-number prefixes into Congress.gov's billType
+// codes, which was real, confirmed-tricky logic (LegiScan's own "HR"
+// means House RESOLUTION, not the House BILL Congress.gov's "H.R." means)
+// — not needed anymore since nothing downstream ever needs Congress.gov's
+// schema at all now. See legislative-lookup.mjs's header for the fuller
+// reasoning, including what's given up (LegiScan's own subject tags
+// instead of the official CRS Policy Area tag — informational only,
+// nothing in this feature used CRS tags for search or matching).
 //
-// Rather than try to prompt this away entirely (a losing battle — no
-// prompt wording fully prevents this class of mistake) or make the
-// resolver overly conservative (which would suppress genuinely good
-// results and just trade one failure mode for another), every bill this
-// function is about to return — single or list mode — now gets checked
-// against the REAL source (verifyBillExists() from
-// legislative-lookup.mjs, the same LegiScan/Congress.gov lookup
-// bill-votes.mjs itself uses) before being shown:
-//   - If the bill doesn't actually exist for that congress/year+number,
-//     it's DROPPED from the list rather than shown as a confident-looking
-//     but fake option.
-//   - If it does exist, its title is REPLACED with the real, authoritative
-//     title — so even if Perplexity's description was wrong, the person
-//     sees the true title immediately (in the case above, they'd see
-//     "Fuel formulations; biennial review" right there in the list and
-//     could skip it without ever clicking through) instead of being
-//     misled by a fabricated summary that sounded right.
-// This preserves recall (nothing is filtered by topical relevance, only
-// by real existence) while fixing the actual reliability problem —
-// exactly the balance to keep if this logic is ever touched again.
+// RELEVANCE TIERING (direct decision, Aug 2026)
+// ────────────────────────────────────────────────────────────────────────
+// LegiScan's own relevance score (0-100, real full-text match strength)
+// drives tiering directly — no LLM re-ranking needed on top of it:
+//   >= 80  -> "match"    (shown first)
+//   50-79  -> "possible" (shown after, flagged as lower-confidence)
+//   < 50   -> dropped as noise
+// Combined list capped at 10 total, matches filling first, sorted by
+// last_action_date descending within each tier (most recently active
+// first — a more precise "most recent" than sorting by bare year, and
+// available directly on every search result with no extra fetch).
+//
+// RESPONSE CONTRACT (for bill-votes.mjs / BillLookup.jsx to consume)
+// ────────────────────────────────────────────────────────────────────────
+// { success:true, bills: [ { level, state, billId, billNumber, title,
+//   lastActionDate, lastAction, relevance, confidence } , ... ] }
+// bills may be an empty array — the frontend shows a "nothing found"
+// state rather than a separate mode:"none" flag. billId is LegiScan's own
+// bill_id — the only identifier bill-votes.mjs needs now; it calls
+// getBill(billId) directly rather than re-resolving a session/number.
 //
 // AUTH / RATE LIMIT / COST
 // ────────────────────────────────────────────────────────────────────────
-// Same requireSignedIn pattern as every other internal tool (this is not
-// a public page like public-voter-lookup.mjs). Every call is a real,
-// billed Perplexity call — gated by the SAME checkAndIncrementRateLimit
-// daily cap AND the SAME org generationBalance credit pool every other
-// generation function uses (folded in deliberately, Aug 2026 decision —
-// see perplexity-search.mjs's header for why). A blocked/zero-balance org
-// gets the exact same 429/402 shapes the other five generation tools
-// already return, so the frontend's existing credit-warning banner
-// handling (Handoff #34) works here without new UI plumbing.
+// Same requireSignedIn pattern as every other internal tool. Every
+// request passes the same daily checkAndIncrementRateLimit abuse guard
+// LegiScan-only tools use elsewhere (LegiScan is free, so this is an abuse
+// guard, not a cost control). The generation-credit balance gate — real
+// money, since Perplexity is metered — is only checked and only debited
+// when the reformulation fallback actually runs, NOT on every request.
+// Gating a free LegiScan search behind a paid-feature credit check would
+// be exactly the kind of unnecessary complexity/cost this rearchitecture
+// is meant to avoid.
 //
 // Modern Netlify Functions runtime (ESM).
 
@@ -112,7 +88,7 @@ import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, generationWarningPayload } from "./creditHelper.mjs";
 import { callPerplexity, extractPerplexityText } from "./perplexity-search.mjs";
-import { verifyBillExists } from "./legislative-lookup.mjs";
+import { legiscanSearch } from "./legislative-lookup.mjs";
 
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
@@ -141,81 +117,42 @@ async function requireSignedIn(app, idToken) {
   return decoded.uid;
 }
 
-const VALID_FEDERAL_BILL_TYPES = new Set(["HR", "S", "HJRES", "SJRES", "HCONRES", "SCONRES", "HRES", "SRES"]);
-const VALID_STATE_BILL_TYPES = new Set(["HB", "SB", "HR", "SR", "HJR", "SJR", "HCR", "SCR"]);
+const MATCH_THRESHOLD = 80;
+const POSSIBLE_THRESHOLD = 50;
+const RESULT_CAP = 10;
 
-const FEDERAL_SYSTEM_PROMPT = `You identify official U.S. federal bills from informal names or issue descriptions, for a political research tool. You must respond with ONLY valid JSON — no markdown, no code fences, no preamble, no explanation outside the JSON.
-
-Two possible response shapes:
-
-1. If the input names ONE specific, identifiable piece of federal legislation (a formal or informal bill name, e.g. "CHIPS Act", "Inflation Reduction Act", "H.R. 4346"), respond with:
-{"mode":"single","bill":{"level":"federal","congress":<number>,"billType":"<one of HR|S|HJRES|SJRES|HCONRES|SCONRES|HRES|SRES>","billNumber":<number>,"title":"<official short title>"}}
-
-2. If the input describes a general ISSUE or TOPIC rather than one specific bill (e.g. "semiconductor manufacturing", "immigration reform", "prescription drug prices"), respond with a short list (3-6) of the most relevant, well-known federal bills addressing that issue:
-{"mode":"list","bills":[{"level":"federal","congress":<number>,"billType":"<...>","billNumber":<number>,"title":"<official short title>","summary":"<one sentence, plain language>"}]}
-
-If you cannot confidently identify any real federal bill, respond with:
-{"mode":"none","reason":"<brief explanation>"}
-
-billType MUST be exactly one of: HR, S, HJRES, SJRES, HCONRES, SCONRES, HRES, SRES — these are literal U.S. Congress bill-type codes, not abbreviations you invent. congress and billNumber MUST be actual integers you are confident about, not placeholders. Do not fabricate a bill number if you are not genuinely confident — use mode "none" instead; a wrong bill number is worse than admitting uncertainty.`;
-
-function stateSystemPrompt(state) {
-  return `You identify official ${state} state legislature bills from informal names or issue descriptions, for a political research tool. You must respond with ONLY valid JSON — no markdown, no code fences, no preamble, no explanation outside the JSON.
-
-Two possible response shapes:
-
-1. If the input names ONE specific, identifiable piece of ${state} state legislation, respond with:
-{"mode":"single","bill":{"level":"state","state":"${state}","year":<number>,"billType":"<one of HB|SB|HR|SR|HJR|SJR|HCR|SCR>","billNumber":<number>,"title":"<official short title>"}}
-
-2. If the input describes a general ISSUE or TOPIC rather than one specific bill, respond with a short list (3-6) of the most relevant, well-known ${state} state bills addressing that issue:
-{"mode":"list","bills":[{"level":"state","state":"${state}","year":<number>,"billType":"<...>","billNumber":<number>,"title":"<official short title>","summary":"<one sentence, plain language>"}]}
-
-If you cannot confidently identify any real ${state} state bill, respond with:
-{"mode":"none","reason":"<brief explanation>"}
-
-billType MUST be exactly one of: HB, SB, HR, SR, HJR, SJR, HCR, SCR — these are LegiScan's own bill-type codes (HB = House Bill, SB = Senate Bill, HR = House Resolution, SR = Senate Resolution, HJR/SJR = Joint Resolution, HCR/SCR = Concurrent Resolution). year is the calendar year the legislative session started (e.g. 2025), NOT a "Congress number" — states don't have those. year and billNumber MUST be actual integers you are confident about, not placeholders.
-
-CRITICAL: do not confuse a BILL NUMBER with a STATUTE/CODE CITATION NUMBER. A program's governing law section (e.g. "A.R.S. § 15-2401") is NOT the same thing as a bill number (e.g. "HB 2401") even when the digits match — they refer to completely different things, and treating them as the same is a real, confirmed mistake to avoid. If you're recalling a bill number from a statute section it's associated with rather than from the bill itself, treat that as low confidence, not a real match. Do not fabricate a bill number if you are not genuinely confident — use mode "none" instead; a wrong bill number is worse than admitting uncertainty.`;
+// Reformulation-only prompt — critically, this NEVER asks for a bill
+// identifier, only better search text. See file header for why that
+// distinction is the actual fix for the hallucination class of bug.
+function reformulateSystemPrompt(level, state) {
+  const jurisdiction = level === "state" ? `the ${state} state legislature` : "the U.S. Congress";
+  return `A person's search against a real legislative full-text search engine (covering ${jurisdiction}) returned no results. Suggest ONE alternative search query more likely to match real bill text or titles — for example, translating a colloquial or topic-based description into the kind of official program name, policy term, or statutory language that would actually appear in a bill. Respond with ONLY the reformulated query text — no quotes, no markdown, no explanation, nothing else.`;
 }
 
-function validateBillShape(b) {
-  if (!b) return false;
-  if (b.level === "federal") {
-    return VALID_FEDERAL_BILL_TYPES.has(b.billType) && Number.isInteger(b.congress) && Number.isInteger(b.billNumber);
-  }
-  if (b.level === "state") {
-    return VALID_STATE_BILL_TYPES.has(b.billType) && Number.isInteger(b.year) && Number.isInteger(b.billNumber) && !!b.state;
-  }
-  return false; // missing/unrecognized level — treat as invalid rather than guess which schema applies
+function tierAndSort(rawResults) {
+  const withNumericRelevance = rawResults
+    .map(r => ({ ...r, relevance: Number(r.relevance) }))
+    .filter(r => Number.isFinite(r.relevance));
+  const matches = withNumericRelevance.filter(r => r.relevance >= MATCH_THRESHOLD);
+  const possible = withNumericRelevance.filter(r => r.relevance >= POSSIBLE_THRESHOLD && r.relevance < MATCH_THRESHOLD);
+  const byRecency = (a, b) => (b.last_action_date || "").localeCompare(a.last_action_date || "");
+  matches.sort(byRecency);
+  possible.sort(byRecency);
+  return { matches, possible };
 }
 
-function parseResolverJSON(text) {
-  // Strip markdown code fences defensively, same convention used
-  // elsewhere in this app for AI JSON output (see the Anthropic-API-in-
-  // artifacts error-handling guidance this project already follows).
-  const cleaned = text.replace(/```json|```/g, "").trim();
-  const parsed = JSON.parse(cleaned); // let a real parse failure throw — caught by the outer try/catch below
-
-  if (parsed.mode === "single") {
-    if (!validateBillShape(parsed.bill)) {
-      throw new Error("resolver returned an invalid single-bill shape");
-    }
-    return parsed;
-  }
-  if (parsed.mode === "list") {
-    if (!Array.isArray(parsed.bills) || parsed.bills.length === 0) {
-      throw new Error("resolver returned an invalid list shape");
-    }
-    for (const b of parsed.bills) {
-      if (!validateBillShape(b)) {
-        throw new Error("resolver returned an invalid bill entry inside a list");
-      }
-    }
-    return parsed;
-  }
-  if (parsed.mode === "none") return parsed;
-
-  throw new Error(`resolver returned an unrecognized mode: ${parsed.mode}`);
+function toResponseShape(r, level, confidence) {
+  return {
+    level,
+    state: r.state || null,
+    billId: r.bill_id,
+    billNumber: r.bill_number || null,
+    title: r.title || null,
+    lastActionDate: r.last_action_date || null,
+    lastAction: r.last_action || null,
+    relevance: r.relevance,
+    confidence, // "match" | "possible"
+  };
 }
 
 export default async function (req) {
@@ -240,8 +177,9 @@ export default async function (req) {
     const body = await req.json();
     const idToken = headerToken || body.idToken;
     const query = (body.query || "").trim();
-    const level = body.level === "state" ? "state" : "federal"; // default federal — matches original behavior for any existing caller that doesn't pass this yet
-    const state = (body.state || "AZ").toUpperCase(); // defaults to this org's actual candidate base; see file header on why this isn't hardcoded deeper than this
+    const level = body.level === "state" ? "state" : "federal";
+    const state = (body.state || "AZ").toUpperCase(); // real param, not hardcoded deeper than this — see file header
+    const searchState = level === "federal" ? "US" : state; // confirmed real LegiScan jurisdiction code for Congress
 
     if (!query) {
       return new Response(JSON.stringify({ success: false, error: "A bill name or issue description is required." }), { status: 400, headers: corsHeaders(req) });
@@ -255,84 +193,81 @@ export default async function (req) {
       return new Response(JSON.stringify({ success: false, error: "You must be signed in to use this tool." }), { status: 401, headers: corsHeaders(req) });
     }
 
-    // ── Rate limit — same daily per-user cap every generation tool uses ──
+    // ── Rate limit — abuse guard, applies regardless of whether Perplexity
+    // ends up being called (LegiScan is free, but still not open season) ──
     const usage = await checkAndIncrementRateLimit(app, uid);
     if (usage.blocked) {
       return new Response(JSON.stringify(usage.blockedPayload), { status: 429, headers: corsHeaders(req) });
     }
 
-    // ── Generation-credit gate — folded in deliberately, see file header ─
-    const balanceCheck = await checkGenerationBalance(app, usage.orgId, "resolve-bill");
-    if (balanceCheck.blocked) {
-      return new Response(JSON.stringify(generationBlockedPayload(balanceCheck.balance)), { status: 402, headers: corsHeaders(req) });
-    }
-
-    // ── Perplexity call ────────────────────────────────────────────────
-    const systemPrompt = level === "state" ? stateSystemPrompt(state) : FEDERAL_SYSTEM_PROMPT;
-    let raw;
+    // ── Real LegiScan search, raw query, no Perplexity involved yet ──────
+    let rawResults;
     try {
-      raw = await callPerplexity({ system: systemPrompt, query, maxTokens: 800 });
+      rawResults = await legiscanSearch(searchState, query);
     } catch (err) {
-      console.error("[resolve-bill] Perplexity call failed:", err.message);
+      console.error("[resolve-bill] LegiScan search failed:", err.message);
       return new Response(JSON.stringify({ success: false, error: "Search is temporarily unavailable. Try again shortly." }), { status: 502, headers: corsHeaders(req) });
     }
 
-    const text = extractPerplexityText(raw);
-    let resolved;
-    try {
-      resolved = parseResolverJSON(text);
-    } catch (err) {
-      console.error("[resolve-bill] failed to parse resolver output:", err.message, "raw text:", text);
-      return new Response(JSON.stringify({ success: false, error: "Couldn't confidently identify a bill from that. Try naming it more specifically, e.g. an official or commonly-used bill title." }), { status: 422, headers: corsHeaders(req) });
+    let { matches, possible } = tierAndSort(rawResults);
+    let creditWarning, usageWarning;
+
+    // ── Fallback: raw query found nothing usable — ask Perplexity to
+    // reformulate the query text (never a bill identifier), retry once.
+    // This is the ONLY path that costs a real Perplexity call/credit. ────
+    if (matches.length === 0 && possible.length === 0) {
+      const balanceCheck = await checkGenerationBalance(app, usage.orgId, "resolve-bill");
+      if (balanceCheck.blocked) {
+        return new Response(JSON.stringify(generationBlockedPayload(balanceCheck.balance)), { status: 402, headers: corsHeaders(req) });
+      }
+      if (balanceCheck.warning) creditWarning = generationWarningPayload(balanceCheck.balance);
+
+      let raw;
+      try {
+        raw = await callPerplexity({ system: reformulateSystemPrompt(level, state), query, maxTokens: 200 });
+      } catch (err) {
+        console.error("[resolve-bill] Perplexity reformulation call failed:", err.message);
+        // Fail into "no results" rather than a hard error — the raw search
+        // already genuinely ran and found nothing; a reformulation
+        // service hiccup shouldn't turn into a 502 for the whole request.
+        return new Response(JSON.stringify({ success: true, bills: [], reason: "No matching bills found for that search." }), { status: 200, headers: corsHeaders(req) });
+      }
+
+      if (raw.usage) {
+        console.log(`[resolve-bill] token_usage: uid=${uid} prompt_tokens=${raw.usage.prompt_tokens} completion_tokens=${raw.usage.completion_tokens}`);
+        await debitGenerationCredits(app, {
+          orgId: usage.orgId,
+          uid,
+          functionName: "resolve-bill",
+          inputTokens: raw.usage.prompt_tokens,
+          outputTokens: raw.usage.completion_tokens,
+        });
+      }
+
+      const reformulated = extractPerplexityText(raw).trim();
+      if (reformulated) {
+        try {
+          rawResults = await legiscanSearch(searchState, reformulated);
+          ({ matches, possible } = tierAndSort(rawResults));
+        } catch (err) {
+          console.error("[resolve-bill] LegiScan retry search failed:", err.message);
+        }
+      }
+
+    }
+    if (usage.warning) usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
+
+    const combined = [
+      ...matches.slice(0, RESULT_CAP).map(r => toResponseShape(r, level, "match")),
+    ];
+    if (combined.length < RESULT_CAP) {
+      combined.push(...possible.slice(0, RESULT_CAP - combined.length).map(r => toResponseShape(r, level, "possible")));
     }
 
-    // ── Verification pass — see file header's "VERIFICATION STEP" note.
-    // Every bill mode="single" or mode="list" is about to return gets
-    // checked against the real source before being shown: dropped if it
-    // doesn't actually exist, title replaced with the real one if it does.
-    // This is what actually catches Perplexity's confident-but-wrong
-    // guesses, not just the prompt wording above. ─────────────────────────
-    if (resolved.mode === "single") {
-      const check = await verifyBillExists(resolved.bill);
-      if (!check.verified) {
-        console.warn(`[resolve-bill] single-mode bill failed verification, treating as not found:`, JSON.stringify(resolved.bill));
-        resolved = { mode: "none", reason: "Couldn't verify that bill actually exists — try naming it more specifically." };
-      } else {
-        resolved.bill.title = check.realTitle; // real title wins over Perplexity's own wording, even if the bill was real
-        resolved.bill.summary = check.realSummary; // same for summary — see the real bug this fixed: a real title next to Perplexity's still-unverified (and in the confirmed incident, still-WRONG) original summary was worse than showing no summary at all
-      }
-    } else if (resolved.mode === "list") {
-      const checks = await Promise.all(resolved.bills.map(b => verifyBillExists(b)));
-      const verifiedBills = resolved.bills
-        .map((b, i) => checks[i].verified ? { ...b, title: checks[i].realTitle, summary: checks[i].realSummary } : null)
-        .filter(Boolean);
-      const droppedCount = resolved.bills.length - verifiedBills.length;
-      if (droppedCount > 0) {
-        console.warn(`[resolve-bill] dropped ${droppedCount} of ${resolved.bills.length} list-mode suggestions that failed verification.`);
-      }
-      if (verifiedBills.length === 0) {
-        resolved = { mode: "none", reason: "Found some possible matches, but none of them checked out against the real bill records. Try rephrasing the search." };
-      } else {
-        resolved = { mode: "list", bills: verifiedBills };
-      }
-    }
-
-    // ── Credit debit — mind the Perplexity/Anthropic field-name mismatch,
-    // see perplexity-search.mjs's header for why this matters ───────────
-    if (raw.usage) {
-      console.log(`[resolve-bill] token_usage: uid=${uid} prompt_tokens=${raw.usage.prompt_tokens} completion_tokens=${raw.usage.completion_tokens}`);
-      await debitGenerationCredits(app, {
-        orgId: usage.orgId,
-        uid,
-        functionName: "resolve-bill",
-        inputTokens: raw.usage.prompt_tokens,
-        outputTokens: raw.usage.completion_tokens,
-      });
-    }
-
-    const responseBody = { success: true, ...resolved };
-    if (balanceCheck.warning) responseBody.creditWarning = generationWarningPayload(balanceCheck.balance);
-    if (usage.warning) responseBody.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
+    const responseBody = { success: true, bills: combined };
+    if (combined.length === 0) responseBody.reason = "No matching bills found for that search. Try different wording, or the bill's official name if you know it.";
+    if (creditWarning) responseBody.creditWarning = creditWarning;
+    if (usageWarning) responseBody.usageWarning = usageWarning;
 
     return new Response(JSON.stringify(responseBody), { status: 200, headers: corsHeaders(req) });
 
