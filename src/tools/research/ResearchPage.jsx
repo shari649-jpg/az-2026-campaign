@@ -48,6 +48,19 @@ const TABS = [
 
 export default function ResearchPage() {
   const [activeTab, setActiveTab] = useState('search');
+  // Which tabs have ever been opened — mounted once, then kept alive
+  // (hidden via CSS, never unmounted) so switching tabs preserves each
+  // one's own search results/state instead of resetting on every switch.
+  // Lazy: a tab that's never clicked never mounts, so its on-mount data
+  // fetch never fires — only paying for tabs actually used.
+  const [visitedTabs, setVisitedTabs] = useState(new Set(['search']));
+
+  function selectTab(id) {
+    setActiveTab(id);
+    if (!visitedTabs.has(id)) {
+      setVisitedTabs(prev => new Set(prev).add(id));
+    }
+  }
 
   return (
     <div style={{ fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: B.text }}>
@@ -82,7 +95,7 @@ export default function ResearchPage() {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => selectTab(tab.id)}
               style={{
                 flex: 1,
                 minWidth: 180,
@@ -107,12 +120,14 @@ export default function ResearchPage() {
         })}
       </div>
 
-      {/* Tab content */}
-      {activeTab === 'search' && <CandidateQuery />}
-      {activeTab === 'races'  && <RaceComparison />}
-      {activeTab === 'geo'    && <DistrictProfiles />}
-      {activeTab === 'issues' && <IssuesPage />}
-      {activeTab === 'billLookup' && <BillLookup />}
+      {/* Tab content — each tab mounts on first visit, then stays mounted
+          (hidden via CSS display:none rather than unmounted) so its state
+          survives switching to another tab and back. */}
+      {visitedTabs.has('search') && <div style={{ display: activeTab === 'search' ? 'block' : 'none' }}><CandidateQuery /></div>}
+      {visitedTabs.has('races') && <div style={{ display: activeTab === 'races' ? 'block' : 'none' }}><RaceComparison /></div>}
+      {visitedTabs.has('geo') && <div style={{ display: activeTab === 'geo' ? 'block' : 'none' }}><DistrictProfiles /></div>}
+      {visitedTabs.has('issues') && <div style={{ display: activeTab === 'issues' ? 'block' : 'none' }}><IssuesPage /></div>}
+      {visitedTabs.has('billLookup') && <div style={{ display: activeTab === 'billLookup' ? 'block' : 'none' }}><BillLookup /></div>}
     </div>
   );
 }
