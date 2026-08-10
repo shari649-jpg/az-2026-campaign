@@ -67,6 +67,10 @@ export default function AdminPage() {
   const [confirmRemoveWaitlistId, setConfirmRemoveWaitlistId] = useState(null); // waitlistId pending remove confirmation
   const [removingWaitlistId, setRemovingWaitlistId] = useState(null); // waitlistId currently mid delete call
   const [showRegistered, setShowRegistered] = useState(false); // hide completed registrations by default
+  // One org selection per pending org-track waitlist entry, keyed by
+  // waitlistId — the Admin picks the real orgId here before an org-track
+  // invite can be sent (see send-invite.mjs / provision-account.mjs).
+  const [inviteOrgChoice, setInviteOrgChoice] = useState({});
   const [editingUid, setEditingUid] = useState(null); // uid currently in edit mode
   const [editForm, setEditForm]     = useState({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [] });
   const [detailsUid, setDetailsUid] = useState(null); // uid currently shown in the read-only details modal
@@ -94,6 +98,18 @@ export default function AdminPage() {
   const [orgs, setOrgs]               = useState([]);
   const [orgsLoaded, setOrgsLoaded]   = useState(false);
   const [orgsLoading, setOrgsLoading] = useState(false);
+  // Individual users each get their own real orgs/{uid} doc ("org of one",
+  // Aug 2026) so the existing credit/rate-limit code works unmodified for
+  // them too — but that means `orgs` now contains two very different
+  // kinds of doc, and anywhere this app shows a picker of "which
+  // organization" (research visibility, sending an org-track invite),
+  // it should only ever offer real, multi-member coalitions, not a list
+  // cluttered with every individual's personal org. `!== "individual"`
+  // (not `=== "coalition"`) is deliberate — az-coalition and dem-cast
+  // predate this field entirely and have no `kind` set, so a strict
+  // equality check would incorrectly hide them; this fails open the same
+  // way `active !== false` does elsewhere in this app.
+  const coalitionOrgs = orgs.filter(o => o.kind !== "individual");
   const [addonSaving, setAddonSaving] = useState(null); // orgId currently mid addon-toggle call
   // One grant-form's worth of state per org row, keyed by orgId, so
   // multiple rows can have independent in-progress forms without
@@ -149,6 +165,7 @@ export default function AdminPage() {
   useEffect(() => { if (activeTab === "orgs" && !orgsLoaded) fetchOrgs(); }, [activeTab]);
   useEffect(() => { if (activeTab === "candidates" && !candidatesLoaded) fetchCandidates(); }, [activeTab]);
   useEffect(() => { if (activeTab === "candidates" && !orgsLoaded && !orgsLoading) fetchOrgs(); }, [activeTab]);
+  useEffect(() => { if (activeTab === "waitlist" && !orgsLoaded && !orgsLoading) fetchOrgs(); }, [activeTab]);
   // Research→Admin deep link (Aug 8 2026 addition) — CandidateQuery.jsx and
   // RaceComparison.jsx now link a candidate's name straight to
   // /admin?tab=candidates&edit=<id> for Managers/Admins, since that page is
@@ -770,6 +787,17 @@ export default function AdminPage() {
   };
 
   const handleSendInvite = async (entry) => {
+    // Org-track entries need a real orgId chosen first — resolved by the
+    // Admin from the free-text `organization` field, after actually
+    // confirming with that org (see WaitlistPage.jsx / this file's header
+    // note on inviteOrgChoice). Never inferred automatically.
+    const accountType = entry.accountType === "org" ? "org" : "individual";
+    const chosenOrgId = inviteOrgChoice[entry.id];
+    if (accountType === "org" && !chosenOrgId) {
+      notify("Pick which organization to add them to before sending the invite.", "err");
+      return;
+    }
+
     setInviting(entry.id);
     try {
       const idToken = await auth.currentUser.getIdToken();
@@ -781,6 +809,8 @@ export default function AdminPage() {
           waitlistId: entry.id,
           email:      entry.email,
           fullName:   entry.fullName,
+          accountType,
+          ...(accountType === "org" ? { orgId: chosenOrgId } : {}),
         }),
       });
       const data = await res.json();
@@ -1426,13 +1456,13 @@ export default function AdminPage() {
                               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#888", marginBottom: 8 }}>
                                 Research: extra org visibility
                               </div>
-                              {orgsLoading && !orgs.length ? (
+                              {orgsLoading && !coalitionOrgs.length ? (
                                 <div style={{ fontSize: 13, color: "#999" }}>Loading orgs…</div>
-                              ) : orgs.length === 0 ? (
+                              ) : coalitionOrgs.length === 0 ? (
                                 <div style={{ fontSize: 13, color: "#999" }}>No orgs found.</div>
                               ) : (
                                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                  {orgs.map(org => (
+                                  {coalitionOrgs.map(org => (
                                     <label key={org.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: CHARCOAL, cursor: "pointer" }}>
                                       <input
                                         type="checkbox"
@@ -1977,7 +2007,7 @@ export default function AdminPage() {
                     style={{ padding: "12px 14px", fontSize: 14, border: "2px solid #ccc", borderRadius: 10, fontFamily: "inherit", color: CHARCOAL, background: BG, cursor: "pointer" }}
                   >
                     <option value="">All orgs</option>
-                    {orgs.map(org => (
+                    {coalitionOrgs.map(org => (
                       <option key={org.id} value={org.id}>{org.name || org.id}</option>
                     ))}
                   </select>
@@ -2180,6 +2210,11 @@ export default function AdminPage() {
                           </span>
                         </div>
                         <div style={{ fontSize: 13, color: "#888", marginBottom: 4 }}>{entry.email}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", background: entry.accountType === "org" ? "#eef4ff" : "#f3f0ff", color: entry.accountType === "org" ? "#3454b4" : "#6b3fa0", border: `1px solid ${entry.accountType === "org" ? "#b8cdf5" : "#d6c5f0"}`, padding: "1px 7px", borderRadius: 4 }}>
+                            {entry.accountType === "org" ? "Org request" : "Individual"}
+                          </span>
+                        </div>
                         {entry.organization && (
                           <div style={{ fontSize: 13, color: CHARCOAL, marginBottom: 4 }}>🏢 {entry.organization}</div>
                         )}
@@ -2202,15 +2237,28 @@ export default function AdminPage() {
 
                       {/* Action */}
                       <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
+                        {canSend && entry.accountType === "org" && (
+                          <select
+                            value={inviteOrgChoice[entry.id] || ""}
+                            onChange={e => setInviteOrgChoice(prev => ({ ...prev, [entry.id]: e.target.value }))}
+                            style={{ padding: "8px 10px", fontSize: 13, border: "1.5px solid #ccc", borderRadius: 6, fontFamily: "inherit", color: CHARCOAL, background: BG, cursor: "pointer" }}
+                          >
+                            <option value="">Add to which org?</option>
+                            {coalitionOrgs.map(org => (
+                              <option key={org.id} value={org.id}>{org.name || org.id}</option>
+                            ))}
+                          </select>
+                        )}
                         {canSend ? (
                           <button
                             onClick={() => handleSendInvite(entry)}
-                            disabled={isInviting}
+                            disabled={isInviting || (entry.accountType === "org" && !inviteOrgChoice[entry.id])}
                             style={{
                               background: isInviting ? "#ccc" : TEAL, color: "#fff",
                               border: "none", borderRadius: 8, padding: "10px 20px",
                               fontSize: 14, fontWeight: 700, fontFamily: "inherit",
                               cursor: isInviting ? "not-allowed" : "pointer",
+                              opacity: (entry.accountType === "org" && !inviteOrgChoice[entry.id]) ? 0.5 : 1,
                               whiteSpace: "nowrap",
                             }}
                           >
@@ -2418,13 +2466,13 @@ export default function AdminPage() {
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#888", marginBottom: 8 }}>
                   Focus Org IDs — which orgs prioritize this candidate
                 </div>
-                {orgsLoading && !orgs.length ? (
+                {orgsLoading && !coalitionOrgs.length ? (
                   <div style={{ fontSize: 13, color: "#999" }}>Loading orgs…</div>
-                ) : orgs.length === 0 ? (
+                ) : coalitionOrgs.length === 0 ? (
                   <div style={{ fontSize: 13, color: "#999" }}>No orgs found.</div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {orgs.map(org => {
+                    {coalitionOrgs.map(org => {
                       const checked = Array.isArray(editingCandidate.focusOrgIds) && editingCandidate.focusOrgIds.includes(org.id);
                       const canToggle = canToggleFocusOrg(org.id);
                       return (
