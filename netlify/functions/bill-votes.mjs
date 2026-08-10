@@ -1,47 +1,46 @@
 // netlify/functions/bill-votes.mjs
 //
-// WHAT THIS DOES
+// WHAT THIS DOES (rearchitected Aug 2026 — LegiScan-only, bill_id-driven)
 // ────────────────────────────────────────────────────────────────────────
 // Second half of the bill-lookup feature (resolve-bill.mjs is the first
-// half — it turns free text into a bill identifier). Given
-// { congress, billType, billNumber }, this:
+// half — it turns free text into a real, already-verified LegiScan
+// bill_id via search, not a guessed identifier). Given { billId, level,
+// state }, this:
 //
-//   1. Pulls the bill's own record (title, sponsor, latest action) AND its
-//      official CRS subject/policy-area tags from Congress.gov — kept from
-//      the original build, still free, still working, still the
-//      authoritative source for that specific data.
-//   2. Pulls the ACTUAL VOTE BREAKDOWN from LegiScan instead of
-//      Congress.gov — see "WHY LEGISCAN, NOT CONGRESS.GOV, FOR VOTES"
-//      below. Covers BOTH House and Senate, unlike the original
-//      Congress.gov-only version of this file.
+//   1. Pulls the bill's own record (title, sponsor, full status history,
+//      LegiScan's own subject tags) directly from LegiScan's getBill.
+//      Federal and state are now fully symmetric — both LegiScan-only. See
+//      "CONGRESS.GOV IS NO LONGER USED HERE" below for why.
+//   2. Pulls the ACTUAL VOTE BREAKDOWN, also from LegiScan. Covers both
+//      House and Senate uniformly, for both federal and state.
 //
-// WHY LEGISCAN, NOT CONGRESS.GOV, FOR VOTES (Aug 2026 swap)
+// CONGRESS.GOV IS NO LONGER USED HERE (Aug 2026 decision)
 // ────────────────────────────────────────────────────────────────────────
-// The original version of this file pulled votes from Congress.gov's beta
-// House Roll Call Vote endpoints. Real, confirmed limitations of that
-// approach: House-only (Congress.gov's API has never had Senate roll-call
-// data at all — the linked source, senate.gov, currently blocks
-// programmatic access outright), and only covers the 118th Congress
-// onward (2023+). LegiScan's vote data covers both chambers uniformly,
-// with no beta-endpoint instability — confirmed by cross-checking real
-// vote counts (H.R.1 / HB1, Roll Call #190: 218-214, Passed) against both
-// sources independently before making this swap, not just going on
-// LegiScan's own marketing claims.
+// Previously this file called Congress.gov for federal bill detail and
+// the official CRS subject/policy-area tag, keeping LegiScan only for
+// votes. That's gone: LegiScan tracks Congress under its own "US"
+// jurisdiction code with the same schema states use, so there's no longer
+// a reason to maintain two data sources or the billType/congress <->
+// LegiScan-prefix translation between them (a real, confirmed trap in the
+// old version — Congress.gov's "H.R." became LegiScan's "HB", while
+// LegiScan's OWN "HR" meant something else entirely, House Resolution).
+// Direct decision: LegiScan's own subject tags cover the same
+// informational role the CRS Policy Area tag did (a display label on the
+// bill detail page); nothing in this feature used CRS tags for search or
+// candidate matching, so nothing functional is lost. CONGRESS_API_KEY is
+// unused by this feature now.
 //
-// A REAL NAMING TRAP, CONFIRMED AGAINST LIVE DATA — READ BEFORE TOUCHING
-// THE BILLTYPE TRANSLATION BELOW
+// bill_id COMES DIRECTLY FROM SEARCH — NO MORE SESSION-GUESSING
 // ────────────────────────────────────────────────────────────────────────
-// LegiScan's bill-number prefixes do NOT match Congress.gov's billType
-// codes one-to-one, and one of them is a genuine trap: Congress.gov's
-// official "H.R." (a House BILL) becomes LegiScan's "HB" prefix — but
-// LegiScan's OWN "HR" prefix means something completely different (a
-// House RESOLUTION, a non-binding measure). Confirmed directly: H.R. 1
-// (the "One Big Beautiful Bill Act", Congress.gov billType "HR") is
-// LegiScan bill number "HB1", not "HR1" — verified against LegiScan's own
-// public bill page, which also cross-validated to the exact same Roll
-// Call #190 (218-214, Passed) Congress.gov showed. See
-// BILLTYPE_TO_LEGISCAN_PREFIX below — do not "simplify" this mapping
-// without re-reading this note.
+// The old version had to guess which LegiScan session a bill lived in
+// (a state can have more than one session tagged to the same calendar
+// year) by scanning master lists. That's gone too: resolve-bill.mjs's
+// search already returns a definitive real bill_id, and LegiScan's own
+// getBill response includes session_id directly on the record — so this
+// file just calls getBill(billId) once and reads session_id off the
+// result to fetch the chamber roster. One real API call fewer per
+// request, and a whole class of "which session" ambiguity removed
+// structurally rather than defended against.
 //
 // THE getPerson-PER-VOTER TRAP — WHY getSessionPeople IS USED INSTEAD
 // ────────────────────────────────────────────────────────────────────────
@@ -68,28 +67,27 @@
 // whatever `district` actually looks like for a federal record, and logs
 // a SAMPLE of raw person records on first use so the real format is
 // visible in Netlify's logs rather than guessed at blind. Expect this may
-// need one calibration pass against real logged output, the same pattern
-// that worked for nailing down Congress.gov's field names earlier in this
-// build — flagged honestly rather than promised to just work.
+// need one calibration pass against real logged output — flagged honestly
+// rather than promised to just work.
 //
-// COST — LEGISCAN AND CONGRESS.GOV ARE BOTH FREE
+// COST — LEGISCAN IS FREE
 // ────────────────────────────────────────────────────────────────────────
-// No generation-credit gate here, no debiting — both APIs are free tier.
+// No generation-credit gate here, no debiting — LegiScan is free tier.
 // Still passes through the same daily per-user checkAndIncrementRateLimit
 // as every other tool, purely as an abuse guard, not a cost control.
 //
 // SETUP REQUIRED
 // ────────────────────────────────────────────────────────────────────────
-// 1. CONGRESS_API_KEY — already set (unchanged from the original build).
-// 2. LEGISCAN_API_KEY — new. Free self-serve signup at legiscan.com/legiscan
-//    (requires a free "OneVote" account). 30,000 queries/month.
+// LEGISCAN_API_KEY — free self-serve signup at legiscan.com/legiscan
+// (requires a free "OneVote" account). 30,000 queries/month.
+// CONGRESS_API_KEY is no longer required by this feature.
 //
 // Modern Netlify Functions runtime (ESM).
 
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
-import { congressFetch, legiscanFetch, BILLTYPE_TO_LEGISCAN_PREFIX, congressToStartYear, findLegiscanSessionIds, findLegiscanBill } from "./legislative-lookup.mjs";
+import { legiscanFetch } from "./legislative-lookup.mjs";
 
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
@@ -117,10 +115,6 @@ async function requireSignedIn(app, idToken) {
   const decoded = await admin.auth(app).verifyIdToken(idToken);
   return decoded.uid;
 }
-
-// ── Congress.gov + LegiScan fetch/lookup helpers — shared with
-// resolve-bill.mjs's verification step, imported rather than duplicated
-// (see legislative-lookup.mjs's header for why that matters) ───────────
 
 // ── Federal candidate matching ──────────────────────────────────────────
 // Broader than the old House-only version — LegiScan covers both
@@ -283,23 +277,13 @@ export default async function (req) {
   try {
     const body = await req.json();
     const idToken = headerToken || body.idToken;
-    const { billType, billNumber, candidateId } = body;
+    const { billId, candidateId } = body;
     const level = body.level === "state" ? "state" : "federal";
     const stateParam = (body.state || "AZ").toUpperCase();
-    const congress = body.congress;
-    const year = body.year;
 
-    if (!billType || !Number.isInteger(billNumber)) {
-      return new Response(JSON.stringify({ success: false, error: "billType and billNumber are required." }), { status: 400, headers: corsHeaders(req) });
+    if (!Number.isInteger(billId)) {
+      return new Response(JSON.stringify({ success: false, error: "billId is required." }), { status: 400, headers: corsHeaders(req) });
     }
-    if (level === "federal" && !Number.isInteger(congress)) {
-      return new Response(JSON.stringify({ success: false, error: "congress is required for a federal lookup." }), { status: 400, headers: corsHeaders(req) });
-    }
-    if (level === "state" && !Number.isInteger(year)) {
-      return new Response(JSON.stringify({ success: false, error: "year is required for a state lookup." }), { status: 400, headers: corsHeaders(req) });
-    }
-    const billTypeUpper = String(billType).toUpperCase();
-    const billTypePath = billTypeUpper.toLowerCase(); // Congress.gov URL paths use lowercase (federal only)
 
     // ── Auth ────────────────────────────────────────────────────────────
     let uid;
@@ -309,64 +293,52 @@ export default async function (req) {
       return new Response(JSON.stringify({ success: false, error: "You must be signed in to use this tool." }), { status: 401, headers: corsHeaders(req) });
     }
 
-    // ── Rate limit (abuse guard only — both APIs are free) ────────────────
+    // ── Rate limit (abuse guard only — LegiScan is free) ──────────────────
     const usage = await checkAndIncrementRateLimit(app, uid);
     if (usage.blocked) {
       return new Response(JSON.stringify(usage.blockedPayload), { status: 429, headers: corsHeaders(req) });
     }
 
-    // ── Bill detail + subjects — Congress.gov for federal (official CRS
-    // tags), LegiScan's own bill record for state (Congress.gov is a
-    // federal-only API, has zero state legislature data at all) ──────────
-    let billForResponse, policyArea = null, legislativeSubjects = [];
-    let legiscanSessionState, legiscanTargetYear, legiscanPrefix;
-
-    if (level === "federal") {
-      const [billResult, subjectsResult, summariesResult, actionsResult] = await Promise.all([
-        congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}`),
-        congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}/subjects`),
-        congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}/summaries`),
-        congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}/actions`, { limit: 250 }),
-      ]);
-      if (!billResult?.bill) {
-        return new Response(JSON.stringify({ success: false, error: `No bill found for ${billType} ${billNumber}, ${congress}th Congress.` }), { status: 404, headers: corsHeaders(req) });
-      }
-      const bill = billResult.bill;
-      policyArea = subjectsResult?.subjects?.policyArea?.name || null;
-      legislativeSubjects = (subjectsResult?.subjects?.legislativeSubjects || []).map(s => s.name);
-      // CRS summaries accumulate one per major legislative stage (as
-      // introduced, as passed House, etc.) — the most recent one is the
-      // most complete/current description of what the bill actually does.
-      const summaries = summariesResult?.summaries || [];
-      const latestSummary = summaries.length > 0 ? summaries[summaries.length - 1] : null;
-      // Cap at the 30 most recent actions for a readable timeline, not a
-      // full multi-hundred-entry procedural dump.
-      const history = (actionsResult?.actions || []).slice(0, 30).map(a => ({ date: a.actionDate, action: a.text, chamber: null }));
-      billForResponse = {
-        level: "federal",
-        congress: bill.congress,
-        billType: (bill.type || billType).toUpperCase(),
-        billNumber: bill.number,
-        title: bill.title,
-        summary: latestSummary ? latestSummary.text.replace(/<[^>]+>/g, "") : null, // CRS summary text sometimes contains basic HTML tags — stripped for plain display
-        sponsor: bill.sponsors?.[0] ? { name: bill.sponsors[0].fullName, bioguideId: bill.sponsors[0].bioguideId } : null,
-        latestAction: bill.latestAction ? { date: bill.latestAction.actionDate, text: bill.latestAction.text } : null,
-        introducedDate: bill.introducedDate || null,
-        history,
-        url: bill.url || null,
-      };
-      legiscanSessionState = "US";
-      legiscanTargetYear = congressToStartYear(congress);
-      legiscanPrefix = BILLTYPE_TO_LEGISCAN_PREFIX[billTypeUpper];
-    } else {
-      // State mode — bill detail comes entirely from LegiScan below, since
-      // there's no Congress.gov equivalent for state legislation. Deferred
-      // until after we've resolved the LegiScan bill_id (below), so
-      // billForResponse gets filled in there instead of here.
-      legiscanSessionState = stateParam;
-      legiscanTargetYear = year;
-      legiscanPrefix = billTypeUpper; // already LegiScan-native, no translation needed for state bills
+    // ── Bill detail — LegiScan only now, federal and state alike. billId
+    // already came from a real search hit (resolve-bill.mjs), so there's
+    // no session-guessing needed: getBill returns session_id directly on
+    // the record, used below to pull the chamber roster in one call. ─────
+    const billDetailResult = await legiscanFetch("getBill", { id: billId });
+    const legiscanBill = billDetailResult?.bill;
+    if (!legiscanBill) {
+      return new Response(JSON.stringify({ success: false, error: `No bill found for LegiScan bill_id ${billId}.` }), { status: 404, headers: corsHeaders(req) });
     }
+    // One-time diagnostic: confirm the real shape of getBill's top-level
+    // fields (session_id, session.session_name, etc.) against production
+    // output — same "log real sample, calibrate after" convention used
+    // elsewhere in this file, not blindly assumed.
+    console.log(`[bill-votes] getBill sample for billId=${billId}:`, JSON.stringify({ session_id: legiscanBill.session_id, session: legiscanBill.session, bill_type: legiscanBill.bill_type, bill_number: legiscanBill.bill_number, state: legiscanBill.state }));
+    const sessionId = legiscanBill.session_id;
+    const sessionName = legiscanBill.session?.session_name || legiscanBill.session?.session_title || null;
+
+    // Full status history — no cap, direct request ("all actions on the
+    // bill like addendums, etc."), unlike the old federal path's 30-action
+    // cap from Congress.gov. LegiScan's own history array is already what
+    // state bills showed unmodified; federal now gets the same treatment.
+    const history = (legiscanBill.history || []).map(h => ({ date: h.date, action: h.action, chamber: h.chamber === "S" ? "Senate" : h.chamber === "H" ? "House" : null }));
+    const billForResponse = {
+      level,
+      state: legiscanBill.state || (level === "federal" ? "US" : stateParam),
+      billId: legiscanBill.bill_id,
+      billType: legiscanBill.bill_type || null,
+      billNumber: legiscanBill.bill_number || null,
+      sessionName,
+      title: legiscanBill.title,
+      summary: legiscanBill.description || null,
+      sponsor: legiscanBill.sponsors?.[0] ? { name: legiscanBill.sponsors[0].name, party: legiscanBill.sponsors[0].party } : null,
+      latestAction: history.length > 0 ? history[history.length - 1] : null,
+      introducedDate: history.length > 0 ? history[0].date : null,
+      history,
+      url: legiscanBill.url || null,
+    };
+    // LegiScan's own multi-tag subject list — see file header on why this
+    // replaces the official CRS Policy Area tag for federal bills too now.
+    const legislativeSubjects = (legiscanBill.subjects || []).map(s => s.subject_name);
 
     // ── This org's candidates — federal or this state's legislature ───────
     const db = admin.firestore(app);
@@ -384,152 +356,107 @@ export default async function (req) {
     }
     const candidates = candidateDocs.map(d => ({ id: d.id, ...d.data() }));
 
-    // ── LegiScan: resolve bill, pull real votes (shared by both levels) ────
+    // ── LegiScan: pull real votes ───────────────────────────────────────
     let rollCalls = [];
     let legiscanNote = null;
 
-    if (!legiscanPrefix) {
-      legiscanNote = `Vote lookup isn't supported for bill type ${billTypeUpper} yet.`;
+    if (!sessionId) {
+      legiscanNote = "This bill's record is missing a LegiScan session reference — can't look up the chamber roster to match votes.";
     } else {
-      // Searches EVERY session matching the target year, not just one —
-      // see findLegiscanSessionIds's header note on regular + special
-      // sessions sharing the same year.
-      const sessionIds = await findLegiscanSessionIds(legiscanSessionState, legiscanTargetYear);
-      if (sessionIds.length === 0) {
-        legiscanNote = `Couldn't find a matching LegiScan session for ${level === "federal" ? `the ${congress}th Congress` : `${stateParam} ${year}`}.`;
-      } else {
-        const legiscanBillNumber = `${legiscanPrefix}${billNumber}`;
-        const found = await findLegiscanBill(sessionIds, legiscanBillNumber);
-        if (!found) {
-          legiscanNote = `Couldn't find bill ${legiscanBillNumber} in LegiScan's records for ${level === "federal" ? `the ${congress}th Congress` : `${stateParam} ${year}`}. If this is a real bill, double-check the number and year — Perplexity's guess may be slightly off.`;
-        } else {
-          const { sessionId, billId: legiscanBillId } = found;
-          const [billDetailResult, peopleMap] = await Promise.all([
-            legiscanFetch("getBill", { id: legiscanBillId }),
-            buildLegiscanPeopleMap(sessionId),
-          ]);
-          const legiscanBill = billDetailResult?.bill;
-
-          // State mode: fill in billForResponse now that we have LegiScan's
-          // own bill record — the only detail source available for states.
-          if (level === "state" && legiscanBill) {
-            const history = (legiscanBill.history || []).map(h => ({ date: h.date, action: h.action, chamber: h.chamber === "S" ? "Senate" : h.chamber === "H" ? "House" : null }));
-            billForResponse = {
-              level: "state",
-              state: stateParam,
-              year,
-              billType: billTypeUpper,
-              billNumber,
-              title: legiscanBill.title,
-              summary: legiscanBill.description || null,
-              sponsor: legiscanBill.sponsors?.[0] ? { name: legiscanBill.sponsors[0].name, party: legiscanBill.sponsors[0].party } : null,
-              latestAction: history.length > 0 ? history[history.length - 1] : null,
-              introducedDate: history.length > 0 ? history[0].date : null,
-              history,
-              url: legiscanBill.url || null,
-            };
-            legislativeSubjects = (legiscanBill.subjects || []).map(s => s.subject_name);
-            // No policyArea equivalent for state bills — that's a
-            // Congress.gov/CRS-specific single-category concept, LegiScan
-            // only has its own multi-tag subjects list.
-          }
-
-          const votesList = legiscanBill?.votes || [];
-          for (const v of votesList) {
-            const rollCallResult = await legiscanFetch("getRollCall", { id: v.roll_call_id });
-            const rc = rollCallResult?.roll_call;
-            if (!rc) continue;
-
-            // Some LegiScan "roll call" entries are procedural committee
-            // actions with NO individual member positions attached at all
-            // (a 0-0 tally, an empty votes[] array) — a voice vote or
-            // unanimous-consent action, not a missing-data bug. Flagging
-            // this explicitly so the frontend can say "no individual
-            // positions recorded for this action" instead of the
-            // misleading alternative: every single tracked candidate
-            // showing up in a "not in Congress" bucket, which wrongly
-            // implies none of them were serving at the time.
-            const hasIndividualVotes = (rc.votes || []).length > 0;
-
-            // One-time diagnostic per roll call: log the raw district
-            // field for a few real voters in THIS specific committee/
-            // floor vote context. The general getSessionPeople sample
-            // logged earlier reflects the whole chamber roster, which may
-            // not be identical in shape to how individual roll-call voter
-            // records resolve through peopleMap — this confirms the exact
-            // format actually driving the match logic above.
-            if (hasIndividualVotes) {
-              const sample = (rc.votes || []).slice(0, 3).map(vt => ({ people_id: vt.people_id, district: peopleMap[vt.people_id]?.district, role: peopleMap[vt.people_id]?.role, name: peopleMap[vt.people_id]?.name }));
-              console.log(`[bill-votes] roll call ${rc.roll_call_id} voter sample:`, JSON.stringify(sample));
-            }
-
-            const candidateVotes = candidates.map(c => {
-              // Non-incumbents are never even checked against real votes —
-              // see isIncumbent()'s header note above for why. This is the
-              // actual fix, not the district/chamber matching logic itself
-              // (which was already narrow and correct on its own — the bug
-              // was including candidates in the search pool who could
-              // never have cast a real vote in the first place).
-              const voteEntry = isIncumbent(c) ? (rc.votes || []).find(vt => {
-                const person = peopleMap[vt.people_id];
-                return !!matchLegiscanPersonToCandidate(person, [c]);
-              }) : null;
-              return {
-                candidateId: c.id,
-                name: c.name,
-                state: c.state,
-                district: c.district,
-                party: c.party,
-                position: voteEntry ? voteEntry.vote_text : null,
-                notInCongressForThisVote: hasIndividualVotes && !voteEntry,
-              };
-            });
-
-            // Integrity check — a real safety net, not decoration. We
-            // cannot possibly have matched more of our own candidates to
-            // real votes than there were actual voters in this roll call
-            // (each real voter maps to at most one of our candidates,
-            // since district+chamber is unique within a state). If this
-            // ever fires, it means the matching logic has a bug again —
-            // surfaced loudly to the frontend instead of silently
-            // displaying vote positions that can't all be real. This is
-            // exactly the class of bug already found and fixed once in
-            // this file (a tautological state check plus a too-loose
-            // name-substring fallback caused a 6-3-1 real tally to
-            // produce 12+ matched candidates) — this check exists so a
-            // regression of that bug is caught automatically, not by
-            // someone manually counting names against a tally again.
-            const realVoterCount = (rc.votes || []).length;
-            const matchedCount = candidateVotes.filter(cv => cv.position !== null).length;
-            const matchIntegrityWarning = matchedCount > realVoterCount;
-            if (matchIntegrityWarning) {
-              console.error(`[bill-votes] MATCH INTEGRITY FAILURE on roll call ${rc.roll_call_id}: matched ${matchedCount} candidates but only ${realVoterCount} people actually voted. This is impossible and means matchLegiscanPersonToCandidate has a bug.`);
-            }
-
-            rollCalls.push({
-              rollCallId: rc.roll_call_id,
-              chamber: rc.chamber === "S" ? "Senate" : "House",
-              date: rc.date,
-              result: rc.passed ? "Passed" : "Failed",
-              voteQuestion: rc.desc || null,
-              tally: { yea: rc.yea, nay: rc.nay, notVoting: rc.nv, absent: rc.absent },
-              noIndividualVoteData: !hasIndividualVotes,
-              matchIntegrityWarning,
-              candidateVotes,
-            });
-          }
-        }
+      const peopleMap = await buildLegiscanPeopleMap(sessionId);
+      const votesList = legiscanBill.votes || [];
+      if (votesList.length === 0) {
+        legiscanNote = "LegiScan has no recorded roll calls for this bill yet.";
       }
-    }
+      for (const v of votesList) {
+        const rollCallResult = await legiscanFetch("getRollCall", { id: v.roll_call_id });
+        const rc = rollCallResult?.roll_call;
+        if (!rc) continue;
 
-    if (!billForResponse) {
-      return new Response(JSON.stringify({ success: false, error: `Couldn't find ${billType} ${billNumber} for ${level === "federal" ? `the ${congress}th Congress` : `${stateParam} ${year}`}.` }), { status: 404, headers: corsHeaders(req) });
+        // Some LegiScan "roll call" entries are procedural committee
+        // actions with NO individual member positions attached at all
+        // (a 0-0 tally, an empty votes[] array) — a voice vote or
+        // unanimous-consent action, not a missing-data bug. Flagging
+        // this explicitly so the frontend can say "no individual
+        // positions recorded for this action" instead of the
+        // misleading alternative: every single tracked candidate
+        // showing up in a "not in Congress" bucket, which wrongly
+        // implies none of them were serving at the time.
+        const hasIndividualVotes = (rc.votes || []).length > 0;
+
+        // One-time diagnostic per roll call: log the raw district
+        // field for a few real voters in THIS specific committee/
+        // floor vote context. The general getSessionPeople sample
+        // logged earlier reflects the whole chamber roster, which may
+        // not be identical in shape to how individual roll-call voter
+        // records resolve through peopleMap — this confirms the exact
+        // format actually driving the match logic above.
+        if (hasIndividualVotes) {
+          const sample = (rc.votes || []).slice(0, 3).map(vt => ({ people_id: vt.people_id, district: peopleMap[vt.people_id]?.district, role: peopleMap[vt.people_id]?.role, name: peopleMap[vt.people_id]?.name }));
+          console.log(`[bill-votes] roll call ${rc.roll_call_id} voter sample:`, JSON.stringify(sample));
+        }
+
+        const candidateVotes = candidates.map(c => {
+          // Non-incumbents are never even checked against real votes —
+          // see isIncumbent()'s header note above for why. This is the
+          // actual fix, not the district/chamber matching logic itself
+          // (which was already narrow and correct on its own — the bug
+          // was including candidates in the search pool who could
+          // never have cast a real vote in the first place).
+          const voteEntry = isIncumbent(c) ? (rc.votes || []).find(vt => {
+            const person = peopleMap[vt.people_id];
+            return !!matchLegiscanPersonToCandidate(person, [c]);
+          }) : null;
+          return {
+            candidateId: c.id,
+            name: c.name,
+            state: c.state,
+            district: c.district,
+            party: c.party,
+            position: voteEntry ? voteEntry.vote_text : null,
+            notInCongressForThisVote: hasIndividualVotes && !voteEntry,
+          };
+        });
+
+        // Integrity check — a real safety net, not decoration. We
+        // cannot possibly have matched more of our own candidates to
+        // real votes than there were actual voters in this roll call
+        // (each real voter maps to at most one of our candidates,
+        // since district+chamber is unique within a state). If this
+        // ever fires, it means the matching logic has a bug again —
+        // surfaced loudly to the frontend instead of silently
+        // displaying vote positions that can't all be real. This is
+        // exactly the class of bug already found and fixed once in
+        // this file (a tautological state check plus a too-loose
+        // name-substring fallback caused a 6-3-1 real tally to
+        // produce 12+ matched candidates) — this check exists so a
+        // regression of that bug is caught automatically, not by
+        // someone manually counting names against a tally again.
+        const realVoterCount = (rc.votes || []).length;
+        const matchedCount = candidateVotes.filter(cv => cv.position !== null).length;
+        const matchIntegrityWarning = matchedCount > realVoterCount;
+        if (matchIntegrityWarning) {
+          console.error(`[bill-votes] MATCH INTEGRITY FAILURE on roll call ${rc.roll_call_id}: matched ${matchedCount} candidates but only ${realVoterCount} people actually voted. This is impossible and means matchLegiscanPersonToCandidate has a bug.`);
+        }
+
+        rollCalls.push({
+          rollCallId: rc.roll_call_id,
+          chamber: rc.chamber === "S" ? "Senate" : "House",
+          date: rc.date,
+          result: rc.passed ? "Passed" : "Failed",
+          voteQuestion: rc.desc || null,
+          tally: { yea: rc.yea, nay: rc.nay, notVoting: rc.nv, absent: rc.absent },
+          noIndividualVoteData: !hasIndividualVotes,
+          matchIntegrityWarning,
+          candidateVotes,
+        });
+      }
     }
 
     const responseBody = {
       success: true,
       bill: billForResponse,
-      subjects: { policyArea, legislativeSubjects },
+      subjects: { legislativeSubjects },
       rollCalls,
       legiscanNote,
     };
