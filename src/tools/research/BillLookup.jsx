@@ -63,6 +63,7 @@ function CandidateVoteRow({ cv }) {
 }
 
 export default function BillLookup() {
+  const [level, setLevel] = useState('federal'); // 'federal' | 'state' — explicit toggle, not inferred, since a query like "education funding bill" is genuinely ambiguous between the two
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -76,7 +77,7 @@ export default function BillLookup() {
     if (!query.trim()) return;
     setLoading(true); setError(null); setBillList(null); setVotesResult(null);
     try {
-      const resolved = await callFunction('resolve-bill', { query: query.trim() });
+      const resolved = await callFunction('resolve-bill', { query: query.trim(), level, state: 'AZ' });
       if (resolved.mode === 'none') {
         setError(resolved.reason || "Couldn't identify a specific bill from that.");
       } else if (resolved.mode === 'single') {
@@ -93,9 +94,7 @@ export default function BillLookup() {
   async function fetchVotes(bill) {
     setLoading(true); setError(null);
     try {
-      const result = await callFunction('bill-votes', {
-        congress: bill.congress, billType: bill.billType, billNumber: bill.billNumber,
-      });
+      const result = await callFunction('bill-votes', bill); // bill already carries level/congress-or-year/billType/billNumber from resolve-bill's response shape
       setVotesResult(result);
       setExpandedRollCall(-1);
       // billList is deliberately NOT cleared here anymore — kept in memory
@@ -118,16 +117,33 @@ export default function BillLookup() {
       <div style={{ background: `${B.teal}08`, border: `1px solid ${B.teal}25`, borderRadius: 10, padding: '14px 20px', marginBottom: 20 }}>
         <p style={{ fontSize: 16, color: B.textMid, lineHeight: 1.7, margin: 0 }}>
           <strong style={{ color: B.teal }}>Bill Lookup (testing) —</strong>{' '}
-          type a bill name ("CHIPS Act") or an issue ("semiconductor manufacturing"). House votes
-          only for now, and only for the 118th Congress (2023) onward — see notes below results.
+          pick Federal or Arizona State below, then type a bill name or an issue. Covers House and
+          Senate votes for both levels. New this session — flag anything that looks off.
         </p>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        {[{ id: 'federal', label: 'Federal' }, { id: 'state', label: 'Arizona State' }].map(opt => (
+          <button
+            key={opt.id}
+            onClick={() => { setLevel(opt.id); setBillList(null); setVotesResult(null); setError(null); }}
+            style={{
+              padding: '8px 18px', fontSize: 15, fontWeight: 700, borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit',
+              border: `1.5px solid ${level === opt.id ? B.teal : B.border}`,
+              background: level === opt.id ? B.teal : B.surface,
+              color: level === opt.id ? '#fff' : B.textMid,
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
       </div>
 
       <form onSubmit={handleSearch} style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
-          placeholder='e.g. "CHIPS Act" or "semiconductor manufacturing"'
+          placeholder={level === 'state' ? 'e.g. "Prop 400 extension" or "water rights"' : 'e.g. "CHIPS Act" or "semiconductor manufacturing"'}
           disabled={loading}
           style={{ flex: 1, padding: '12px 16px', fontSize: 15, borderRadius: 8, border: `1.5px solid ${B.border}`, fontFamily: 'inherit' }}
         />
@@ -177,7 +193,10 @@ export default function BillLookup() {
           )}
           <div style={{ background: B.surfaceAlt, borderRadius: '10px 10px 0 0', padding: '16px 20px', border: `1px solid ${B.border}`, borderBottom: 'none' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: B.teal, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              {votesResult.bill.billType} {votesResult.bill.billNumber} · {votesResult.bill.congress}th Congress
+              {votesResult.bill.billType} {votesResult.bill.billNumber} ·{' '}
+              {votesResult.bill.level === 'state'
+                ? `${votesResult.bill.state} Legislature, ${votesResult.bill.year}`
+                : `${votesResult.bill.congress}th Congress`}
             </div>
             <h3 style={{ margin: '4px 0 8px', fontSize: 20 }}>{votesResult.bill.title}</h3>
             {votesResult.bill.sponsor && <p style={{ fontSize: 15, color: B.textMid, margin: '0 0 4px' }}>Sponsor: {votesResult.bill.sponsor.name}</p>}
@@ -195,7 +214,12 @@ export default function BillLookup() {
 
           <div style={{ border: `1px solid ${B.border}`, borderRadius: '0 0 10px 10px', padding: 20 }}>
             {votesResult.rollCalls.length === 0 && (
-              <p style={{ color: B.textMid, fontSize: 14 }}>No recorded House votes found on this bill's actions.</p>
+              <p style={{ color: B.textMid, fontSize: 14 }}>No recorded votes found for this bill.</p>
+            )}
+            {votesResult.legiscanNote && (
+              <div style={{ background: '#fff7ed', border: '1px solid #f5c842', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 15, color: '#7a4f00' }}>
+                {votesResult.legiscanNote}
+              </div>
             )}
 
             {votesResult.rollCalls.map((rc, i) => {
@@ -211,28 +235,27 @@ export default function BillLookup() {
                     }}
                   >
                     <span>
-                      <span style={{ fontWeight: 700, fontSize: 16 }}>Roll Call #{rc.rollNumber} — {rc.voteQuestion || 'Vote'}</span>
+                      <span style={{ background: rc.chamber === 'Senate' ? B.gold : B.teal, color: rc.chamber === 'Senate' ? B.charcoal : '#fff', borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 700, marginRight: 8 }}>{rc.chamber}</span>
+                      <span style={{ fontWeight: 700, fontSize: 16 }}>{rc.voteQuestion || 'Vote'}</span>
                       {rc.result && <span style={{ color: rc.result === 'Passed' ? B.green : B.red, fontWeight: 700, fontSize: 16 }}> ({rc.result})</span>}
-                      <span style={{ display: 'block', fontSize: 13, color: B.textMute, marginTop: 2 }}>{rc.date}</span>
+                      <span style={{ display: 'block', fontSize: 13, color: B.textMute, marginTop: 2 }}>
+                        {rc.date} · {rc.tally?.yea ?? '–'} Yea, {rc.tally?.nay ?? '–'} Nay
+                        {rc.tally?.notVoting ? `, ${rc.tally.notVoting} Not Voting` : ''}
+                        {rc.tally?.absent ? `, ${rc.tally.absent} Absent` : ''}
+                      </span>
                     </span>
                     <span style={{ fontSize: 20, color: B.textMid }}>{isOpen ? '▲' : '▼'}</span>
                   </button>
 
                   {isOpen && (
                     <div style={{ padding: '12px 16px', borderTop: `1px solid ${B.border}` }}>
-                      {rc.voteCoverageGap ? (
-                        <div style={{ background: '#fff7ed', border: '1px solid #f5c842', borderRadius: 8, padding: '12px 16px', fontSize: 15, color: '#7a4f00' }}>
-                          This vote happened, but member-level position data isn't available for Congresses before the 118th (2023) — known API limitation, not a bug.
-                        </div>
-                      ) : (
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
-                          <tbody>
-                            {rc.candidateVotes.filter(cv => !cv.notInCongressForThisVote).map((cv, j) => (
-                              <CandidateVoteRow key={j} cv={cv} />
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+                        <tbody>
+                          {rc.candidateVotes.filter(cv => !cv.notInCongressForThisVote).map((cv, j) => (
+                            <CandidateVoteRow key={j} cv={cv} />
+                          ))}
+                        </tbody>
+                      </table>
 
                       {(() => {
                         const notInCongress = rc.candidateVotes.filter(cv => cv.notInCongressForThisVote);
@@ -273,12 +296,6 @@ export default function BillLookup() {
                 </div>
               );
             })}
-
-            {votesResult.senateNote && (
-              <div style={{ background: '#fff7ed', border: '1px solid #f5c842', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#7a4f00' }}>
-                {votesResult.senateNote}
-              </div>
-            )}
           </div>
         </div>
       )}
