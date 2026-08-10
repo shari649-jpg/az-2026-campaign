@@ -140,7 +140,7 @@ export default async function (req) {
   }
 
   try {
-    const { idToken, waitlistId, email, fullName } = await req.json();
+    const { idToken, waitlistId, email, fullName, accountType, orgId } = await req.json();
 
     try {
       await requireAdmin(app, idToken);
@@ -157,6 +157,21 @@ export default async function (req) {
       });
     }
 
+    // accountType ("individual" | "org") + orgId (org only) — Aug 2026
+    // individual-tier addition. Resolved by the Admin on the Waitlist tab,
+    // never inferred. Defaults to "individual" if omitted, matching every
+    // invite sent before this field existed. An "org" invite requires a
+    // real, already-confirmed orgId — this function doesn't validate that
+    // the org actually exists; provision-account.mjs does that check
+    // server-side at registration time, since that's the point that
+    // actually writes it and where a stale/bad orgId would do real harm.
+    const resolvedAccountType = accountType === "org" ? "org" : "individual";
+    if (resolvedAccountType === "org" && !orgId) {
+      return new Response(JSON.stringify({ error: "orgId is required for an org-track invite." }), {
+        status: 400, headers: corsHeaders(req),
+      });
+    }
+
     const token     = randomBytes(32).toString("hex");
     const inviteUrl = `${SITE_URL}/register?token=${token}`;
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
@@ -167,6 +182,8 @@ export default async function (req) {
       email:      email.toLowerCase().trim(),
       fullName:   fullName.trim(),
       waitlistId,
+      accountType: resolvedAccountType,
+      ...(resolvedAccountType === "org" ? { orgId } : {}),
       expiresAt,
       used:       false,
       createdAt:  new Date().toISOString(),
