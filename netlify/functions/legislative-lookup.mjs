@@ -122,7 +122,15 @@ export async function verifyBillExists(bill) {
       const billTypePath = String(bill.billType).toLowerCase();
       const result = await congressFetch(`/bill/${bill.congress}/${billTypePath}/${bill.billNumber}`);
       if (!result?.bill) return { verified: false };
-      return { verified: true, realTitle: result.bill.title };
+      // No cheap official short-description source for federal at this
+      // step (CRS summaries are a separate call, only fetched for a bill
+      // the person actually opens, not for every list candidate — adding
+      // it here would mean up to 6 extra Congress.gov calls per issue
+      // search). realSummary is deliberately null, not Perplexity's
+      // original text — see the real bug this fixed: showing a verified
+      // real title next to an unverified, possibly-wrong summary is worse
+      // than showing no summary at all.
+      return { verified: true, realTitle: result.bill.title, realSummary: null };
     } else {
       const sessionIds = await findLegiscanSessionIds(bill.state, bill.year);
       if (sessionIds.length === 0) return { verified: false };
@@ -131,7 +139,9 @@ export async function verifyBillExists(bill) {
       if (!found) return { verified: false };
       const billResult = await legiscanFetch("getBill", { id: found.billId });
       if (!billResult?.bill) return { verified: false };
-      return { verified: true, realTitle: billResult.bill.title };
+      // LegiScan's own description IS available in this same call, at no
+      // extra request cost — use it as the real summary.
+      return { verified: true, realTitle: billResult.bill.title, realSummary: billResult.bill.description || null };
     }
   } catch (err) {
     console.error(`[legislative-lookup] verifyBillExists error for ${JSON.stringify(bill)}:`, err.message);
