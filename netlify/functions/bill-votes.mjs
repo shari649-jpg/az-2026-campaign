@@ -316,11 +316,34 @@ export default async function (req) {
     const sessionId = legiscanBill.session_id;
     const sessionName = legiscanBill.session?.session_name || legiscanBill.session?.session_title || null;
 
+    // Fetch the chamber roster once, up front — reused both to look up the
+    // sponsor's district (not present on getBill's own abbreviated sponsor
+    // record, confirmed against a real parsed example: sponsors[] there
+    // only carries people_id/party/name/etc, no district — district only
+    // lives on the full person record) and later for vote matching, so
+    // this isn't a second fetch on top of what vote-matching already needed.
+    const peopleMap = sessionId ? await buildLegiscanPeopleMap(sessionId) : {};
+
     // Full status history — no cap, direct request ("all actions on the
     // bill like addendums, etc."), unlike the old federal path's 30-action
     // cap from Congress.gov. LegiScan's own history array is already what
     // state bills showed unmodified; federal now gets the same treatment.
     const history = (legiscanBill.history || []).map(h => ({ date: h.date, action: h.action, chamber: h.chamber === "S" ? "Senate" : h.chamber === "H" ? "House" : null }));
+    const rawSponsor = legiscanBill.sponsors?.[0];
+    const sponsorPerson = rawSponsor ? peopleMap[rawSponsor.people_id] : null;
+
+    // Real links to the actual bill — `url` is LegiScan's own tracking
+    // page (not the bill text itself); the real document lives in
+    // texts[], each entry carrying a `state_link` (the official
+    // government-hosted copy — the authoritative source) and a `mime`
+    // type (varies by jurisdiction — confirmed real examples include
+    // both plain HTML and PDF, so the frontend needs the mime to label
+    // the link honestly, e.g. "View bill text (PDF)"). Most recent
+    // version is the last entry, same convention already used for
+    // history/summary elsewhere in this file.
+    const textsList = legiscanBill.texts || [];
+    const latestText = textsList.length > 0 ? textsList[textsList.length - 1] : null;
+
     const billForResponse = {
       level,
       state: legiscanBill.state || (level === "federal" ? "US" : stateParam),
@@ -330,11 +353,13 @@ export default async function (req) {
       sessionName,
       title: legiscanBill.title,
       summary: legiscanBill.description || null,
-      sponsor: legiscanBill.sponsors?.[0] ? { name: legiscanBill.sponsors[0].name, party: legiscanBill.sponsors[0].party } : null,
+      sponsor: rawSponsor ? { name: rawSponsor.name, party: rawSponsor.party || null, district: sponsorPerson?.district || null } : null,
       latestAction: history.length > 0 ? history[history.length - 1] : null,
       introducedDate: history.length > 0 ? history[0].date : null,
       history,
-      url: legiscanBill.url || null,
+      legiscanUrl: legiscanBill.url || null, // LegiScan's own tracking page
+      textUrl: latestText?.state_link || latestText?.url || null, // the real document — official source preferred
+      textMime: latestText?.mime || null,
     };
     // LegiScan's own multi-tag subject list — see file header on why this
     // replaces the official CRS Policy Area tag for federal bills too now.
@@ -363,7 +388,6 @@ export default async function (req) {
     if (!sessionId) {
       legiscanNote = "This bill's record is missing a LegiScan session reference — can't look up the chamber roster to match votes.";
     } else {
-      const peopleMap = await buildLegiscanPeopleMap(sessionId);
       const votesList = legiscanBill.votes || [];
       if (votesList.length === 0) {
         legiscanNote = "LegiScan has no recorded roll calls for this bill yet.";
