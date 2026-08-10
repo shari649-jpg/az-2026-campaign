@@ -299,11 +299,12 @@ export default async function (req) {
         resolved = { mode: "none", reason: "Couldn't verify that bill actually exists — try naming it more specifically." };
       } else {
         resolved.bill.title = check.realTitle; // real title wins over Perplexity's own wording, even if the bill was real
+        resolved.bill.summary = check.realSummary; // same for summary — see the real bug this fixed: a real title next to Perplexity's still-unverified (and in the confirmed incident, still-WRONG) original summary was worse than showing no summary at all
       }
     } else if (resolved.mode === "list") {
       const checks = await Promise.all(resolved.bills.map(b => verifyBillExists(b)));
       const verifiedBills = resolved.bills
-        .map((b, i) => checks[i].verified ? { ...b, title: checks[i].realTitle } : null)
+        .map((b, i) => checks[i].verified ? { ...b, title: checks[i].realTitle, summary: checks[i].realSummary } : null)
         .filter(Boolean);
       const droppedCount = resolved.bills.length - verifiedBills.length;
       if (droppedCount > 0) {
