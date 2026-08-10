@@ -89,9 +89,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
-
-const CONGRESS_API_BASE = "https://api.congress.gov/v3";
-const LEGISCAN_API_BASE = "https://api.legiscan.com/";
+import { congressFetch, legiscanFetch, BILLTYPE_TO_LEGISCAN_PREFIX, congressToStartYear, findLegiscanSessionIds, findLegiscanBill } from "./legislative-lookup.mjs";
 
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
@@ -120,106 +118,9 @@ async function requireSignedIn(app, idToken) {
   return decoded.uid;
 }
 
-// ── Congress.gov fetch helper (bill detail + official CRS subjects only —
-// vote data no longer comes from here) ─────────────────────────────────
-async function congressFetch(path, params = {}) {
-  const apiKey = process.env.CONGRESS_API_KEY;
-  if (!apiKey) throw new Error("CONGRESS_API_KEY not configured — set it in Netlify's environment variables.");
-  const url = new URL(`${CONGRESS_API_BASE}${path}`);
-  url.searchParams.set("api_key", apiKey);
-  url.searchParams.set("format", "json");
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const response = await fetch(url.toString());
-  if (!response.ok) {
-    if (response.status === 404) return null;
-    const errText = await response.text().catch(() => "");
-    throw new Error(`Congress.gov API error: ${response.status} ${errText}`.trim());
-  }
-  return response.json();
-}
-
-// ── LegiScan fetch helper ───────────────────────────────────────────────
-async function legiscanFetch(op, params = {}) {
-  const apiKey = process.env.LEGISCAN_API_KEY;
-  if (!apiKey) throw new Error("LEGISCAN_API_KEY not configured — set it in Netlify's environment variables.");
-  const url = new URL(LEGISCAN_API_BASE);
-  url.searchParams.set("key", apiKey);
-  url.searchParams.set("op", op);
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const response = await fetch(url.toString());
-  const loggedUrl = url.toString().replace(apiKey, "[REDACTED]");
-  if (!response.ok) {
-    const errText = await response.text().catch(() => "");
-    console.error(`[bill-votes] LegiScan HTTP error ${response.status}: ${loggedUrl} — ${errText}`);
-    throw new Error(`LegiScan API error: ${response.status}`);
-  }
-  const data = await response.json();
-  if (data.status !== "OK") {
-    console.warn(`[bill-votes] LegiScan status=ERROR: ${loggedUrl} — ${JSON.stringify(data.alert)}`);
-    return null;
-  }
-  console.log(`[bill-votes] LegiScan OK: op=${op} ${JSON.stringify(params)}`);
-  return data;
-}
-
-// Congress.gov billType -> LegiScan bill-number prefix. See file header's
-// naming-trap note — HRES maps to LegiScan's "HR", which is NOT the same
-// string as Congress.gov's "HR" (a House Bill). Confirmed against real
-// H.R. 1 -> LegiScan "HB1" cross-validation.
-const BILLTYPE_TO_LEGISCAN_PREFIX = {
-  HR: "HB",
-  S: "SB",
-  HRES: "HR",
-  SRES: "SR",
-  HJRES: "HJR",
-  SJRES: "SJR",
-  HCONRES: "HCR",
-  SCONRES: "SCR",
-};
-
-// A Congress numbered N started in the calendar year 1789 + (N-1)*2 —
-// used to find the matching LegiScan session (LegiScan indexes sessions
-// by year, not by Congress number).
-function congressToStartYear(congress) {
-  return 1789 + (congress - 1) * 2;
-}
-
-// Returns ALL LegiScan session_ids matching a target year, not just the
-// first — AZ (and many states) can have more than one session tagged to
-// the same calendar year (a regular session plus one or more special
-// sessions), and a bill can live in any of them. Taking only the first
-// match was a real bug: it could silently miss a real bill that happened
-// to live in a later-listed session for that same year.
-async function findLegiscanSessionIds(state, targetYear) {
-  const data = await legiscanFetch("getSessionList", { state });
-  const sessions = data?.sessions || [];
-  const matches = sessions.filter(s => s.year_start === targetYear);
-  if (matches.length === 0) {
-    console.warn(`[bill-votes] no LegiScan ${state} session found for target year_start=${targetYear}. Available sessions:`, JSON.stringify(sessions.map(s => ({ session_id: s.session_id, year_start: s.year_start, year_end: s.year_end }))));
-  } else if (matches.length > 1) {
-    console.log(`[bill-votes] ${matches.length} LegiScan ${state} sessions match year ${targetYear} (regular + special?) — will search all: ${matches.map(s => s.session_id).join(",")}`);
-  }
-  return matches.map(s => s.session_id);
-}
-
-// Searches every candidate session (see above) for the bill, in order,
-// returning the FIRST match — including which session it actually lived
-// in, since getSessionPeople below needs that exact session_id, not just
-// "some session from that year."
-async function findLegiscanBill(sessionIds, legiscanBillNumber) {
-  for (const sessionId of sessionIds) {
-    const data = await legiscanFetch("getMasterList", { id: sessionId });
-    const masterlist = data?.masterlist || {};
-    for (const key of Object.keys(masterlist)) {
-      const entry = masterlist[key];
-      if (entry?.number && entry.number.toUpperCase() === legiscanBillNumber.toUpperCase()) {
-        return { sessionId, billId: entry.bill_id };
-      }
-    }
-  }
-  console.warn(`[bill-votes] bill ${legiscanBillNumber} not found across ${sessionIds.length} candidate session(s): ${sessionIds.join(",") || "(none)"}`);
-  return null;
-}
+// ── Congress.gov + LegiScan fetch/lookup helpers — shared with
+// resolve-bill.mjs's verification step, imported rather than duplicated
+// (see legislative-lookup.mjs's header for why that matters) ───────────
 
 // ── Federal candidate matching ──────────────────────────────────────────
 // Broader than the old House-only version — LegiScan covers both
