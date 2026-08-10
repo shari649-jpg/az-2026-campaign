@@ -138,6 +138,32 @@ function isFederalCandidate(data) {
 function isSenateCandidate(data) {
   return (data.office || "").toLowerCase().includes("senate");
 }
+// THE REAL BUG (Aug 2026, found via a live match-integrity-check failure
+// with a non-constant over-match ratio across different roll calls —
+// 14/7, 58/30, 39/12, 24/8, 104/60 — which is exactly what you'd expect
+// from a variable number of tracked candidates per seat, not a constant
+// parsing mistake). District number + chamber alone does NOT uniquely
+// identify a specific real vote — this org tracks MULTIPLE candidates per
+// seat (an incumbent plus primary/general challengers), and a challenger
+// who has never held that seat structurally could not have cast a
+// historical vote in it. Matching purely on district+chamber attributed
+// the SAME real vote to every tracked candidate for that seat, incumbent
+// or not. The original Congress.gov-based version of this file got this
+// right (it gated matching on incumbentStatus); that gate was lost during
+// the LegiScan rewrite when bioguideId resolution went away, without a
+// replacement check being added for the new district+chamber matching
+// approach. Restored here, applied to BOTH levels (federal candidate
+// matching likely had this same latent bug, just not yet observed on
+// live data the way the state path was).
+//
+// Known accepted limitation, same as the original federal design: a
+// former legislator now running again again DID cast real historical
+// votes during their prior term but isIncumbent() here only reflects
+// CURRENT status, so their past votes won't be attributed to them. This
+// was already an accepted v1 limitation for federal, not new scope.
+function isIncumbent(data) {
+  return (data.incumbentStatus || "").toLowerCase().includes("incumbent");
+}
 // State-legislature candidates use "LD" (Legislative District) in their
 // district field, distinct from federal House's "CD" (Congressional
 // District) — this is how the two get told apart, not the level field
@@ -401,10 +427,16 @@ export default async function (req) {
             }
 
             const candidateVotes = candidates.map(c => {
-              const voteEntry = (rc.votes || []).find(vt => {
+              // Non-incumbents are never even checked against real votes —
+              // see isIncumbent()'s header note above for why. This is the
+              // actual fix, not the district/chamber matching logic itself
+              // (which was already narrow and correct on its own — the bug
+              // was including candidates in the search pool who could
+              // never have cast a real vote in the first place).
+              const voteEntry = isIncumbent(c) ? (rc.votes || []).find(vt => {
                 const person = peopleMap[vt.people_id];
                 return !!matchLegiscanPersonToCandidate(person, [c]);
-              });
+              }) : null;
               return {
                 candidateId: c.id,
                 name: c.name,
