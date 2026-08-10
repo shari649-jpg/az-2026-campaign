@@ -16,6 +16,11 @@ export default function WaitlistPage() {
   const [form, setForm] = useState({
     fullName: "",
     email: "",
+    // "individual" | "org" — captures intent only. The Admin still makes
+    // the real call: for "org", they resolve the free-text `organization`
+    // field below into a real orgId themselves (after actually talking to
+    // that org's admin), not an automated match. See send-invite.mjs.
+    accountType: "individual",
     organization: "",
     reason: "",
     primaryPlatform: "",
@@ -37,6 +42,9 @@ export default function WaitlistPage() {
     if (!form.email.trim())        { setError("Please enter your email address."); return; }
     if (!form.primaryPlatform)     { setError("Please select your primary social media platform."); return; }
     if (!form.primaryHandle.trim()){ setError("Please enter your primary social media handle."); return; }
+    if (form.accountType === "org" && !form.organization.trim()) {
+      setError("Please enter which organization you're requesting to join."); return;
+    }
 
     setLoading(true);
     try {
@@ -61,6 +69,10 @@ export default function WaitlistPage() {
       await addDoc(collection(db, "waitlist"), {
         fullName:        form.fullName.trim(),
         email:           form.email.toLowerCase().trim(),
+        // Intent only — captured here, resolved into a real orgId by an
+        // Admin when they send the invite (see AdminPage.jsx/send-invite.mjs).
+        // Never trusted as-is for anything access-related.
+        accountType:     form.accountType,
         organization:    form.organization.trim(),
         reason:          form.reason.trim(),
         primarySocial:   { platform: form.primaryPlatform, handle: form.primaryHandle.trim() },
@@ -77,6 +89,7 @@ export default function WaitlistPage() {
           body: JSON.stringify({
             fullName:        form.fullName.trim(),
             email:           form.email.toLowerCase().trim(),
+            accountType:     form.accountType,
             organization:    form.organization.trim(),
             reason:          form.reason.trim(),
             primaryPlatform: form.primaryPlatform,
@@ -170,12 +183,38 @@ export default function WaitlistPage() {
           </div>
 
           <div>
+            <label style={labelStyle}>How will you be using this? <Required /></label>
+            <div style={{ display: "flex", gap: 20, marginTop: 6 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, color: CHARCOAL, cursor: "pointer", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                <input type="radio" name="accountType" checked={form.accountType === "individual"}
+                  onChange={() => setForm(prev => ({ ...prev, accountType: "individual" }))}
+                  style={{ width: 16, height: 16, cursor: "pointer" }} />
+                Just me, individually
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, color: CHARCOAL, cursor: "pointer", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                <input type="radio" name="accountType" checked={form.accountType === "org"}
+                  onChange={() => setForm(prev => ({ ...prev, accountType: "org" }))}
+                  style={{ width: 16, height: 16, cursor: "pointer" }} />
+                As part of an organization
+              </label>
+            </div>
+          </div>
+
+          <div>
             <label style={labelStyle}>
               Organization{" "}
-              <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#999", fontSize: 11 }}>(optional)</span>
+              {form.accountType === "org"
+                ? <Required />
+                : <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#999", fontSize: 11 }}>(optional)</span>}
             </label>
             <input type="text" value={form.organization} onChange={set("organization")}
+              required={form.accountType === "org"}
               autoComplete="organization" placeholder="Campaign, PAC, union, advocacy org…" style={inputStyle} />
+            {form.accountType === "org" && (
+              <p style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
+                We'll confirm with your organization before your invite goes out.
+              </p>
+            )}
           </div>
 
           <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 16, marginTop: 4 }}>
