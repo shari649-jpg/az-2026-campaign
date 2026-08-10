@@ -3,81 +3,86 @@
 // WHAT THIS DOES
 // ────────────────────────────────────────────────────────────────────────
 // Second half of the bill-lookup feature (resolve-bill.mjs is the first
-// half — it turns free text into a bill identifier; this function turns a
-// bill identifier into real Congress.gov data, filtered to this org's own
-// candidate list). Given { congress, billType, billNumber }, this:
+// half — it turns free text into a bill identifier). Given
+// { congress, billType, billNumber }, this:
 //
-//   1. Pulls the bill's own record (title, sponsor, latest action) from
-//      Congress.gov.
-//   2. Pulls its official CRS subject/policy-area tags (Aug 2026 addition,
-//      folded in per the person's request — a free, authoritative
-//      enrichment on top of whatever resolve-bill.mjs or the person
-//      already knows about the bill).
-//   3. Scans the bill's actions for House recorded (roll call) votes.
-//   4. For each one found, pulls the real member-by-member breakdown and
-//      filters it down to just this org's own federal House candidates
-//      (matched via bioguideId, resolved and cached on first use).
+//   1. Pulls the bill's own record (title, sponsor, latest action) AND its
+//      official CRS subject/policy-area tags from Congress.gov — kept from
+//      the original build, still free, still working, still the
+//      authoritative source for that specific data.
+//   2. Pulls the ACTUAL VOTE BREAKDOWN from LegiScan instead of
+//      Congress.gov — see "WHY LEGISCAN, NOT CONGRESS.GOV, FOR VOTES"
+//      below. Covers BOTH House and Senate, unlike the original
+//      Congress.gov-only version of this file.
 //
-// TWO REAL, CONFIRMED LIMITATIONS — READ BEFORE ASSUMING A GAP IS A BUG
+// WHY LEGISCAN, NOT CONGRESS.GOV, FOR VOTES (Aug 2026 swap)
 // ────────────────────────────────────────────────────────────────────────
-// (a) HOUSE COVERAGE STARTS AT THE 118TH CONGRESS (2023). Congress.gov's
-//     House Roll Call Vote member-position endpoints are beta and only
-//     cover 2023-present. A bill's `actions` will still show THAT a
-//     recorded vote happened for older bills (the recordedVotes container
-//     itself goes back further), but /house-vote/.../members will not
-//     have real data for anything before the 118th Congress. This is
-//     confirmed against Congress.gov's own beta-endpoint announcement, not
-//     a guess. voteCoverageGap below is how a caller distinguishes "a vote
-//     happened but this API can't show who voted which way" from "no vote
-//     happened at all" — don't collapse these into the same empty state.
-// (b) SENATE VOTES ARE NOT AVAILABLE HERE AT ALL, AND NOT JUST BECAUSE OF
-//     MISSING API COVERAGE. Congress.gov's API never had Senate roll-call
-//     member data to begin with — a bill's actions link out to a raw XML
-//     file on senate.gov instead. As of this writing that XML is actively
-//     blocked from programmatic access by Senate.gov's own bot protection
-//     (a live, unresolved issue on Congress.gov's own GitHub repo, not a
-//     theoretical concern) — so even a future attempt to fetch that linked
-//     XML directly would currently 403. Senate vote data is real, scoped,
-//     future work (a senate.gov-specific integration), not something this
-//     function almost does. senateNote below says this plainly rather
-//     than silently returning an empty Senate section that looks like a
-//     bug.
+// The original version of this file pulled votes from Congress.gov's beta
+// House Roll Call Vote endpoints. Real, confirmed limitations of that
+// approach: House-only (Congress.gov's API has never had Senate roll-call
+// data at all — the linked source, senate.gov, currently blocks
+// programmatic access outright), and only covers the 118th Congress
+// onward (2023+). LegiScan's vote data covers both chambers uniformly,
+// with no beta-endpoint instability — confirmed by cross-checking real
+// vote counts (H.R.1 / HB1, Roll Call #190: 218-214, Passed) against both
+// sources independently before making this swap, not just going on
+// LegiScan's own marketing claims.
 //
-// MATCHING — ONLY INCUMBENTS CAN HAVE A REAL VOTE RECORD
+// A REAL NAMING TRAP, CONFIRMED AGAINST LIVE DATA — READ BEFORE TOUCHING
+// THE BILLTYPE TRANSLATION BELOW
 // ────────────────────────────────────────────────────────────────────────
-// Congress.gov only has records for people who've actually served. A
-// first-time challenger has no bioguideId and never will, for a seat
-// they've never held — this function does not attempt a name-based
-// search-and-guess for them, it just reports "not in Congress for this
-// vote." bioguideId is resolved once per candidate (via
-// /member/{state}/{district} — a direct, no-guessing lookup, not a name
-// search) and cached back onto the candidate's own Firestore doc so this
-// never repeats for the same person. Gated on incumbentStatus === the
-// same field public-voter-lookup.mjs / RaceComparison.jsx already read —
-// no schema addition beyond the new bioguideId field itself.
+// LegiScan's bill-number prefixes do NOT match Congress.gov's billType
+// codes one-to-one, and one of them is a genuine trap: Congress.gov's
+// official "H.R." (a House BILL) becomes LegiScan's "HB" prefix — but
+// LegiScan's OWN "HR" prefix means something completely different (a
+// House RESOLUTION, a non-binding measure). Confirmed directly: H.R. 1
+// (the "One Big Beautiful Bill Act", Congress.gov billType "HR") is
+// LegiScan bill number "HB1", not "HR1" — verified against LegiScan's own
+// public bill page, which also cross-validated to the exact same Roll
+// Call #190 (218-214, Passed) Congress.gov showed. See
+// BILLTYPE_TO_LEGISCAN_PREFIX below — do not "simplify" this mapping
+// without re-reading this note.
 //
-// COST — THIS IS FREE, UNLIKE resolve-bill.mjs
+// THE getPerson-PER-VOTER TRAP — WHY getSessionPeople IS USED INSTEAD
 // ────────────────────────────────────────────────────────────────────────
-// Congress.gov is a free API (5,000 req/hour) — no generation-credit gate
-// here, no debiting. Still passes through the same daily per-user
-// checkAndIncrementRateLimit as every other tool, purely as an abuse
-// guard, not a cost control.
+// LegiScan's getRollCall returns each voter as bare
+// { people_id, vote_id, vote_text } — NO embedded name/state/district.
+// The obvious-looking fix (call getPerson once per voter to identify them)
+// would mean 400+ API calls for a single House roll call alone — wildly
+// impractical for one request's latency and needless quota burn. Instead,
+// getSessionPeople(session_id) is called ONCE per request, fetching every
+// person active in that entire congressional session in a single call,
+// and the resulting people_id → identity map is reused across every roll
+// call being processed in this same request. Do not reintroduce a
+// per-voter getPerson call.
+//
+// A REAL, FLAGGED UNCERTAINTY IN THIS FIRST VERSION
+// ────────────────────────────────────────────────────────────────────────
+// LegiScan's own API manual documents the `district` field's format for
+// STATE legislatures (e.g. "HD-063", "SD-039") but the manual has no
+// federal-Congress-specific example, and does not document a plain state
+// abbreviation field on the person record at all (only an internal
+// numeric state_id, not useful for matching against this app's own
+// candidate docs which store state as "AZ", "CA", etc.). matchLegiscanPerson()
+// below is written defensively — tries multiple parsing strategies against
+// whatever `district` actually looks like for a federal record, and logs
+// a SAMPLE of raw person records on first use so the real format is
+// visible in Netlify's logs rather than guessed at blind. Expect this may
+// need one calibration pass against real logged output, the same pattern
+// that worked for nailing down Congress.gov's field names earlier in this
+// build — flagged honestly rather than promised to just work.
+//
+// COST — LEGISCAN AND CONGRESS.GOV ARE BOTH FREE
+// ────────────────────────────────────────────────────────────────────────
+// No generation-credit gate here, no debiting — both APIs are free tier.
+// Still passes through the same daily per-user checkAndIncrementRateLimit
+// as every other tool, purely as an abuse guard, not a cost control.
 //
 // SETUP REQUIRED
 // ────────────────────────────────────────────────────────────────────────
-// 1. Sign up for a free API key at https://api.data.gov/congress/v3 (or
-//    the sign-up link surfaced at api.congress.gov).
-// 2. Add it as a Netlify env var: CONGRESS_API_KEY.
-//
-// KNOWN SCOPE LIMIT IN THIS FIRST VERSION
-// ────────────────────────────────────────────────────────────────────────
-// The bill actions fetch below requests a generous single page (limit=250)
-// rather than looping through pagination. Congress.gov's default page size
-// is 20; 250 comfortably covers the vast majority of real bills, but an
-// exceptionally procedurally-active bill with more than 250 actions could
-// theoretically have a recorded vote past that cutoff and miss it. Worth
-// revisiting with real pagination if that ever turns out to matter in
-// practice — not built preemptively for a case that may never occur.
+// 1. CONGRESS_API_KEY — already set (unchanged from the original build).
+// 2. LEGISCAN_API_KEY — new. Free self-serve signup at legiscan.com/legiscan
+//    (requires a free "OneVote" account). 30,000 queries/month.
 //
 // Modern Netlify Functions runtime (ESM).
 
@@ -86,10 +91,7 @@ import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 
 const CONGRESS_API_BASE = "https://api.congress.gov/v3";
-// House Roll Call Vote member-position coverage starts at the 118th
-// Congress (2023) — confirmed against Congress.gov's own beta-endpoint
-// announcement. See file header note (a).
-const HOUSE_VOTE_COVERAGE_MIN_CONGRESS = 118;
+const LEGISCAN_API_BASE = "https://api.legiscan.com/";
 
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
@@ -118,86 +120,97 @@ async function requireSignedIn(app, idToken) {
   return decoded.uid;
 }
 
-// ── Congress.gov fetch helper ─────────────────────────────────────────
+// ── Congress.gov fetch helper (bill detail + official CRS subjects only —
+// vote data no longer comes from here) ─────────────────────────────────
 async function congressFetch(path, params = {}) {
   const apiKey = process.env.CONGRESS_API_KEY;
-  if (!apiKey) {
-    throw new Error("CONGRESS_API_KEY not configured — set it in Netlify's environment variables.");
-  }
+  if (!apiKey) throw new Error("CONGRESS_API_KEY not configured — set it in Netlify's environment variables.");
   const url = new URL(`${CONGRESS_API_BASE}${path}`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("format", "json");
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-
   const response = await fetch(url.toString());
-  // Diagnostic logging — added after real votes weren't coming back for
-  // any incumbent, with no clear cause visible from the UI alone. Logs
-  // the exact URL (key redacted) and outcome for every Congress.gov call,
-  // so a real failure (404/other) shows up directly in Netlify's function
-  // logs instead of just silently producing an empty result downstream.
-  const loggedUrl = url.toString().replace(apiKey, "[REDACTED]");
   if (!response.ok) {
-    if (response.status === 404) {
-      console.warn(`[bill-votes] Congress.gov 404: ${loggedUrl}`);
-      return null; // not found is a real, expected outcome (e.g. bad bill number) — not an error to throw
-    }
+    if (response.status === 404) return null;
     const errText = await response.text().catch(() => "");
-    console.error(`[bill-votes] Congress.gov API error ${response.status}: ${loggedUrl} — ${errText}`);
     throw new Error(`Congress.gov API error: ${response.status} ${errText}`.trim());
   }
+  return response.json();
+}
+
+// ── LegiScan fetch helper ───────────────────────────────────────────────
+async function legiscanFetch(op, params = {}) {
+  const apiKey = process.env.LEGISCAN_API_KEY;
+  if (!apiKey) throw new Error("LEGISCAN_API_KEY not configured — set it in Netlify's environment variables.");
+  const url = new URL(LEGISCAN_API_BASE);
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("op", op);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  const response = await fetch(url.toString());
+  const loggedUrl = url.toString().replace(apiKey, "[REDACTED]");
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    console.error(`[bill-votes] LegiScan HTTP error ${response.status}: ${loggedUrl} — ${errText}`);
+    throw new Error(`LegiScan API error: ${response.status}`);
+  }
   const data = await response.json();
-  console.log(`[bill-votes] Congress.gov OK: ${loggedUrl} — results=${Array.isArray(data.results) ? data.results.length : 'n/a'}`);
+  if (data.status !== "OK") {
+    console.warn(`[bill-votes] LegiScan status=ERROR: ${loggedUrl} — ${JSON.stringify(data.alert)}`);
+    return null;
+  }
+  console.log(`[bill-votes] LegiScan OK: op=${op} ${JSON.stringify(params)}`);
   return data;
 }
 
-// Congress.gov defaults to 20 results per page (max 250) on list-shaped
-// endpoints. The House has 435 voting members plus several non-voting
-// delegates — a single unpaginated call to a roll call's /members endpoint
-// silently truncates to the first 20, which is what caused nearly every
-// real incumbent to show "No record" even when their bioguideId was
-// correctly resolved. This walks every page (limit=250, offset stepping)
-// and merges `results`, capped at 3 pages (750 records) as a sane safety
-// ceiling well above the House's actual membership count.
-// Response-shape extraction for the /house-vote/.../members endpoint.
-// This beta endpoint's real wrapping was NOT what Congress.gov's own
-// Swagger example page showed for a neighboring endpoint (a live test
-// came back with no top-level `results` array at all) — rather than
-// guess again and cost another deploy-and-test round trip, this tries
-// every plausible wrapper Congress.gov uses elsewhere in this API family,
-// and logs the raw top-level keys if none of them match, so a next look
-// at the logs gives a definitive answer instead of another guess.
-function extractMemberResults(data) {
-  if (!data) return [];
-  if (Array.isArray(data.results)) return data.results;
-  if (Array.isArray(data.houseRollCallVoteMemberVotes?.results)) return data.houseRollCallVoteMemberVotes.results;
-  if (Array.isArray(data.houseRollCallVoteMemberVote?.results)) return data.houseRollCallVoteMemberVote.results;
-  if (Array.isArray(data.votes)) return data.votes;
-  if (Array.isArray(data.members)) return data.members;
-  console.warn(`[bill-votes] house-vote members: no recognized results array. Top-level keys:`, JSON.stringify(Object.keys(data)), `full body:`, JSON.stringify(data).slice(0, 2000));
-  return [];
+// Congress.gov billType -> LegiScan bill-number prefix. See file header's
+// naming-trap note — HRES maps to LegiScan's "HR", which is NOT the same
+// string as Congress.gov's "HR" (a House Bill). Confirmed against real
+// H.R. 1 -> LegiScan "HB1" cross-validation.
+const BILLTYPE_TO_LEGISCAN_PREFIX = {
+  HR: "HB",
+  S: "SB",
+  HRES: "HR",
+  SRES: "SR",
+  HJRES: "HJR",
+  SJRES: "SJR",
+  HCONRES: "HCR",
+  SCONRES: "SCR",
+};
+
+// A Congress numbered N started in the calendar year 1789 + (N-1)*2 —
+// used to find the matching LegiScan session (LegiScan indexes sessions
+// by year, not by Congress number).
+function congressToStartYear(congress) {
+  return 1789 + (congress - 1) * 2;
 }
 
-async function congressFetchAllResults(path) {
-  let allResults = [];
-  let offset = 0;
-  const limit = 250;
-  let meta = null;
-  for (let page = 0; page < 3; page++) {
-    const result = await congressFetch(path, { limit, offset });
-    if (!result) break;
-    if (!meta) meta = result; // keep the first page's top-level fields (result, voteQuestion, etc.)
-    const pageResults = extractMemberResults(result);
-    allResults = allResults.concat(pageResults);
-    if (pageResults.length < limit) break; // fewer than a full page = last page
-    offset += limit;
+async function findLegiscanSessionId(state, targetYear) {
+  const data = await legiscanFetch("getSessionList", { state });
+  const sessions = data?.sessions || [];
+  const match = sessions.find(s => s.year_start === targetYear);
+  if (!match) {
+    console.warn(`[bill-votes] no LegiScan ${state} session found for target year_start=${targetYear}. Available sessions:`, JSON.stringify(sessions.map(s => ({ session_id: s.session_id, year_start: s.year_start, year_end: s.year_end }))));
+    return null;
   }
-  return meta ? { ...meta, results: allResults } : null;
+  return match.session_id;
 }
 
-// ── Federal House candidate matching — same permissive substring
-// convention already established in public-voter-lookup.mjs, reused
-// deliberately rather than re-invented, since Office/Level are free text
-// from the source Sheet, not a fixed enum. ────────────────────────────
+async function findLegiscanBillId(sessionId, legiscanBillNumber) {
+  const data = await legiscanFetch("getMasterList", { id: sessionId });
+  const masterlist = data?.masterlist || {};
+  for (const key of Object.keys(masterlist)) {
+    const entry = masterlist[key];
+    if (entry?.number && entry.number.toUpperCase() === legiscanBillNumber.toUpperCase()) {
+      return entry.bill_id;
+    }
+  }
+  console.warn(`[bill-votes] LegiScan bill number ${legiscanBillNumber} not found in session ${sessionId}'s master list (${Object.keys(masterlist).length} entries).`);
+  return null;
+}
+
+// ── Federal candidate matching ──────────────────────────────────────────
+// Broader than the old House-only version — LegiScan covers both
+// chambers, so this now includes Senate candidates too.
 function extractDistrictNumber(districtStr) {
   const str = districtStr || "";
   const prefixed = str.match(/\b(?:ld|cd)[\s-]*?(\d+)/i);
@@ -205,40 +218,62 @@ function extractDistrictNumber(districtStr) {
   const anyNumber = str.match(/(\d+)/);
   return anyNumber ? parseInt(anyNumber[1], 10) : null;
 }
-
-function isFederalHouseCandidate(data) {
-  const level = (data.level || "").toLowerCase();
-  const office = (data.office || "").toLowerCase();
-  if (!level.includes("federal")) return false;
-  if (office.includes("senate")) return false;
-  return extractDistrictNumber(data.district) !== null;
+function isFederalCandidate(data) {
+  return (data.level || "").toLowerCase().includes("federal");
+}
+function isSenateCandidate(data) {
+  return (data.office || "").toLowerCase().includes("senate");
+}
+// State-legislature candidates use "LD" (Legislative District) in their
+// district field, distinct from federal House's "CD" (Congressional
+// District) — this is how the two get told apart, not the level field
+// alone, since some existing docs' level strings vary ("Statewide/
+// Legislative", etc.) in ways that are easy to typo-miss on.
+function isStateLegCandidate(data, state) {
+  if (isFederalCandidate(data)) return false;
+  if ((data.state || "").toUpperCase() !== state.toUpperCase()) return false;
+  return /\bld[\s-]*\d+/i.test(data.district || "");
 }
 
-function isIncumbent(data) {
-  return (data.incumbentStatus || "").toLowerCase().includes("incumbent");
-}
-
-// ── bioguideId resolution + caching ────────────────────────────────────
-// Only attempted for federal House INCUMBENTS — a first-time challenger
-// has no bioguideId and a name-search-and-guess would just misfire (see
-// file header). Direct district lookup, not a name search, so this either
-// finds the real current officeholder or it doesn't — no ambiguity to
-// mis-resolve.
-async function resolveBioguideId(db, candidateDoc, data) {
-  if (data.bioguideId) return data.bioguideId; // already cached — no repeat lookup
-  if (!isIncumbent(data)) return null;
-  const state = (data.state || "AZ").toUpperCase();
-  const district = extractDistrictNumber(data.district);
-  if (district === null) return null;
-
-  const result = await congressFetch(`/member/${state}/${district}`);
-  const bioguideId = result?.members?.[0]?.bioguideId || null;
-  if (bioguideId) {
-    // Cache it — this is the ONLY reason this function ever writes to a
-    // candidate doc. Never overwrites anything else on the record.
-    await db.doc(`candidates/${candidateDoc.id}`).set({ bioguideId }, { merge: true });
+// Builds a people_id -> identity map for an entire LegiScan session in ONE
+// call (see file header — never call getPerson per voter). Also logs a
+// small sample of raw records the first time, since the real district/
+// state field format for federal (vs. state-legislature) records isn't
+// documented and needs to be confirmed against real output.
+async function buildLegiscanPeopleMap(sessionId) {
+  const data = await legiscanFetch("getSessionPeople", { id: sessionId });
+  const people = data?.sessionpeople?.people || [];
+  if (people.length > 0) {
+    console.log(`[bill-votes] LegiScan session people sample (first 3 of ${people.length}):`, JSON.stringify(people.slice(0, 3)));
   }
-  return bioguideId;
+  const map = {};
+  for (const p of people) map[p.people_id] = p;
+  return map;
+}
+
+// Matches a LegiScan person record to one of this org's candidates. Tries
+// district-number + chamber first (most precise); falls back to exact
+// last-name match within the same state if district parsing doesn't work
+// out — defensive on purpose, see file header's flagged uncertainty.
+function matchLegiscanPersonToCandidate(person, candidates) {
+  if (!person) return null;
+  const personDistrictNum = extractDistrictNumber(person.district);
+  const personIsSenate = (person.role || "").toLowerCase().startsWith("sen");
+  if (personDistrictNum !== null) {
+    const byDistrict = candidates.find(c =>
+      isSenateCandidate(c) === personIsSenate &&
+      extractDistrictNumber(c.district) === personDistrictNum &&
+      (c.state || "").toUpperCase() === (person.state || c.state || "").toUpperCase()
+    );
+    if (byDistrict) return byDistrict;
+  }
+  // Fallback: last-name match (best-effort only — flagged, not silent)
+  const personLastName = (person.last_name || person.name || "").trim().toLowerCase();
+  if (personLastName) {
+    const byName = candidates.find(c => (c.name || "").toLowerCase().includes(personLastName));
+    if (byName) return byName;
+  }
+  return null;
 }
 
 export default async function (req) {
@@ -262,12 +297,23 @@ export default async function (req) {
   try {
     const body = await req.json();
     const idToken = headerToken || body.idToken;
-    const { congress, billType, billNumber, candidateId } = body; // candidateId optional — scopes to one candidate (Workflow 2a) instead of the full org list (Workflow 1)
+    const { billType, billNumber, candidateId } = body;
+    const level = body.level === "state" ? "state" : "federal";
+    const stateParam = (body.state || "AZ").toUpperCase();
+    const congress = body.congress;
+    const year = body.year;
 
-    if (!Number.isInteger(congress) || !billType || !Number.isInteger(billNumber)) {
-      return new Response(JSON.stringify({ success: false, error: "congress, billType, and billNumber are required." }), { status: 400, headers: corsHeaders(req) });
+    if (!billType || !Number.isInteger(billNumber)) {
+      return new Response(JSON.stringify({ success: false, error: "billType and billNumber are required." }), { status: 400, headers: corsHeaders(req) });
     }
-    const billTypePath = String(billType).toLowerCase(); // Congress.gov URL paths use lowercase (e.g. /bill/117/hr/4346) even though the type enum itself is uppercase
+    if (level === "federal" && !Number.isInteger(congress)) {
+      return new Response(JSON.stringify({ success: false, error: "congress is required for a federal lookup." }), { status: 400, headers: corsHeaders(req) });
+    }
+    if (level === "state" && !Number.isInteger(year)) {
+      return new Response(JSON.stringify({ success: false, error: "year is required for a state lookup." }), { status: 400, headers: corsHeaders(req) });
+    }
+    const billTypeUpper = String(billType).toUpperCase();
+    const billTypePath = billTypeUpper.toLowerCase(); // Congress.gov URL paths use lowercase (federal only)
 
     // ── Auth ────────────────────────────────────────────────────────────
     let uid;
@@ -277,121 +323,31 @@ export default async function (req) {
       return new Response(JSON.stringify({ success: false, error: "You must be signed in to use this tool." }), { status: 401, headers: corsHeaders(req) });
     }
 
-    // ── Rate limit (abuse guard only — Congress.gov is free, no credit gate) ─
+    // ── Rate limit (abuse guard only — both APIs are free) ────────────────
     const usage = await checkAndIncrementRateLimit(app, uid);
     if (usage.blocked) {
       return new Response(JSON.stringify(usage.blockedPayload), { status: 429, headers: corsHeaders(req) });
     }
 
-    // ── Bill detail + subjects (parallel — independent reads) ────────────
-    const [billResult, subjectsResult] = await Promise.all([
-      congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}`),
-      congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}/subjects`),
-    ]);
+    // ── Bill detail + subjects — Congress.gov for federal (official CRS
+    // tags), LegiScan's own bill record for state (Congress.gov is a
+    // federal-only API, has zero state legislature data at all) ──────────
+    let billForResponse, policyArea = null, legislativeSubjects = [];
+    let legiscanSessionState, legiscanTargetYear, legiscanPrefix;
 
-    if (!billResult?.bill) {
-      return new Response(JSON.stringify({ success: false, error: `No bill found for ${billType} ${billNumber}, ${congress}th Congress.` }), { status: 404, headers: corsHeaders(req) });
-    }
-    const bill = billResult.bill;
-    const policyArea = subjectsResult?.subjects?.policyArea?.name || null;
-    const legislativeSubjects = (subjectsResult?.subjects?.legislativeSubjects || []).map(s => s.name);
-
-    // ── Find House recorded votes in the bill's actions ───────────────────
-    // See file header's "KNOWN SCOPE LIMIT" note on the single-page (250)
-    // fetch instead of full pagination.
-    const actionsResult = await congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}/actions`, { limit: 250 });
-    const houseRecordedVotesRaw = (actionsResult?.actions || [])
-      .flatMap(a => a.recordedVotes || [])
-      .filter(rv => rv.chamber === "House");
-    // De-duplicate — the same roll call sometimes gets referenced by more
-    // than one action entry on a heavily-amended bill (e.g. a procedural
-    // action and the final-passage action both pointing at the same roll
-    // number), which without this produced visibly duplicated roll-call
-    // blocks in the UI for the exact same vote.
-    const seenRollCalls = new Set();
-    const houseRecordedVotes = houseRecordedVotesRaw.filter(rv => {
-      const key = `${rv.congress}-${rv.sessionNumber}-${rv.rollNumber}`;
-      if (seenRollCalls.has(key)) return false;
-      seenRollCalls.add(key);
-      return true;
-    });
-
-    const senateRecordedVoteCount = (actionsResult?.actions || [])
-      .flatMap(a => a.recordedVotes || [])
-      .filter(rv => rv.chamber === "Senate").length;
-
-    // ── This org's federal House candidates, with bioguideId resolved/cached ─
-    const db = admin.firestore(app);
-    let candidateDocs;
-    if (candidateId) {
-      const snap = await db.doc(`candidates/${candidateId}`).get();
-      candidateDocs = snap.exists ? [snap] : [];
-    } else {
-      const snap = await db.collection("candidates").get();
-      // NOT a strict `.where("active","==",true)` query — this app's
-      // established convention (candidates, ballot measures, etc.) is
-      // fail-open: active !== false, since most docs never set the field
-      // explicitly at all. A strict equality query silently excluded
-      // almost every real candidate — this is what caused only one
-      // candidate to ever show up. Match the same convention everywhere
-      // else in this app uses, not a new stricter one.
-      candidateDocs = snap.docs.filter(d => d.data().active !== false && isFederalHouseCandidate(d.data()));
-    }
-
-    const candidatesWithBioguide = await Promise.all(
-      candidateDocs.map(async (doc) => {
-        const data = doc.data();
-        const bioguideId = await resolveBioguideId(db, doc, data);
-        return { id: doc.id, name: data.name, state: data.state, district: data.district, party: data.party, incumbentStatus: data.incumbentStatus, bioguideId };
-      })
-    );
-
-    // ── Pull member-position breakdown for each House recorded vote ───────
-    // Field names confirmed directly against Congress.gov's own documented
-    // schema (voteCast, bioguideID) — no more defensive guessing needed.
-    const rollCalls = [];
-    for (const rv of houseRecordedVotes) {
-      const withinCoverage = rv.congress >= HOUSE_VOTE_COVERAGE_MIN_CONGRESS;
-      console.log(`[bill-votes] processing House recordedVote:`, JSON.stringify(rv), `withinCoverage=${withinCoverage}`);
-      let positionsByBioguide = {};
-      let voteMeta = null;
-      if (withinCoverage) {
-        const membersResult = await congressFetchAllResults(`/house-vote/${rv.congress}/${rv.sessionNumber}/${rv.rollNumber}/members`);
-        voteMeta = membersResult ? {
-          result: membersResult.result || null,
-          voteQuestion: membersResult.voteQuestion || null,
-          voteType: membersResult.voteType || null,
-          sourceDataURL: membersResult.sourceDataURL || null,
-        } : null;
-        for (const m of membersResult?.results || []) {
-          if (m.bioguideID) positionsByBioguide[m.bioguideID] = m.voteCast || null;
-        }
+    if (level === "federal") {
+      const [billResult, subjectsResult] = await Promise.all([
+        congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}`),
+        congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}/subjects`),
+      ]);
+      if (!billResult?.bill) {
+        return new Response(JSON.stringify({ success: false, error: `No bill found for ${billType} ${billNumber}, ${congress}th Congress.` }), { status: 404, headers: corsHeaders(req) });
       }
-      rollCalls.push({
-        rollNumber: rv.rollNumber,
-        congress: rv.congress,
-        sessionNumber: rv.sessionNumber,
-        date: rv.date,
-        voteCoverageGap: !withinCoverage, // true = a real vote happened but member-level data isn't available for this Congress (pre-118th) — see file header note (a). NOT the same as "no vote happened."
-        result: voteMeta?.result || null, // e.g. "Passed" / "Failed"
-        voteQuestion: voteMeta?.voteQuestion || null, // e.g. "On Passage"
-        voteType: voteMeta?.voteType || null, // e.g. "Yea-and-Nay"
-        sourceDataURL: voteMeta?.sourceDataURL || null,
-        candidateVotes: candidatesWithBioguide.map(c => ({
-          candidateId: c.id,
-          name: c.name,
-          state: c.state,
-          district: c.district,
-          party: c.party,
-          position: c.bioguideId ? (positionsByBioguide[c.bioguideId] || null) : null,
-          notInCongressForThisVote: !c.bioguideId, // this candidate has no resolved bioguideId at all — either a non-incumbent, or an incumbent whose district lookup didn't resolve
-        })),
-      });
-    }
-
-    const responseBody = {
-      success: true,
-      bill: {
+      const bill = billResult.bill;
+      policyArea = subjectsResult?.subjects?.policyArea?.name || null;
+      legislativeSubjects = (subjectsResult?.subjects?.legislativeSubjects || []).map(s => s.name);
+      billForResponse = {
+        level: "federal",
         congress: bill.congress,
         billType: (bill.type || billType).toUpperCase(),
         billNumber: bill.number,
@@ -400,12 +356,125 @@ export default async function (req) {
         latestAction: bill.latestAction ? { date: bill.latestAction.actionDate, text: bill.latestAction.text } : null,
         introducedDate: bill.introducedDate || null,
         url: bill.url || null,
-      },
+      };
+      legiscanSessionState = "US";
+      legiscanTargetYear = congressToStartYear(congress);
+      legiscanPrefix = BILLTYPE_TO_LEGISCAN_PREFIX[billTypeUpper];
+    } else {
+      // State mode — bill detail comes entirely from LegiScan below, since
+      // there's no Congress.gov equivalent for state legislation. Deferred
+      // until after we've resolved the LegiScan bill_id (below), so
+      // billForResponse gets filled in there instead of here.
+      legiscanSessionState = stateParam;
+      legiscanTargetYear = year;
+      legiscanPrefix = billTypeUpper; // already LegiScan-native, no translation needed for state bills
+    }
+
+    // ── This org's candidates — federal or this state's legislature ───────
+    const db = admin.firestore(app);
+    let candidateDocs;
+    if (candidateId) {
+      const snap = await db.doc(`candidates/${candidateId}`).get();
+      candidateDocs = snap.exists ? [snap] : [];
+    } else {
+      const snap = await db.collection("candidates").get();
+      candidateDocs = snap.docs.filter(d => {
+        const data = d.data();
+        if (data.active === false) return false;
+        return level === "federal" ? isFederalCandidate(data) : isStateLegCandidate(data, stateParam);
+      });
+    }
+    const candidates = candidateDocs.map(d => ({ id: d.id, ...d.data() }));
+
+    // ── LegiScan: resolve bill, pull real votes (shared by both levels) ────
+    let rollCalls = [];
+    let legiscanNote = null;
+
+    if (!legiscanPrefix) {
+      legiscanNote = `Vote lookup isn't supported for bill type ${billTypeUpper} yet.`;
+    } else {
+      const sessionId = await findLegiscanSessionId(legiscanSessionState, legiscanTargetYear);
+      if (!sessionId) {
+        legiscanNote = `Couldn't find a matching LegiScan session for ${level === "federal" ? `the ${congress}th Congress` : `${stateParam} ${year}`}.`;
+      } else {
+        const legiscanBillNumber = `${legiscanPrefix}${billNumber}`;
+        const legiscanBillId = await findLegiscanBillId(sessionId, legiscanBillNumber);
+        if (!legiscanBillId) {
+          legiscanNote = `Couldn't find bill ${legiscanBillNumber} in LegiScan's records for ${level === "federal" ? `the ${congress}th Congress` : `${stateParam} ${year}`}.`;
+        } else {
+          const [billDetailResult, peopleMap] = await Promise.all([
+            legiscanFetch("getBill", { id: legiscanBillId }),
+            buildLegiscanPeopleMap(sessionId),
+          ]);
+          const legiscanBill = billDetailResult?.bill;
+
+          // State mode: fill in billForResponse now that we have LegiScan's
+          // own bill record — the only detail source available for states.
+          if (level === "state" && legiscanBill) {
+            billForResponse = {
+              level: "state",
+              state: stateParam,
+              year,
+              billType: billTypeUpper,
+              billNumber,
+              title: legiscanBill.title,
+              sponsor: legiscanBill.sponsors?.[0] ? { name: legiscanBill.sponsors[0].name, party: legiscanBill.sponsors[0].party } : null,
+              latestAction: legiscanBill.status_date ? { date: legiscanBill.status_date, text: legiscanBill.history?.[legiscanBill.history.length - 1]?.action || null } : null,
+              introducedDate: legiscanBill.history?.[0]?.date || null,
+              url: legiscanBill.url || null,
+            };
+            legislativeSubjects = (legiscanBill.subjects || []).map(s => s.subject_name);
+            // No policyArea equivalent for state bills — that's a
+            // Congress.gov/CRS-specific single-category concept, LegiScan
+            // only has its own multi-tag subjects list.
+          }
+
+          const votesList = legiscanBill?.votes || [];
+          for (const v of votesList) {
+            const rollCallResult = await legiscanFetch("getRollCall", { id: v.roll_call_id });
+            const rc = rollCallResult?.roll_call;
+            if (!rc) continue;
+
+            const candidateVotes = candidates.map(c => {
+              const voteEntry = (rc.votes || []).find(vt => {
+                const person = peopleMap[vt.people_id];
+                return !!matchLegiscanPersonToCandidate(person, [c]);
+              });
+              return {
+                candidateId: c.id,
+                name: c.name,
+                state: c.state,
+                district: c.district,
+                party: c.party,
+                position: voteEntry ? voteEntry.vote_text : null,
+                notInCongressForThisVote: !voteEntry,
+              };
+            });
+
+            rollCalls.push({
+              rollCallId: rc.roll_call_id,
+              chamber: rc.chamber === "S" ? "Senate" : "House",
+              date: rc.date,
+              result: rc.passed ? "Passed" : "Failed",
+              voteQuestion: rc.desc || null,
+              tally: { yea: rc.yea, nay: rc.nay, notVoting: rc.nv, absent: rc.absent },
+              candidateVotes,
+            });
+          }
+        }
+      }
+    }
+
+    if (!billForResponse) {
+      return new Response(JSON.stringify({ success: false, error: `Couldn't find ${billType} ${billNumber} for ${level === "federal" ? `the ${congress}th Congress` : `${stateParam} ${year}`}.` }), { status: 404, headers: corsHeaders(req) });
+    }
+
+    const responseBody = {
+      success: true,
+      bill: billForResponse,
       subjects: { policyArea, legislativeSubjects },
       rollCalls,
-      senateNote: senateRecordedVoteCount > 0
-        ? `This bill also had ${senateRecordedVoteCount} recorded Senate vote(s), but Senate vote data isn't available through this tool yet — Congress.gov's API doesn't expose Senate roll-call positions, and the linked source (senate.gov) currently blocks automated access. Real, scoped future work, not a bug.`
-        : null,
+      legiscanNote,
     };
 
     return new Response(JSON.stringify(responseBody), { status: 200, headers: corsHeaders(req) });
