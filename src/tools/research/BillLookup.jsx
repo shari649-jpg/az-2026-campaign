@@ -2,9 +2,18 @@
 //
 // Frontend for the bill-lookup pipeline (resolve-bill.mjs -> bill-votes.mjs).
 // Built to actually TEST the backend end-to-end, not as final polished UI —
-// functional and honest about the two known gaps (pre-118th-Congress
-// coverage, no Senate data) rather than hiding them. Polish pass can come
-// once the pipeline itself is confirmed working against real queries.
+// functional and honest about known gaps rather than hiding them. Polish
+// pass can come once the pipeline itself is confirmed working against real
+// queries.
+//
+// AUG 2026 REARCHITECTURE: resolve-bill.mjs now always returns a `bills`
+// array (real LegiScan search hits, tiered by relevance), never a single
+// auto-selected bill — direct decision: even one strong match should still
+// get confirmed by a person before showing "how they voted" claims. So
+// this always renders a picklist, even a list of one, split into "Matches"
+// (>=80% relevance) and "Possible matches" (50-79%, shown separately and
+// visibly flagged as lower-confidence) rather than branching on a
+// mode:"single"/"list" flag the way the old Perplexity-driven version did.
 
 import { useState } from 'react';
 import { auth } from '../../firebase';
@@ -51,6 +60,35 @@ function VoteBadge({ position }) {
   return <span style={{ color: B.textMid, fontWeight: 700, fontSize: 13 }}>{position}</span>;
 }
 
+// Federal CRS summaries can run very long (a CHIPS Act lookup returned an
+// untruncated multi-paragraph summary) — collapse anything past a readable
+// length behind a "Read more" toggle. The full real text is still what's
+// rendered when expanded; this is purely a display cap, not a server-side
+// truncation, so nothing authoritative is lost or re-fetched.
+const SUMMARY_COLLAPSE_LENGTH = 400;
+function BillSummary({ summary }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!summary) return null;
+  const isLong = summary.length > SUMMARY_COLLAPSE_LENGTH;
+  const shown = expanded || !isLong ? summary : `${summary.slice(0, SUMMARY_COLLAPSE_LENGTH).trimEnd()}…`;
+  return (
+    <p style={{ fontSize: 15, color: B.text, lineHeight: 1.6, margin: '0 0 10px' }}>
+      {shown}
+      {isLong && (
+        <button
+          onClick={() => setExpanded(e => !e)}
+          style={{
+            display: 'inline', marginLeft: 8, padding: 0, border: 'none', background: 'none',
+            color: B.teal, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
+          }}
+        >
+          {expanded ? 'Show less' : 'Read more'}
+        </button>
+      )}
+    </p>
+  );
+}
+
 function CandidateVoteRow({ cv }) {
   return (
     <tr style={{ borderTop: `1px solid ${B.border}` }}>
@@ -78,11 +116,13 @@ export default function BillLookup() {
     setLoading(true); setError(null); setBillList(null); setVotesResult(null);
     try {
       const resolved = await callFunction('resolve-bill', { query: query.trim(), level, state: 'AZ' });
-      if (resolved.mode === 'none') {
-        setError(resolved.reason || "Couldn't identify a specific bill from that.");
-      } else if (resolved.mode === 'single') {
-        await fetchVotes(resolved.bill);
-      } else if (resolved.mode === 'list') {
+      if (!resolved.bills || resolved.bills.length === 0) {
+        setError(resolved.reason || "Couldn't find any matching bills for that search.");
+      } else {
+        // Always show the picklist, even a single result — a person
+        // confirms which bill was meant rather than the tool guessing for
+        // them, direct decision (this tool makes claims about how people
+        // voted, so a wrong auto-pick is worse than one extra click).
         setBillList(resolved.bills);
       }
     } catch (err) {
@@ -94,7 +134,9 @@ export default function BillLookup() {
   async function fetchVotes(bill) {
     setLoading(true); setError(null);
     try {
-      const result = await callFunction('bill-votes', bill); // bill already carries level/congress-or-year/billType/billNumber from resolve-bill's response shape
+      // Only billId/level/state matter to bill-votes.mjs now — it looks
+      // everything else up fresh from LegiScan's own real record.
+      const result = await callFunction('bill-votes', { billId: bill.billId, level: bill.level, state: bill.state });
       setVotesResult(result);
       setExpandedRollCall(-1);
       // billList is deliberately NOT cleared here anymore — kept in memory
@@ -166,27 +208,58 @@ export default function BillLookup() {
         </div>
       )}
 
-      {/* Issue-search picklist — hidden while viewing a bill's results, but
-          kept in memory (not cleared) so "← Back to results" can return to
-          it without re-querying Perplexity. */}
-      {billList && !votesResult && (
-        <div style={{ marginBottom: 20 }}>
-          <p style={{ fontWeight: 700, marginBottom: 10 }}>Several bills matched — pick one:</p>
-          {billList.map((b, i) => (
-            <button key={i} onClick={() => fetchVotes(b)} disabled={loading} style={{
-              display: 'block', width: '100%', textAlign: 'left', padding: '12px 16px', marginBottom: 8,
-              borderRadius: 8, border: `1.5px solid ${B.border}`, background: B.surface, cursor: 'pointer', fontFamily: 'inherit',
-            }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>
-                {b.billType} {b.billNumber} — {b.title}
-                {b.year && <span style={{ color: B.textMute, fontWeight: 400 }}> ({b.year})</span>}
-                {b.congress && <span style={{ color: B.textMute, fontWeight: 400 }}> ({b.congress}th Congress)</span>}
+      {/* Search results picklist — hidden while viewing a bill's results,
+          but kept in memory (not cleared) so "← Back to results" can
+          return to it without re-searching. Always shown, even for a
+          single result — see file header on why auto-selection was
+          dropped. Split into two tiers by LegiScan's own relevance score:
+          "Matches" (>=80%) shown first, "Possible matches" (50-79%) shown
+          after and visibly flagged as lower-confidence. */}
+      {billList && !votesResult && (() => {
+        const matchTier = billList.filter(b => b.confidence === 'match');
+        const possibleTier = billList.filter(b => b.confidence === 'possible');
+        const BillButton = ({ b }) => (
+          <button onClick={() => fetchVotes(b)} disabled={loading} style={{
+            display: 'block', width: '100%', textAlign: 'left', padding: '12px 16px', marginBottom: 8,
+            borderRadius: 8, border: `1.5px solid ${B.border}`, background: B.surface, cursor: 'pointer', fontFamily: 'inherit',
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>
+              {b.billNumber} — {b.title}
+              {b.confidence === 'possible' && (
+                <span style={{
+                  marginLeft: 8, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em',
+                  color: '#7a4f00', background: '#fff7ed', border: '1px solid #f5c842', borderRadius: 20, padding: '2px 8px',
+                }}>
+                  Possible match
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 13, color: B.textMid, marginTop: 2 }}>
+              {b.lastActionDate && <span style={{ color: B.textMute }}>{b.lastActionDate} — </span>}
+              {b.lastAction}
+            </div>
+          </button>
+        );
+        return (
+          <div style={{ marginBottom: 20 }}>
+            {matchTier.length > 0 && (
+              <div style={{ marginBottom: possibleTier.length > 0 ? 18 : 0 }}>
+                <p style={{ fontWeight: 700, marginBottom: 10 }}>Matches — pick one:</p>
+                {matchTier.map((b, i) => <BillButton key={`m${i}`} b={b} />)}
               </div>
-              <div style={{ fontSize: 13, color: B.textMid, marginTop: 2 }}>{b.summary}</div>
-            </button>
-          ))}
-        </div>
-      )}
+            )}
+            {possibleTier.length > 0 && (
+              <div>
+                <p style={{ fontWeight: 700, marginBottom: 4 }}>Possible matches</p>
+                <p style={{ fontSize: 13, color: B.textMute, marginTop: 0, marginBottom: 10 }}>
+                  Lower confidence — these came up in the search but matched less closely.
+                </p>
+                {possibleTier.map((b, i) => <BillButton key={`p${i}`} b={b} />)}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Resolved bill + vote results */}
       {votesResult && (
@@ -202,13 +275,12 @@ export default function BillLookup() {
           )}
           <div style={{ background: B.surfaceAlt, borderRadius: '10px 10px 0 0', padding: '16px 20px', border: `1px solid ${B.border}`, borderBottom: 'none' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: B.teal, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              {votesResult.bill.billType} {votesResult.bill.billNumber} ·{' '}
-              {votesResult.bill.level === 'state'
-                ? `${votesResult.bill.state} Legislature, ${votesResult.bill.year}`
-                : `${votesResult.bill.congress}th Congress`}
+              {votesResult.bill.billNumber} ·{' '}
+              {votesResult.bill.level === 'state' ? `${votesResult.bill.state} Legislature` : 'U.S. Congress'}
+              {votesResult.bill.sessionName && ` · ${votesResult.bill.sessionName}`}
             </div>
             <h3 style={{ margin: '4px 0 8px', fontSize: 20 }}>{votesResult.bill.title}</h3>
-            {votesResult.bill.summary && <p style={{ fontSize: 15, color: B.text, lineHeight: 1.6, margin: '0 0 10px' }}>{votesResult.bill.summary}</p>}
+            <BillSummary summary={votesResult.bill.summary} />
             {votesResult.bill.sponsor && <p style={{ fontSize: 15, color: B.textMid, margin: '0 0 4px' }}>Sponsor: {votesResult.bill.sponsor.name}</p>}
             {votesResult.bill.introducedDate && <p style={{ fontSize: 15, color: B.textMid, margin: '0 0 4px' }}>Introduced: {votesResult.bill.introducedDate}</p>}
             {votesResult.bill.latestAction && <p style={{ fontSize: 15, color: B.textMid, margin: 0 }}>Latest action ({votesResult.bill.latestAction.date}): {votesResult.bill.latestAction.text || votesResult.bill.latestAction.action}</p>}
