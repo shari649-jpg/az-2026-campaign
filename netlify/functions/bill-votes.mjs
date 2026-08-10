@@ -184,27 +184,40 @@ function congressToStartYear(congress) {
   return 1789 + (congress - 1) * 2;
 }
 
-async function findLegiscanSessionId(state, targetYear) {
+// Returns ALL LegiScan session_ids matching a target year, not just the
+// first — AZ (and many states) can have more than one session tagged to
+// the same calendar year (a regular session plus one or more special
+// sessions), and a bill can live in any of them. Taking only the first
+// match was a real bug: it could silently miss a real bill that happened
+// to live in a later-listed session for that same year.
+async function findLegiscanSessionIds(state, targetYear) {
   const data = await legiscanFetch("getSessionList", { state });
   const sessions = data?.sessions || [];
-  const match = sessions.find(s => s.year_start === targetYear);
-  if (!match) {
+  const matches = sessions.filter(s => s.year_start === targetYear);
+  if (matches.length === 0) {
     console.warn(`[bill-votes] no LegiScan ${state} session found for target year_start=${targetYear}. Available sessions:`, JSON.stringify(sessions.map(s => ({ session_id: s.session_id, year_start: s.year_start, year_end: s.year_end }))));
-    return null;
+  } else if (matches.length > 1) {
+    console.log(`[bill-votes] ${matches.length} LegiScan ${state} sessions match year ${targetYear} (regular + special?) — will search all: ${matches.map(s => s.session_id).join(",")}`);
   }
-  return match.session_id;
+  return matches.map(s => s.session_id);
 }
 
-async function findLegiscanBillId(sessionId, legiscanBillNumber) {
-  const data = await legiscanFetch("getMasterList", { id: sessionId });
-  const masterlist = data?.masterlist || {};
-  for (const key of Object.keys(masterlist)) {
-    const entry = masterlist[key];
-    if (entry?.number && entry.number.toUpperCase() === legiscanBillNumber.toUpperCase()) {
-      return entry.bill_id;
+// Searches every candidate session (see above) for the bill, in order,
+// returning the FIRST match — including which session it actually lived
+// in, since getSessionPeople below needs that exact session_id, not just
+// "some session from that year."
+async function findLegiscanBill(sessionIds, legiscanBillNumber) {
+  for (const sessionId of sessionIds) {
+    const data = await legiscanFetch("getMasterList", { id: sessionId });
+    const masterlist = data?.masterlist || {};
+    for (const key of Object.keys(masterlist)) {
+      const entry = masterlist[key];
+      if (entry?.number && entry.number.toUpperCase() === legiscanBillNumber.toUpperCase()) {
+        return { sessionId, billId: entry.bill_id };
+      }
     }
   }
-  console.warn(`[bill-votes] LegiScan bill number ${legiscanBillNumber} not found in session ${sessionId}'s master list (${Object.keys(masterlist).length} entries).`);
+  console.warn(`[bill-votes] bill ${legiscanBillNumber} not found across ${sessionIds.length} candidate session(s): ${sessionIds.join(",") || "(none)"}`);
   return null;
 }
 
@@ -251,29 +264,38 @@ async function buildLegiscanPeopleMap(sessionId) {
   return map;
 }
 
-// Matches a LegiScan person record to one of this org's candidates. Tries
-// district-number + chamber first (most precise); falls back to exact
-// last-name match within the same state if district parsing doesn't work
-// out — defensive on purpose, see file header's flagged uncertainty.
+// Matches a LegiScan person record to one of this org's candidates via
+// district number + chamber (Senate/House) — this should be sufficient on
+// its own since candidates are already pre-filtered to one state before
+// this is ever called (a given LD has exactly one Senator and, typically,
+// two House members — district+chamber is enough to disambiguate within
+// a single state's own roster).
+//
+// REAL BUG FOUND AND FIXED HERE (Aug 2026): the original version also
+// compared state (`person.state || c.state`) — but when person.state is
+// undefined (likely always, since LegiScan's documented person schema has
+// no plain state-abbreviation field), that expression silently falls back
+// to comparing c.state against itself, which is always true — a
+// safety check that did nothing. Removed rather than "fixed" with a guess
+// at the real field name, since candidates are already state-scoped
+// upstream and don't need it.
+//
+// The previous version also had a loose last-name .includes() fallback
+// when district matching failed, which is exactly the kind of thing that
+// can cross-match unrelated people on a short/common surname substring —
+// removed. A missing match (falls into "not in Congress"/no record) is a
+// data gap; a WRONG match is actively harmful for a tool making claims
+// about how someone voted. Asymmetric risk — better to under-match than
+// mismatch.
 function matchLegiscanPersonToCandidate(person, candidates) {
   if (!person) return null;
   const personDistrictNum = extractDistrictNumber(person.district);
+  if (personDistrictNum === null) return null; // no fallback anymore — see note above
   const personIsSenate = (person.role || "").toLowerCase().startsWith("sen");
-  if (personDistrictNum !== null) {
-    const byDistrict = candidates.find(c =>
-      isSenateCandidate(c) === personIsSenate &&
-      extractDistrictNumber(c.district) === personDistrictNum &&
-      (c.state || "").toUpperCase() === (person.state || c.state || "").toUpperCase()
-    );
-    if (byDistrict) return byDistrict;
-  }
-  // Fallback: last-name match (best-effort only — flagged, not silent)
-  const personLastName = (person.last_name || person.name || "").trim().toLowerCase();
-  if (personLastName) {
-    const byName = candidates.find(c => (c.name || "").toLowerCase().includes(personLastName));
-    if (byName) return byName;
-  }
-  return null;
+  return candidates.find(c =>
+    isSenateCandidate(c) === personIsSenate &&
+    extractDistrictNumber(c.district) === personDistrictNum
+  ) || null;
 }
 
 export default async function (req) {
@@ -336,9 +358,11 @@ export default async function (req) {
     let legiscanSessionState, legiscanTargetYear, legiscanPrefix;
 
     if (level === "federal") {
-      const [billResult, subjectsResult] = await Promise.all([
+      const [billResult, subjectsResult, summariesResult, actionsResult] = await Promise.all([
         congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}`),
         congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}/subjects`),
+        congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}/summaries`),
+        congressFetch(`/bill/${congress}/${billTypePath}/${billNumber}/actions`, { limit: 250 }),
       ]);
       if (!billResult?.bill) {
         return new Response(JSON.stringify({ success: false, error: `No bill found for ${billType} ${billNumber}, ${congress}th Congress.` }), { status: 404, headers: corsHeaders(req) });
@@ -346,15 +370,25 @@ export default async function (req) {
       const bill = billResult.bill;
       policyArea = subjectsResult?.subjects?.policyArea?.name || null;
       legislativeSubjects = (subjectsResult?.subjects?.legislativeSubjects || []).map(s => s.name);
+      // CRS summaries accumulate one per major legislative stage (as
+      // introduced, as passed House, etc.) — the most recent one is the
+      // most complete/current description of what the bill actually does.
+      const summaries = summariesResult?.summaries || [];
+      const latestSummary = summaries.length > 0 ? summaries[summaries.length - 1] : null;
+      // Cap at the 30 most recent actions for a readable timeline, not a
+      // full multi-hundred-entry procedural dump.
+      const history = (actionsResult?.actions || []).slice(0, 30).map(a => ({ date: a.actionDate, action: a.text, chamber: null }));
       billForResponse = {
         level: "federal",
         congress: bill.congress,
         billType: (bill.type || billType).toUpperCase(),
         billNumber: bill.number,
         title: bill.title,
+        summary: latestSummary ? latestSummary.text.replace(/<[^>]+>/g, "") : null, // CRS summary text sometimes contains basic HTML tags — stripped for plain display
         sponsor: bill.sponsors?.[0] ? { name: bill.sponsors[0].fullName, bioguideId: bill.sponsors[0].bioguideId } : null,
         latestAction: bill.latestAction ? { date: bill.latestAction.actionDate, text: bill.latestAction.text } : null,
         introducedDate: bill.introducedDate || null,
+        history,
         url: bill.url || null,
       };
       legiscanSessionState = "US";
@@ -393,15 +427,19 @@ export default async function (req) {
     if (!legiscanPrefix) {
       legiscanNote = `Vote lookup isn't supported for bill type ${billTypeUpper} yet.`;
     } else {
-      const sessionId = await findLegiscanSessionId(legiscanSessionState, legiscanTargetYear);
-      if (!sessionId) {
+      // Searches EVERY session matching the target year, not just one —
+      // see findLegiscanSessionIds's header note on regular + special
+      // sessions sharing the same year.
+      const sessionIds = await findLegiscanSessionIds(legiscanSessionState, legiscanTargetYear);
+      if (sessionIds.length === 0) {
         legiscanNote = `Couldn't find a matching LegiScan session for ${level === "federal" ? `the ${congress}th Congress` : `${stateParam} ${year}`}.`;
       } else {
         const legiscanBillNumber = `${legiscanPrefix}${billNumber}`;
-        const legiscanBillId = await findLegiscanBillId(sessionId, legiscanBillNumber);
-        if (!legiscanBillId) {
-          legiscanNote = `Couldn't find bill ${legiscanBillNumber} in LegiScan's records for ${level === "federal" ? `the ${congress}th Congress` : `${stateParam} ${year}`}.`;
+        const found = await findLegiscanBill(sessionIds, legiscanBillNumber);
+        if (!found) {
+          legiscanNote = `Couldn't find bill ${legiscanBillNumber} in LegiScan's records for ${level === "federal" ? `the ${congress}th Congress` : `${stateParam} ${year}`}. If this is a real bill, double-check the number and year — Perplexity's guess may be slightly off.`;
         } else {
+          const { sessionId, billId: legiscanBillId } = found;
           const [billDetailResult, peopleMap] = await Promise.all([
             legiscanFetch("getBill", { id: legiscanBillId }),
             buildLegiscanPeopleMap(sessionId),
@@ -411,6 +449,7 @@ export default async function (req) {
           // State mode: fill in billForResponse now that we have LegiScan's
           // own bill record — the only detail source available for states.
           if (level === "state" && legiscanBill) {
+            const history = (legiscanBill.history || []).map(h => ({ date: h.date, action: h.action, chamber: h.chamber === "S" ? "Senate" : h.chamber === "H" ? "House" : null }));
             billForResponse = {
               level: "state",
               state: stateParam,
@@ -418,9 +457,11 @@ export default async function (req) {
               billType: billTypeUpper,
               billNumber,
               title: legiscanBill.title,
+              summary: legiscanBill.description || null,
               sponsor: legiscanBill.sponsors?.[0] ? { name: legiscanBill.sponsors[0].name, party: legiscanBill.sponsors[0].party } : null,
-              latestAction: legiscanBill.status_date ? { date: legiscanBill.status_date, text: legiscanBill.history?.[legiscanBill.history.length - 1]?.action || null } : null,
-              introducedDate: legiscanBill.history?.[0]?.date || null,
+              latestAction: history.length > 0 ? history[history.length - 1] : null,
+              introducedDate: history.length > 0 ? history[0].date : null,
+              history,
               url: legiscanBill.url || null,
             };
             legislativeSubjects = (legiscanBill.subjects || []).map(s => s.subject_name);
@@ -435,6 +476,29 @@ export default async function (req) {
             const rc = rollCallResult?.roll_call;
             if (!rc) continue;
 
+            // Some LegiScan "roll call" entries are procedural committee
+            // actions with NO individual member positions attached at all
+            // (a 0-0 tally, an empty votes[] array) — a voice vote or
+            // unanimous-consent action, not a missing-data bug. Flagging
+            // this explicitly so the frontend can say "no individual
+            // positions recorded for this action" instead of the
+            // misleading alternative: every single tracked candidate
+            // showing up in a "not in Congress" bucket, which wrongly
+            // implies none of them were serving at the time.
+            const hasIndividualVotes = (rc.votes || []).length > 0;
+
+            // One-time diagnostic per roll call: log the raw district
+            // field for a few real voters in THIS specific committee/
+            // floor vote context. The general getSessionPeople sample
+            // logged earlier reflects the whole chamber roster, which may
+            // not be identical in shape to how individual roll-call voter
+            // records resolve through peopleMap — this confirms the exact
+            // format actually driving the match logic above.
+            if (hasIndividualVotes) {
+              const sample = (rc.votes || []).slice(0, 3).map(vt => ({ people_id: vt.people_id, district: peopleMap[vt.people_id]?.district, role: peopleMap[vt.people_id]?.role, name: peopleMap[vt.people_id]?.name }));
+              console.log(`[bill-votes] roll call ${rc.roll_call_id} voter sample:`, JSON.stringify(sample));
+            }
+
             const candidateVotes = candidates.map(c => {
               const voteEntry = (rc.votes || []).find(vt => {
                 const person = peopleMap[vt.people_id];
@@ -447,9 +511,30 @@ export default async function (req) {
                 district: c.district,
                 party: c.party,
                 position: voteEntry ? voteEntry.vote_text : null,
-                notInCongressForThisVote: !voteEntry,
+                notInCongressForThisVote: hasIndividualVotes && !voteEntry,
               };
             });
+
+            // Integrity check — a real safety net, not decoration. We
+            // cannot possibly have matched more of our own candidates to
+            // real votes than there were actual voters in this roll call
+            // (each real voter maps to at most one of our candidates,
+            // since district+chamber is unique within a state). If this
+            // ever fires, it means the matching logic has a bug again —
+            // surfaced loudly to the frontend instead of silently
+            // displaying vote positions that can't all be real. This is
+            // exactly the class of bug already found and fixed once in
+            // this file (a tautological state check plus a too-loose
+            // name-substring fallback caused a 6-3-1 real tally to
+            // produce 12+ matched candidates) — this check exists so a
+            // regression of that bug is caught automatically, not by
+            // someone manually counting names against a tally again.
+            const realVoterCount = (rc.votes || []).length;
+            const matchedCount = candidateVotes.filter(cv => cv.position !== null).length;
+            const matchIntegrityWarning = matchedCount > realVoterCount;
+            if (matchIntegrityWarning) {
+              console.error(`[bill-votes] MATCH INTEGRITY FAILURE on roll call ${rc.roll_call_id}: matched ${matchedCount} candidates but only ${realVoterCount} people actually voted. This is impossible and means matchLegiscanPersonToCandidate has a bug.`);
+            }
 
             rollCalls.push({
               rollCallId: rc.roll_call_id,
@@ -458,6 +543,8 @@ export default async function (req) {
               result: rc.passed ? "Passed" : "Failed",
               voteQuestion: rc.desc || null,
               tally: { yea: rc.yea, nay: rc.nay, notVoting: rc.nv, absent: rc.absent },
+              noIndividualVoteData: !hasIndividualVotes,
+              matchIntegrityWarning,
               candidateVotes,
             });
           }
