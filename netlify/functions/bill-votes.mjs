@@ -214,6 +214,42 @@ async function buildLegiscanPeopleMap(sessionId) {
 // data gap; a WRONG match is actively harmful for a tool making claims
 // about how someone voted. Asymmetric risk — better to under-match than
 // mismatch.
+// Exact (not fuzzy) name matching — required in addition to district+
+// chamber as of this fix. Checks whether LegiScan's last_name matches ANY
+// single token, or any 2- or 3-token run, in the candidate's full name —
+// handles multi-word surnames confirmed present in this org's own real
+// data ("De Los Santos", "Stahl Hamilton"), not just simple single-word
+// ones. This is intentionally an EXACT token match, not the substring
+// .includes() check removed earlier — that was the original bug (a loose
+// substring could cross-match unrelated people); this is narrow by
+// design: it only ever fires after district+chamber has already reduced
+// the field to a small set, and even then requires a real token match,
+// not a partial one.
+function namesLikelyMatch(candidateName, personLastName) {
+  if (!personLastName) return false;
+  const target = personLastName.trim().toLowerCase();
+  if (!target) return false;
+  const tokens = (candidateName || "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.includes(target)) return true;
+  for (let i = 0; i < tokens.length - 1; i++) {
+    if (`${tokens[i]} ${tokens[i + 1]}` === target) return true;
+  }
+  for (let i = 0; i < tokens.length - 2; i++) {
+    if (`${tokens[i]} ${tokens[i + 1]} ${tokens[i + 2]}` === target) return true;
+  }
+  return false;
+}
+
+// THE REMAINING BUG THIS FIXES (Aug 2026, found via residual over-matching
+// that survived the isIncumbent() fix — e.g. 12 matched vs 9 real voters,
+// 11 vs 8): Arizona HOUSE districts are multi-member — each LD elects TWO
+// representatives, not one. District+chamber alone narrows a vote down to
+// "this LD's House delegation," which can be two different real people,
+// not a unique individual the way it is for Senate (single-member). Both
+// real co-district incumbents could previously inherit the same vote
+// incorrectly, since nothing distinguished which of the two actually cast
+// it. Name matching (see namesLikelyMatch above) is what actually
+// disambiguates them.
 function matchLegiscanPersonToCandidate(person, candidates) {
   if (!person) return null;
   const personDistrictNum = extractDistrictNumber(person.district);
@@ -221,7 +257,8 @@ function matchLegiscanPersonToCandidate(person, candidates) {
   const personIsSenate = (person.role || "").toLowerCase().startsWith("sen");
   return candidates.find(c =>
     isSenateCandidate(c) === personIsSenate &&
-    extractDistrictNumber(c.district) === personDistrictNum
+    extractDistrictNumber(c.district) === personDistrictNum &&
+    namesLikelyMatch(c.name, person.last_name)
   ) || null;
 }
 
