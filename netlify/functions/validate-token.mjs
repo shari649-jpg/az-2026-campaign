@@ -73,9 +73,13 @@ export default async function (req) {
     // Just validating — return invite data so RegisterPage can pre-fill fields
     return new Response(JSON.stringify({
       valid: true,
-      email:      invite.email,
-      fullName:   invite.fullName,
-      waitlistId: invite.waitlistId || null,
+      email:       invite.email,
+      fullName:    invite.fullName,
+      waitlistId:  invite.waitlistId || null,
+      // Aug 2026 individual-tier addition — defaults preserve the exact
+      // behavior of every invite sent before these fields existed.
+      accountType: invite.accountType === "org" ? "org" : "individual",
+      orgId:       invite.accountType === "org" ? (invite.orgId || null) : null,
     }), { status: 200, headers: corsHeaders(req) });
 
   } catch (err) {
