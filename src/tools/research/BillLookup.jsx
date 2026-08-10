@@ -89,6 +89,18 @@ function BillSummary({ summary }) {
   );
 }
 
+// Real bill text comes in whatever format the jurisdiction hosts it in —
+// confirmed real examples across states include plain HTML and PDF, and
+// occasionally RTF. Label honestly rather than imply it's always a clean
+// webpage.
+function mimeLabel(mime) {
+  if (!mime) return '';
+  if (mime.includes('pdf')) return ' (PDF)';
+  if (mime.includes('rtf')) return ' (RTF)';
+  if (mime.includes('word') || mime.includes('msword') || mime.includes('officedocument')) return ' (Word)';
+  return '';
+}
+
 function CandidateVoteRow({ cv }) {
   return (
     <tr style={{ borderTop: `1px solid ${B.border}` }}>
@@ -281,9 +293,32 @@ export default function BillLookup() {
             </div>
             <h3 style={{ margin: '4px 0 8px', fontSize: 20 }}>{votesResult.bill.title}</h3>
             <BillSummary summary={votesResult.bill.summary} />
-            {votesResult.bill.sponsor && <p style={{ fontSize: 15, color: B.textMid, margin: '0 0 4px' }}>Sponsor: {votesResult.bill.sponsor.name}</p>}
+            {votesResult.bill.sponsor && (
+              <p style={{ fontSize: 15, color: B.textMid, margin: '0 0 4px' }}>
+                Sponsor: {votesResult.bill.sponsor.name}
+                {(votesResult.bill.sponsor.party || votesResult.bill.sponsor.district) && (
+                  <span style={{ color: B.textMute }}>
+                    {' ('}
+                    {[votesResult.bill.sponsor.party, votesResult.bill.sponsor.district].filter(Boolean).join('-')}
+                    {')'}
+                  </span>
+                )}
+              </p>
+            )}
             {votesResult.bill.introducedDate && <p style={{ fontSize: 15, color: B.textMid, margin: '0 0 4px' }}>Introduced: {votesResult.bill.introducedDate}</p>}
             {votesResult.bill.latestAction && <p style={{ fontSize: 15, color: B.textMid, margin: 0 }}>Latest action ({votesResult.bill.latestAction.date}): {votesResult.bill.latestAction.text || votesResult.bill.latestAction.action}</p>}
+            <p style={{ fontSize: 15, margin: '8px 0 0', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              {votesResult.bill.textUrl && (
+                <a href={votesResult.bill.textUrl} target="_blank" rel="noopener noreferrer" style={{ color: B.teal, fontWeight: 700 }}>
+                  View full bill text{mimeLabel(votesResult.bill.textMime)} ↗
+                </a>
+              )}
+              {votesResult.bill.legiscanUrl && (
+                <a href={votesResult.bill.legiscanUrl} target="_blank" rel="noopener noreferrer" style={{ color: B.textMid }}>
+                  View on LegiScan ↗
+                </a>
+              )}
+            </p>
             {votesResult.bill.history?.length > 1 && (
               <details style={{ marginTop: 10 }}>
                 <summary style={{ fontSize: 15, color: B.teal, fontWeight: 700, cursor: 'pointer' }}>Full status history ({votesResult.bill.history.length} steps) — did it pass, get signed?</summary>
