@@ -303,7 +303,7 @@ export default function BillLookup() {
                                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                               }}
                             >
-                              <span>Not in Congress yet ({notInCongress.length})</span>
+                              <span>{votesResult.bill.level === 'state' ? 'Not in the Legislature yet' : 'Not in Congress yet'} ({notInCongress.length})</span>
                               <span>{isNicOpen ? '▲' : '▼'}</span>
                             </button>
                             {isNicOpen && (
