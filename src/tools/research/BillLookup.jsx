@@ -172,7 +172,11 @@ export default function BillLookup() {
               display: 'block', width: '100%', textAlign: 'left', padding: '12px 16px', marginBottom: 8,
               borderRadius: 8, border: `1.5px solid ${B.border}`, background: B.surface, cursor: 'pointer', fontFamily: 'inherit',
             }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>{b.billType} {b.billNumber} — {b.title}</div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>
+                {b.billType} {b.billNumber} — {b.title}
+                {b.year && <span style={{ color: B.textMute, fontWeight: 400 }}> ({b.year})</span>}
+                {b.congress && <span style={{ color: B.textMute, fontWeight: 400 }}> ({b.congress}th Congress)</span>}
+              </div>
               <div style={{ fontSize: 13, color: B.textMid, marginTop: 2 }}>{b.summary}</div>
             </button>
           ))}
@@ -199,9 +203,25 @@ export default function BillLookup() {
                 : `${votesResult.bill.congress}th Congress`}
             </div>
             <h3 style={{ margin: '4px 0 8px', fontSize: 20 }}>{votesResult.bill.title}</h3>
+            {votesResult.bill.summary && <p style={{ fontSize: 15, color: B.text, lineHeight: 1.6, margin: '0 0 10px' }}>{votesResult.bill.summary}</p>}
             {votesResult.bill.sponsor && <p style={{ fontSize: 15, color: B.textMid, margin: '0 0 4px' }}>Sponsor: {votesResult.bill.sponsor.name}</p>}
             {votesResult.bill.introducedDate && <p style={{ fontSize: 15, color: B.textMid, margin: '0 0 4px' }}>Introduced: {votesResult.bill.introducedDate}</p>}
-            {votesResult.bill.latestAction && <p style={{ fontSize: 15, color: B.textMid, margin: 0 }}>Latest action ({votesResult.bill.latestAction.date}): {votesResult.bill.latestAction.text}</p>}
+            {votesResult.bill.latestAction && <p style={{ fontSize: 15, color: B.textMid, margin: 0 }}>Latest action ({votesResult.bill.latestAction.date}): {votesResult.bill.latestAction.text || votesResult.bill.latestAction.action}</p>}
+            {votesResult.bill.history?.length > 1 && (
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ fontSize: 15, color: B.teal, fontWeight: 700, cursor: 'pointer' }}>Full status history ({votesResult.bill.history.length} steps) — did it pass, get signed?</summary>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, marginTop: 8 }}>
+                  <tbody>
+                    {votesResult.bill.history.map((h, i) => (
+                      <tr key={i} style={{ borderTop: i > 0 ? `1px solid ${B.border}` : 'none' }}>
+                        <td style={{ padding: '6px 8px', color: B.textMute, whiteSpace: 'nowrap' }}>{h.date}</td>
+                        <td style={{ padding: '6px 8px' }}>{h.chamber && <span style={{ color: B.textMute }}>[{h.chamber}] </span>}{h.action}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            )}
             {votesResult.subjects?.policyArea && (
               <p style={{ fontSize: 15, marginTop: 10 }}>
                 <span style={{ background: B.gold, color: B.charcoal, padding: '2px 10px', borderRadius: 20, fontWeight: 700, fontSize: 12 }}>{votesResult.subjects.policyArea}</span>
@@ -249,15 +269,26 @@ export default function BillLookup() {
 
                   {isOpen && (
                     <div style={{ padding: '12px 16px', borderTop: `1px solid ${B.border}` }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
-                        <tbody>
-                          {rc.candidateVotes.filter(cv => !cv.notInCongressForThisVote).map((cv, j) => (
-                            <CandidateVoteRow key={j} cv={cv} />
-                          ))}
-                        </tbody>
-                      </table>
+                      {rc.matchIntegrityWarning && (
+                        <div style={{ background: '#fee2e2', border: '1.5px solid #dc2626', borderRadius: 8, padding: '12px 16px', marginBottom: 12, fontSize: 15, color: '#991b1b', fontWeight: 700 }}>
+                          ⚠️ Vote matching failed an internal integrity check for this action — more candidates were matched than people who actually voted. Do NOT use these results; this has been logged for investigation.
+                        </div>
+                      )}
+                      {rc.noIndividualVoteData ? (
+                        <div style={{ background: '#f0f4f8', border: `1px solid ${B.border}`, borderRadius: 8, padding: '10px 14px', fontSize: 15, color: B.textMid }}>
+                          No individual member positions recorded for this action — likely a voice vote or unanimous-consent action rather than a real gap in the data.
+                        </div>
+                      ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+                          <tbody>
+                            {rc.candidateVotes.filter(cv => !cv.notInCongressForThisVote).map((cv, j) => (
+                              <CandidateVoteRow key={j} cv={cv} />
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
 
-                      {(() => {
+                      {!rc.noIndividualVoteData && (() => {
                         const notInCongress = rc.candidateVotes.filter(cv => cv.notInCongressForThisVote);
                         if (notInCongress.length === 0) return null;
                         const isNicOpen = !!expandedNotInCongress[i];
