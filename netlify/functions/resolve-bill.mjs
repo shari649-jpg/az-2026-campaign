@@ -60,6 +60,23 @@
 // first — a more precise "most recent" than sorting by bare year, and
 // available directly on every search result with no extra fetch).
 //
+// ZERO-VOTE BILLS ARE FILTERED OUT (direct request, Aug 2026)
+// ────────────────────────────────────────────────────────────────────────
+// A vote-lookup tool has nothing useful to show for a bill that's never
+// had a single recorded vote — real, confirmed example: SB1768 showed up
+// in results but only ever reached "Senate read second time," no roll
+// call yet. getSearch doesn't expose vote count, so this requires one
+// real getBill call per candidate to check votes.length. Since LegiScan
+// is free, this is a real-latency cost, not a real-money one — but it IS
+// extra round-trip time on every search, and it means bill-votes.mjs
+// re-fetches the same getBill record again once the person actually picks
+// a bill (nothing is cached across these stateless functions). Bounded to
+// the top CANDIDATE_CHECK_LIMIT per tier (not the full raw result set)
+// to keep latency reasonable; if that bound removes enough zero-vote
+// bills that fewer than 10 real results remain, fewer than 10 are simply
+// returned rather than reaching further into a long tail of low-relevance
+// results to backfill.
+//
 // RESPONSE CONTRACT (for bill-votes.mjs / BillLookup.jsx to consume)
 // ────────────────────────────────────────────────────────────────────────
 // { success:true, bills: [ { level, state, billId, billNumber, title,
@@ -88,7 +105,7 @@ import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, generationWarningPayload } from "./creditHelper.mjs";
 import { callPerplexity, extractPerplexityText } from "./perplexity-search.mjs";
-import { legiscanSearch } from "./legislative-lookup.mjs";
+import { legiscanSearch, legiscanFetch } from "./legislative-lookup.mjs";
 
 const ALLOWED_ORIGINS = [
   "https://arizonacoalition.net",
@@ -120,6 +137,27 @@ async function requireSignedIn(app, idToken) {
 const MATCH_THRESHOLD = 80;
 const POSSIBLE_THRESHOLD = 50;
 const RESULT_CAP = 10;
+const CANDIDATE_CHECK_LIMIT = 15; // per tier — see file header on the zero-vote filter's latency tradeoff
+
+async function hasRecordedVotes(billId) {
+  try {
+    const result = await legiscanFetch("getBill", { id: billId });
+    return (result?.bill?.votes || []).length > 0;
+  } catch (err) {
+    console.error(`[resolve-bill] vote-check failed for bill_id=${billId}, keeping it rather than dropping on an API hiccup:`, err.message);
+    return true; // fail open — a lookup failure shouldn't silently disappear a possibly-good result
+  }
+}
+
+// Drops bills with zero recorded votes — direct request, since a
+// vote-lookup tool has nothing to show for a bill that's never had a
+// roll call. Checks only the top CANDIDATE_CHECK_LIMIT of each tier
+// (not the full result set) to bound latency; see file header.
+async function filterToBillsWithVotes(tierItems) {
+  const pool = tierItems.slice(0, CANDIDATE_CHECK_LIMIT);
+  const checks = await Promise.all(pool.map(r => hasRecordedVotes(r.bill_id)));
+  return pool.filter((_, i) => checks[i]);
+}
 
 // Reformulation-only prompt — critically, this NEVER asks for a bill
 // identifier, only better search text. See file header for why that
@@ -256,6 +294,14 @@ export default async function (req) {
 
     }
     if (usage.warning) usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
+
+    // ── Drop bills with zero recorded votes — see file header. Applied
+    // once here, after tiering is final (whether from the raw query or
+    // the reformulation retry), not duplicated across both search paths. ─
+    [matches, possible] = await Promise.all([
+      filterToBillsWithVotes(matches),
+      filterToBillsWithVotes(possible),
+    ]);
 
     const combined = [
       ...matches.slice(0, RESULT_CAP).map(r => toResponseShape(r, level, "match")),
