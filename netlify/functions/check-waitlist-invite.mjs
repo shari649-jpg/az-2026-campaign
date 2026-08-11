@@ -112,6 +112,13 @@ export default async function (req) {
       fullName: data.fullName || "",
       primarySocial: data.primarySocial || { platform: "", handle: "" },
       organization: data.organization || "",
+      // Aug 2026 individual-tier addition — written by send-invite.mjs
+      // alongside the Blobs invite token, so the Google Sign-In path
+      // (which never sees that token) can still resolve the same
+      // accountType/org assignment. provision-account.mjs is the one
+      // that actually acts on this — never acted on directly here.
+      accountType: data.accountType === "org" ? "org" : "individual",
+      resolvedOrgId: data.accountType === "org" ? (data.resolvedOrgId || null) : null,
     }), {
       status: 200, headers: corsHeaders(req),
     });
