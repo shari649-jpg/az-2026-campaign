@@ -189,6 +189,24 @@ export default async function (req) {
       createdAt:  new Date().toISOString(),
     }));
 
+    // ALSO write the resolved accountType/orgId onto the waitlist
+    // Firestore doc itself, not just Blobs — the email/password
+    // registration path reads the invite from Blobs via the emailed
+    // token, but Google Sign-In (LoginPage.jsx) never sees that token at
+    // all; it checks the waitlist doc directly via
+    // check-waitlist-invite.mjs. Without this, an org-track invite sent
+    // to someone who then signs in with Google would silently lose the
+    // org assignment. Both paths ultimately call provision-account.mjs,
+    // which reads from whichever of these two sources actually applies.
+    try {
+      await admin.firestore(app).doc(`waitlist/${waitlistId}`).update({
+        accountType: resolvedAccountType,
+        ...(resolvedAccountType === "org" ? { resolvedOrgId: orgId } : {}),
+      });
+    } catch (err) {
+      console.error(`[send-invite] failed to write accountType/orgId onto waitlist/${waitlistId}:`, err.message);
+    }
+
     // Send invite email via Resend
     await sendEmail({
       to:      email,
