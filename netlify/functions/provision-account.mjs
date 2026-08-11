@@ -2,26 +2,32 @@
 //
 // WHAT THIS DOES (Aug 2026, individual-tier build)
 // ────────────────────────────────────────────────────────────────────────
-// Called by RegisterPage.jsx immediately after the base users/{uid} doc is
-// created client-side. firestore.rules explicitly forbids a new user from
-// self-assigning orgId at that step (see that rule's comment: "can't
-// self-assign an org either") — this function is what actually does it,
-// via the Admin SDK, which bypasses that client-side restriction because
-// this action is gated on a REAL invite token, not on anything the client
+// Called right after a brand-new users/{uid} doc is created, from EITHER
+// signup path this app has:
+//   - Email/password (RegisterPage.jsx) — passes the real invite `token`
+//     from the emailed link, resolved via Netlify Blobs.
+//   - Google Sign-In (LoginPage.jsx) — never sees that token at all (no
+//     link is clicked in that flow), so it passes `waitlistId` instead,
+//     resolved by reading the waitlist Firestore doc directly. Trust here
+//     rests on the same check already required to reach this point
+//     (status "invited" AND the doc's email matching the caller's own
+//     verified email) — re-verified independently here, not assumed
+//     correct just because the client already checked it once.
+// Both resolve to the same { accountType, orgId } shape and share all the
+// same downstream provisioning logic below.
+//
+// firestore.rules explicitly forbids a new user from self-assigning
+// orgId at doc-creation time (see that rule's comment: "can't self-assign
+// an org either") — this function is what actually does it, via the
+// Admin SDK, which bypasses that client-side restriction because this
+// action is gated on real server-verified data, not anything the client
 // claims about itself.
 //
-// Re-reads the invite from Netlify Blobs itself rather than trusting
-// accountType/orgId from the request body — the same "never trust the
-// client for anything that determines access or billing" rule this app
-// already follows everywhere else (grant-credits.mjs, manage-user.mjs).
-//
-// Also absorbs two things RegisterPage.jsx used to do as separate calls:
-// marking the invite token used (previously a separate validate-token
-// action=consume call) and marking the waitlist entry "registered"
-// (previously a direct client updateDoc — still allowed by
-// firestore.rules, but redundant now that this function already needs to
-// touch the same invite data in the same request). One server round trip
-// instead of three.
+// Also absorbs what each signup path used to do as separate calls:
+// marking the invite used (email/password path — previously a separate
+// validate-token action=consume call) and marking the waitlist entry
+// registered (both paths — previously a direct client updateDoc). One
+// server round trip instead of two or three.
 //
 // ORG PATH vs. INDIVIDUAL PATH ("org of one")
 // ────────────────────────────────────────────────────────────────────────
@@ -87,13 +93,13 @@ export default async function (req) {
   }
 
   try {
-    const { idToken, token } = await req.json();
-    if (!idToken || !token) {
-      return new Response(JSON.stringify({ success: false, error: "Missing idToken or invite token." }), { status: 400, headers: corsHeaders(req) });
+    const { idToken, token, waitlistId: waitlistIdParam } = await req.json();
+    if (!idToken || (!token && !waitlistIdParam)) {
+      return new Response(JSON.stringify({ success: false, error: "Missing idToken and either an invite token or waitlistId." }), { status: 400, headers: corsHeaders(req) });
     }
 
     // Confirms the caller is a real, just-authenticated user and gives us
-    // a trusted uid to write to — the uid is NEVER taken from the request
+    // a trusted uid/email to work with — NEVER taken from the request
     // body, only from the verified token.
     let uid, callerEmail;
     try {
@@ -104,53 +110,96 @@ export default async function (req) {
       return new Response(JSON.stringify({ success: false, error: "Not authenticated." }), { status: 401, headers: corsHeaders(req) });
     }
 
-    // Re-read the invite from Blobs directly — the authoritative source.
-    const store = getStore("invites");
-    let raw;
-    try {
-      raw = await store.get(token);
-    } catch {
-      raw = null;
-    }
-    if (!raw) {
-      return new Response(JSON.stringify({ success: false, error: "Invalid invite token." }), { status: 400, headers: corsHeaders(req) });
-    }
-    const invite = JSON.parse(raw);
-
-    if (invite.used) {
-      return new Response(JSON.stringify({ success: false, error: "This invite has already been used." }), { status: 400, headers: corsHeaders(req) });
-    }
-    if (new Date(invite.expiresAt) < new Date()) {
-      return new Response(JSON.stringify({ success: false, error: "This invite has expired." }), { status: 400, headers: corsHeaders(req) });
-    }
-    // Doesn't block on mismatch — email casing/whitespace edge cases
-    // aren't worth hard-failing registration over, and the invite token
-    // itself (not the email match) is what's actually authoritative here.
-    // Logged so a real problem is still visible.
-    if (callerEmail && invite.email && callerEmail.toLowerCase() !== invite.email.toLowerCase()) {
-      console.warn(`[provision-account] email mismatch: authenticated as ${callerEmail}, invite issued to ${invite.email}`);
-    }
-
     const db = admin.firestore(app);
-    const accountType = invite.accountType === "org" ? "org" : "individual";
+    const store = getStore("invites");
+
+    // Two ways this function gets called, resolving to the same shape
+    // ({ accountType, orgId, waitlistId }) either way:
+    //
+    //   1. Email/password registration (RegisterPage.jsx) — has a real
+    //      invite `token` from the emailed link, resolved via Blobs.
+    //   2. Google Sign-In (LoginPage.jsx) — never sees that token at all
+    //      (there's no link/token in that flow, just a Google popup), so
+    //      it passes `waitlistId` instead, resolved by reading the
+    //      waitlist Firestore doc directly. Trust here rests on the same
+    //      check LoginPage.jsx's earlier check-waitlist-invite.mjs call
+    //      already required — status "invited" AND the doc's email
+    //      matching the caller's own verified email — re-verified here
+    //      independently rather than assuming the client already did it
+    //      correctly.
+    //
+    // Both are equally authoritative for their own flow; neither is
+    // trusted based on anything the client claims about accountType/orgId
+    // itself, only on what's actually stored server-side.
+    let accountType, orgId, resolvedWaitlistId, blobsInvite = null;
+
+    if (token) {
+      let raw;
+      try {
+        raw = await store.get(token);
+      } catch {
+        raw = null;
+      }
+      if (!raw) {
+        return new Response(JSON.stringify({ success: false, error: "Invalid invite token." }), { status: 400, headers: corsHeaders(req) });
+      }
+      blobsInvite = JSON.parse(raw);
+
+      if (blobsInvite.used) {
+        return new Response(JSON.stringify({ success: false, error: "This invite has already been used." }), { status: 400, headers: corsHeaders(req) });
+      }
+      if (new Date(blobsInvite.expiresAt) < new Date()) {
+        return new Response(JSON.stringify({ success: false, error: "This invite has expired." }), { status: 400, headers: corsHeaders(req) });
+      }
+      // Doesn't block on mismatch — email casing/whitespace edge cases
+      // aren't worth hard-failing registration over, and the invite token
+      // itself (not the email match) is what's actually authoritative
+      // here. Logged so a real problem is still visible.
+      if (callerEmail && blobsInvite.email && callerEmail.toLowerCase() !== blobsInvite.email.toLowerCase()) {
+        console.warn(`[provision-account] email mismatch: authenticated as ${callerEmail}, invite issued to ${blobsInvite.email}`);
+      }
+
+      accountType = blobsInvite.accountType === "org" ? "org" : "individual";
+      orgId = blobsInvite.orgId || null;
+      resolvedWaitlistId = blobsInvite.waitlistId || null;
+    } else {
+      const waitlistSnap = await db.doc(`waitlist/${waitlistIdParam}`).get();
+      if (!waitlistSnap.exists) {
+        return new Response(JSON.stringify({ success: false, error: "Invalid waitlist entry." }), { status: 400, headers: corsHeaders(req) });
+      }
+      const waitlistData = waitlistSnap.data();
+      if (waitlistData.status !== "invited") {
+        return new Response(JSON.stringify({ success: false, error: "This invite is no longer valid." }), { status: 400, headers: corsHeaders(req) });
+      }
+      if (!callerEmail || (waitlistData.email || "").toLowerCase() !== callerEmail.toLowerCase()) {
+        // Fails closed — this is the ONLY authorization check on this
+        // path (no token/secret involved), so a mismatch here is treated
+        // as seriously as an invalid token would be on the other path.
+        return new Response(JSON.stringify({ success: false, error: "This invite doesn't match your signed-in email." }), { status: 403, headers: corsHeaders(req) });
+      }
+
+      accountType = waitlistData.accountType === "org" ? "org" : "individual";
+      orgId = waitlistData.accountType === "org" ? (waitlistData.resolvedOrgId || null) : null;
+      resolvedWaitlistId = waitlistIdParam;
+    }
 
     if (accountType === "org") {
-      if (!invite.orgId) {
+      if (!orgId) {
         return new Response(JSON.stringify({ success: false, error: "This invite is missing its org assignment. Contact an Administrator." }), { status: 400, headers: corsHeaders(req) });
       }
       // Confirm the org still exists before assigning it — could
       // theoretically have been removed between invite-send and
       // registration. Cheap to check, fails closed rather than silently
       // assigning a dangling orgId.
-      const orgSnap = await db.doc(`orgs/${invite.orgId}`).get();
+      const orgSnap = await db.doc(`orgs/${orgId}`).get();
       if (!orgSnap.exists) {
         return new Response(JSON.stringify({ success: false, error: "The organization for this invite no longer exists. Contact an Administrator." }), { status: 400, headers: corsHeaders(req) });
       }
-      await db.doc(`users/${uid}`).update({ orgId: invite.orgId });
+      await db.doc(`users/${uid}`).update({ orgId });
     } else {
       await db.doc(`orgs/${uid}`).set({
         kind: "individual",
-        name: invite.fullName || callerEmail || uid,
+        name: (blobsInvite && blobsInvite.fullName) || callerEmail || uid,
         addons: {},
         credits: { generationBalance: 0, transcriptionBalance: 0 },
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -161,22 +210,25 @@ export default async function (req) {
       });
     }
 
-    // Mark the invite used and the waitlist entry registered — see file
-    // header on why these are folded in here rather than left as
-    // RegisterPage.jsx's separate calls.
-    await store.set(token, JSON.stringify({ ...invite, used: true }));
-    if (invite.waitlistId) {
+    // Mark the invite used (token path only — a waitlistId-only call from
+    // Google Sign-In never had a Blobs invite to begin with) and the
+    // waitlist entry registered (both paths).
+    if (token && blobsInvite) {
+      await store.set(token, JSON.stringify({ ...blobsInvite, used: true }));
+    }
+    if (resolvedWaitlistId) {
       try {
-        await db.doc(`waitlist/${invite.waitlistId}`).update({
+        await db.doc(`waitlist/${resolvedWaitlistId}`).update({
           status: "registered",
           registeredAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       } catch (err) {
         // Non-fatal — the account itself is already fully provisioned;
         // a waitlist bookkeeping miss shouldn't fail registration.
-        console.error(`[provision-account] waitlist status update failed for ${invite.waitlistId}:`, err.message);
+        console.error(`[provision-account] waitlist status update failed for ${resolvedWaitlistId}:`, err.message);
       }
     }
+
 
     return new Response(JSON.stringify({
       success: true,
