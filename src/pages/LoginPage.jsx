@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { signInWithEmailAndPassword, sendPasswordResetEmail, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useNavigate, Link } from "react-router-dom";
 import { auth, db } from "../firebase";
 
@@ -93,12 +93,40 @@ export default function LoginPage() {
         waitlistId: inviteData.waitlistId || null,
       });
 
-      // Mark the waitlist entry as registered so it isn't reused.
-      try {
-        await updateDoc(doc(db, "waitlist", inviteData.waitlistId), { status: "registered", registeredAt: new Date() });
-      } catch {}
+      // Grants org membership or provisions an individual "org of one" —
+      // via a trusted server-side Admin SDK call, since firestore.rules
+      // deliberately forbids a user from setting orgId on themselves at
+      // the create step above. Google Sign-In never sees the emailed
+      // invite token (there's no link/token in this flow at all), so this
+      // passes waitlistId instead — provision-account.mjs resolves
+      // accountType/orgId from the waitlist doc directly in that case,
+      // re-verifying the same invited-status + matching-email check
+      // rather than trusting that check-waitlist-invite.mjs above already
+      // confirmed it. Also replaces the old inline waitlist-status update
+      // below (now handled server-side in the same call).
+      //
+      // Unlike the old best-effort call this replaces, a failure here is
+      // treated as real: the Firebase Auth account and base profile doc
+      // already exist at this point, but an unprovisioned account (no
+      // orgId at all) is a genuinely broken state, not a cosmetic miss.
+      const provisionRes = await fetch("/.netlify/functions/provision-account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, waitlistId: inviteData.waitlistId }),
+      });
+      const provisionResult = await provisionRes.json().catch(() => ({}));
+      if (!provisionRes.ok || !provisionResult.success) {
+        await signOut(auth);
+        setError(
+          `Your account was created, but setup didn't finish (${provisionResult.error || "unknown error"}). ` +
+          `Contact info@arizonacoalition.net for help before trying to sign in again.`
+        );
+        setGoogleLoading(false);
+        return;
+      }
 
       navigate("/");
+
     } catch (err) {
       if (err.code !== "auth/popup-closed-by-user") {
         setError(friendlyError(err.code));
