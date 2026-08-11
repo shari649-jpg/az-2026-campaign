@@ -462,6 +462,39 @@ service cloud.firestore {
       allow read: if isSameOrg(resource.data.orgId) || isAdmin();
       allow write: if false;
     }
+    // ── config/{id} ───────────────────────────────────────────────────────
+    // Feature-flag-style settings docs, currently just
+    // config/publicRegenerate — the manual kill-switch for
+    // public-storm-regenerate.mjs (a public, unauthenticated, AI-cost-
+    // incurring endpoint; see that function's own header comment). Found
+    // missing entirely during an Aug 2026 security audit — the function
+    // itself reads this fine via the Admin SDK (bypasses rules), but
+    // AdminPage.jsx's own toggle UI writes it via the client SDK, which
+    // was silently failing on every attempt with no rule at all
+    // permitting the write. Scoped to isManager() (not isSignedIn()) —
+    // this is a Manager/Admin-only control surface, matching
+    // AdminPage.jsx's own tab gating, and there's no legitimate reason
+    // for a plain Member to read or write it.
+    match /config/{id} {
+      allow read, write: if isManager();
+    }
+    // ── processedStripeEvents/{eventId} ──────────────────────────────────
+    // Added alongside stripe-webhook.mjs (Aug 2026, individual-tier
+    // build). Idempotency guard, doc ID = Stripe's own event.id — Stripe
+    // explicitly documents at-least-once delivery (the same event can
+    // arrive more than once on retry/redelivery), so this is what stops a
+    // person's card being charged once but their account credited twice.
+    // Written inside the SAME transaction as the actual credit grant.
+    // Admin-SDK-only, same reasoning as orgs/{orgId}/creditGrants above —
+    // `allow write: if false` here isn't a gap, it's the point: there is
+    // no legitimate direct-client path to create, edit, or delete one of
+    // these records. Read is Administrator-only (not isSameOrg-scoped
+    // like creditGrants) since a processed-event record doesn't carry a
+    // useful per-org read case the way a credit grant does.
+    match /processedStripeEvents/{eventId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
     // ══════════════════════════════════════════════════════════════════
     // ▲▲▲  END new orgs block  ▲▲▲
     // ══════════════════════════════════════════════════════════════════
