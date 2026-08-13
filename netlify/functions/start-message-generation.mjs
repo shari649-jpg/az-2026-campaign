@@ -143,17 +143,19 @@ export default async function (req) {
       return new Response(JSON.stringify({ error: "You must be signed in to use this tool." }), { status: 401, headers: corsHeaders(req) });
     }
 
-    // groups: [{ platformIds: ["facebook","instagram"], prompt: "...", maxTokens: 1000 }, ...]
-    // — exactly the same per-group prompt text buildPrompt() already
-    // produces client-side today; this function doesn't build or alter
-    // prompt content, only batches submission of what generateAll() was
-    // already sending as 3 separate requests.
+    // groups: [{ platformIds: ["facebook","instagram"], staticSystem: "...",
+    // dynamicPrompt: "...", maxTokens: 1000 }, ...] — the static/dynamic
+    // split from buildPromptParts() (Aug 2026, prompt caching), not a
+    // single flat prompt string anymore. This function doesn't build or
+    // alter prompt content, only validates shape and batches submission.
     const { groups } = body;
     if (!Array.isArray(groups) || groups.length === 0) {
       return new Response(JSON.stringify({ error: "Missing groups." }), { status: 400, headers: corsHeaders(req) });
     }
     for (const g of groups) {
-      if (!g || typeof g.prompt !== "string" || !g.prompt.trim() || !Array.isArray(g.platformIds) || g.platformIds.length === 0) {
+      if (!g || typeof g.staticSystem !== "string" || !g.staticSystem.trim()
+        || typeof g.dynamicPrompt !== "string" || !g.dynamicPrompt.trim()
+        || !Array.isArray(g.platformIds) || g.platformIds.length === 0) {
         return new Response(JSON.stringify({ error: "Malformed group in request." }), { status: 400, headers: corsHeaders(req) });
       }
     }
@@ -175,7 +177,7 @@ export default async function (req) {
       uid,
       orgId: precheck.orgId,
       status: "pending",
-      groups: groups.map(g => ({ platformIds: g.platformIds, prompt: g.prompt, maxTokens: g.maxTokens || 1000 })),
+      groups: groups.map(g => ({ platformIds: g.platformIds, staticSystem: g.staticSystem, dynamicPrompt: g.dynamicPrompt, maxTokens: g.maxTokens || 1000 })),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
