@@ -84,7 +84,7 @@ export default function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const { user, profile, logout, isAdmin, isManager } = useAuth();
+  const { user, profile, logout, isAdmin, isManager, isOrgAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -442,8 +442,12 @@ export default function AppShell() {
                         🧪 Prompt Sandbox
                       </NavLink>
                     )}
-                    {/* Admin link */}
-                    {isAdmin && (
+                    {/* Admin link — also shown to a plain org admin (August
+                        2026, TODO #1), who lands on the same /admin route
+                        but AdminPage.jsx routes them to the much smaller
+                        OrgAdminPanel instead of the full tabbed UI. Label
+                        reflects which one they'll actually see. */}
+                    {(isAdmin || isOrgAdmin) && (
                       <NavLink
                         to="/admin"
                         onClick={() => setUserMenuOpen(false)}
@@ -451,7 +455,7 @@ export default function AppShell() {
                         onMouseEnter={e => e.currentTarget.style.background = "var(--teal-light)"}
                         onMouseLeave={e => e.currentTarget.style.background = "none"}
                       >
-                        ⚙️ Admin
+                        {isAdmin ? "⚙️ Admin" : "👥 My Org"}
                       </NavLink>
                     )}
                     {/* Profile link */}
@@ -580,14 +584,14 @@ export default function AppShell() {
             🧪 Prompt Sandbox
           </NavLink>
         )}
-        {/* Mobile admin link */}
-        {isAdmin && (
+        {/* Mobile admin link — also org admins, see desktop comment above */}
+        {(isAdmin || isOrgAdmin) && (
           <NavLink
             to="/admin"
             onClick={() => setMenuOpen(false)}
             className={({ isActive }) => "mobile-nav-link" + (isActive ? " active" : "")}
           >
-            ⚙️ Admin
+            {isAdmin ? "⚙️ Admin" : "👥 My Org"}
           </NavLink>
         )}
         {/* Mobile profile link */}
