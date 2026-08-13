@@ -50,17 +50,34 @@ function getAdminApp() {
   return admin.initializeApp({ credential });
 }
 
-// Verify the caller's ID token and confirm they hold the administrator role
-// in Firestore before allowing an invite to be sent. This is the only thing
-// standing between this endpoint and "anyone can email themselves a working
-// registration link."
-async function requireAdmin(app, idToken) {
+// Verify the caller's ID token and confirm they're authorized to send this
+// invite. Two paths:
+//   1. Real Administrator — authorized for any invite (individual or org,
+//      any orgId), same as always.
+//   2. Org admin (August 2026, TODO #1) — authorized ONLY for an org-track
+//      invite, and the orgId is FORCED to their own org server-side,
+//      never taken from whatever the client sent — an org admin cannot
+//      invite someone into a different org no matter what the request
+//      body claims. Mirrors firestore.rules' scoped users/{uid} update
+//      branch (same "own org only" boundary), independently enforced here
+//      since this whole function runs on the Admin SDK and bypasses those
+//      rules entirely.
+// Returns { callerUid, forcedOrgId } — forcedOrgId is null for a real
+// Administrator (they supply their own orgId choice, validated by the
+// existing accountType/orgId check below) and the org admin's own orgId
+// otherwise.
+async function authorize(app, idToken) {
   if (!idToken) throw new Error("unauthenticated");
   const decoded = await admin.auth(app).verifyIdToken(idToken);
   const snap = await admin.firestore(app).doc(`users/${decoded.uid}`).get();
-  const role = snap.exists ? snap.data().role : null;
-  if (role !== "administrator") throw new Error("forbidden");
-  return decoded.uid;
+  const caller = snap.exists ? snap.data() : {};
+  if (caller.role === "administrator") {
+    return { callerUid: decoded.uid, forcedOrgId: null };
+  }
+  if (caller.orgAdmin === true && caller.orgId) {
+    return { callerUid: decoded.uid, forcedOrgId: caller.orgId };
+  }
+  throw new Error("forbidden");
 }
 
 async function sendEmail({ to, subject, html }) {
@@ -142,8 +159,9 @@ export default async function (req) {
   try {
     const { idToken, waitlistId, email, fullName, accountType, orgId } = await req.json();
 
+    let forcedOrgId;
     try {
-      await requireAdmin(app, idToken);
+      ({ forcedOrgId } = await authorize(app, idToken));
     } catch (err) {
       const status = err.message === "unauthenticated" ? 401 : 403;
       return new Response(JSON.stringify({ error: "Not authorized to send invites." }), {
@@ -165,8 +183,15 @@ export default async function (req) {
     // the org actually exists; provision-account.mjs does that check
     // server-side at registration time, since that's the point that
     // actually writes it and where a stale/bad orgId would do real harm.
-    const resolvedAccountType = accountType === "org" ? "org" : "individual";
-    if (resolvedAccountType === "org" && !orgId) {
+    //
+    // Org-admin addition (August 2026): forcedOrgId overrides BOTH
+    // accountType and orgId whenever the caller is an org admin (not a real
+    // Administrator) — always "org", always their own org, regardless of
+    // what the request body sent. An org admin has no individual-invite use
+    // case and no legitimate reason to name a different org.
+    const resolvedAccountType = forcedOrgId ? "org" : (accountType === "org" ? "org" : "individual");
+    const resolvedOrgId = forcedOrgId || orgId;
+    if (resolvedAccountType === "org" && !resolvedOrgId) {
       return new Response(JSON.stringify({ error: "orgId is required for an org-track invite." }), {
         status: 400, headers: corsHeaders(req),
       });
@@ -183,7 +208,7 @@ export default async function (req) {
       fullName:   fullName.trim(),
       waitlistId,
       accountType: resolvedAccountType,
-      ...(resolvedAccountType === "org" ? { orgId } : {}),
+      ...(resolvedAccountType === "org" ? { orgId: resolvedOrgId } : {}),
       expiresAt,
       used:       false,
       createdAt:  new Date().toISOString(),
@@ -201,7 +226,7 @@ export default async function (req) {
     try {
       await admin.firestore(app).doc(`waitlist/${waitlistId}`).update({
         accountType: resolvedAccountType,
-        ...(resolvedAccountType === "org" ? { resolvedOrgId: orgId } : {}),
+        ...(resolvedAccountType === "org" ? { resolvedOrgId } : {}),
       });
     } catch (err) {
       console.error(`[send-invite] failed to write accountType/orgId onto waitlist/${waitlistId}:`, err.message);
