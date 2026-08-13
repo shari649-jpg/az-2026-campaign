@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { saveCampaign as fbSave, loadAllCampaigns, deleteCampaign as fbDelete } from "../../lib/campaignLibrary";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
 import {
@@ -10,7 +10,8 @@ import {
   MEDIA_TYPES as STORM_MEDIA_TYPES, STORM_STATUS, PUSH_TO_STORM_KEY,
 } from "../../lib/stormLibrary";
 import { useAuth } from "../../context/AuthContext";
-import { auth } from "../../firebase";
+import { auth, db } from "../../firebase";
+import { doc, onSnapshot } from "firebase/firestore";
 import HelpTooltip from "../../components/common/HelpTooltip";
 import { HELP } from "../../lib/helpContent";
 
@@ -338,7 +339,7 @@ const S = {
 };
 
 /* ── Desert Loading Screen ── */
-function DesertLoader() {
+function DesertLoader({ statusMsg }) {
   const [frameIdx, setFrameIdx] = useState(0);
   const [animKey, setAnimKey] = useState(0);
 
@@ -412,6 +413,11 @@ function DesertLoader() {
       <div style={{ fontFamily:"'Atkinson Hyperlegible', Georgia, serif", fontSize:14, color:"rgba(255,255,255,0.5)", letterSpacing:"0.08em", textTransform:"uppercase" }}>
         Generating your posts…
       </div>
+      {statusMsg && (
+        <div style={{ fontFamily:"'Atkinson Hyperlegible', Georgia, serif", fontSize:13, color:"rgba(255,255,255,0.65)", textAlign:"center", maxWidth: 320, marginTop: 10, textTransform: "none", letterSpacing: "normal" }}>
+          {statusMsg}
+        </div>
+      )}
     </div>
   );
 }
@@ -539,6 +545,25 @@ export default function App() {
   const [notif, setNotif]           = useState(null);
   const [genError, setGenError]     = useState(null); // persistent error panel for generation failures
   const [creditsExhaustedMsg, setCreditsExhaustedMsg] = useState(""); // real server message for genError === "credits"
+  // Background Functions rearchitecture (Aug 2026, TODO #7) — generateAll's
+  // loader is no longer a fixed "wait for one fetch" spinner; it reflects
+  // a real Firestore listener on a generationJobs/{jobId} doc that a
+  // Background Function updates whenever it actually finishes (up to 15
+  // minutes, not bounded by the old 26-second synchronous ceiling that was
+  // hit in production on large research-block inputs). This message is
+  // what's shown while that listener is still waiting.
+  const [genStatusMsg, setGenStatusMsg] = useState("");
+  // Cleanup handles for the current generateAll job — a Firestore listener
+  // unsubscribe function and a safety-timeout id. Held in a ref (not
+  // state) since they're plumbing, not render inputs; cleared and
+  // replaced on every new generateAll call, and torn down on unmount so a
+  // component that's gone doesn't keep calling setState from a stale
+  // listener.
+  const activeJobRef = useRef({ unsub: null, timeoutId: null });
+  useEffect(() => () => {
+    if (activeJobRef.current.unsub) activeJobRef.current.unsub();
+    if (activeJobRef.current.timeoutId) clearTimeout(activeJobRef.current.timeoutId);
+  }, []);
   const [contradictionFlags, setContradictionFlags] = useState({}); // { [platformId]: "explanation" } — self-contradictions the model noticed (Handoff #22), never blocking, just surfaced for a human to decide
   const [hashtags, setHashtags]     = useState(null);
   const [hashLoading, setHashLoading] = useState(false);
@@ -846,6 +871,46 @@ Format: {"${platformId}": "rewritten message text"}
 If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_contradictionFlags": {"${platformId}": "one-sentence explanation of the contradiction"}} — omitted entirely if it doesn't apply.`;
   };
 
+  // Shared response-parsing logic — extracted (Aug 2026, Background
+  // Functions rearchitecture) so both callAPI's direct synchronous path
+  // (still used for single-platform regen and MisinfoMonitor) and
+  // generateAll's new job-polling path parse a raw Claude response
+  // identically, instead of this fragile truncation/malformed-JSON
+  // handling existing in two copies that could drift.
+  const parseGeneratedPayload = (data, maxTokens) => {
+    const text = data.content.map(i=>i.text||"").join("");
+    const cleaned = text.replace(/```json|```/g,"").trim();
+    if (!cleaned.startsWith("{")) {
+      const err = new Error("content_flagged");
+      err.type = "content_flagged";
+      err.raw = cleaned;
+      throw err;
+    }
+    try {
+      return JSON.parse(cleaned);
+    } catch (parseErr) {
+      const posMatch = parseErr.message.match(/position (\d+)/);
+      const errPos = posMatch ? parseInt(posMatch[1], 10) : null;
+      console.error("[Message Machine] JSON.parse failed on Claude's response.");
+      console.error("  stop_reason:", data.stop_reason);
+      console.error("  max_tokens requested:", maxTokens);
+      console.error("  raw response length:", cleaned.length, "chars");
+      console.error("  parse error:", parseErr.message);
+      if (errPos !== null) {
+        const start = Math.max(0, errPos - 150);
+        const end = Math.min(cleaned.length, errPos + 150);
+        console.error(`  text around error position ${errPos} (chars ${start}-${end}):`, cleaned.slice(start, end));
+      } else {
+        console.error("  raw response (last 300 chars):", cleaned.slice(-300));
+      }
+      const truncated = data.stop_reason === "max_tokens";
+      const err = new Error(truncated ? "response_truncated" : "parse_error");
+      err.type = truncated ? "truncated" : "connection";
+      err.raw = cleaned;
+      throw err;
+    }
+  };
+
   const callAPI = async (prompt, maxTokens=1000) => {
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
     const res = await fetch("/.netlify/functions/generate-message", {
@@ -883,45 +948,7 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     if (data.creditWarning) {
       notify(`⚠️ ${data.creditWarning.message}`, "warn");
     }
-    const text = data.content.map(i=>i.text||"").join("");
-    const cleaned = text.replace(/```json|```/g,"").trim();
-    // Detect a refusal: Claude returned prose instead of JSON
-    if (!cleaned.startsWith("{")) {
-      const err = new Error("content_flagged");
-      err.type = "content_flagged";
-      err.raw = cleaned;
-      throw err;
-    }
-    try {
-      return JSON.parse(cleaned);
-    } catch (parseErr) {
-      // Diagnostic logging — see the "Generation failed" investigations
-      // (3-candidate truncation, then a separate unescaped-quote JSON bug).
-      // Claude's stop_reason distinguishes "cut off before max_tokens" from
-      // "finished normally but produced malformed JSON" (e.g. an unescaped
-      // quote inside a quoted phrase breaking the string early) — and since
-      // the second kind usually fails much earlier than the response's end,
-      // we log the text AROUND the parser's reported position, not the tail.
-      const posMatch = parseErr.message.match(/position (\d+)/);
-      const errPos = posMatch ? parseInt(posMatch[1], 10) : null;
-      console.error("[Message Machine] JSON.parse failed on Claude's response.");
-      console.error("  stop_reason:", data.stop_reason);
-      console.error("  max_tokens requested:", maxTokens);
-      console.error("  raw response length:", cleaned.length, "chars");
-      console.error("  parse error:", parseErr.message);
-      if (errPos !== null) {
-        const start = Math.max(0, errPos - 150);
-        const end = Math.min(cleaned.length, errPos + 150);
-        console.error(`  text around error position ${errPos} (chars ${start}-${end}):`, cleaned.slice(start, end));
-      } else {
-        console.error("  raw response (last 300 chars):", cleaned.slice(-300));
-      }
-      const truncated = data.stop_reason === "max_tokens";
-      const err = new Error(truncated ? "response_truncated" : "parse_error");
-      err.type = truncated ? "truncated" : "connection";
-      err.raw = cleaned;
-      throw err;
-    }
+    return parseGeneratedPayload(data, maxTokens);
   };
 
   // ── URL-aware ingestion: pull an article straight into Issue/Content ──
@@ -999,31 +1026,138 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     return null;
   };
 
+  // Applies one group's Claude result (or error) onto the accumulating
+  // textOnly/flags objects and any warning notifications — shared by the
+  // "all complete" handler below so the per-group logic exists once.
+  const applyGroupResult = (group, textOnly, flags) => {
+    if (group.error) {
+      // Surfaced via notify rather than the full-page genError panel —
+      // a partial failure (one group blocked, others succeeded) shouldn't
+      // hide the results that DID come back. genError below is reserved
+      // for the "nothing came back at all" case.
+      const msg = group.error === "rate_limit_exceeded"
+        ? (group.limitData?.message || "Daily AI-call limit reached for one platform group.")
+        : group.error === "credits_exhausted"
+          ? (group.creditMessage || "Your organization's AI-generation credits are used up.")
+          : "One platform group failed to generate — try regenerating it individually.";
+      notify(`⚠️ ${group.platformIds.join(", ")}: ${msg}`, "err");
+      return false;
+    }
+    if (group.usageWarning) {
+      const { used, limit, remaining } = group.usageWarning;
+      notify(`⚠️ ${used}/${limit} daily AI calls used — ${remaining} remaining.`, "warn");
+    }
+    if (group.creditWarning) {
+      notify(`⚠️ ${group.creditWarning}`, "warn");
+    }
+    try {
+      const parsed = parseGeneratedPayload(group.data, GENERATION_MAX_TOKENS);
+      const { _contradictionFlags, ...rest } = parsed;
+      Object.assign(textOnly, rest);
+      Object.assign(flags, _contradictionFlags || {});
+      return true;
+    } catch (err) {
+      notify(`⚠️ ${group.platformIds.join(", ")}: generation came back malformed — try regenerating it individually.`, "err");
+      return false;
+    }
+  };
+
   const generateAll = async () => {
     const err = validate(); if (err) { notify(err,"err"); return; }
     setGenerating(true); setShowLoader(true); setHashtags(null); setGenError(null);
+    setGenStatusMsg("Generating your posts — this can take a little longer than usual right now, that's expected.");
+
+    // Clean up any listener/timeout from a previous, still-in-flight
+    // generateAll call before starting a new one.
+    if (activeJobRef.current.unsub) activeJobRef.current.unsub();
+    if (activeJobRef.current.timeoutId) clearTimeout(activeJobRef.current.timeoutId);
+
     try {
-      // All groups fire in parallel and each reads Issue/Content directly —
-      // total wait is whichever group's call is slowest, not a sum of stages.
-      // See PLATFORM_GROUPS above for why this replaced the earlier
-      // Facebook-first sequential design.
       const selected = formData.platforms;
-      const calls = PLATFORM_GROUPS
+      const groups = PLATFORM_GROUPS
         .map(group => selected.filter(p => group.includes(p)))
         .filter(group => group.length)
-        .map(group => callAPI(buildPrompt(group), GENERATION_MAX_TOKENS));
+        .map(group => ({ platformIds: group, prompt: buildPrompt(group), maxTokens: GENERATION_MAX_TOKENS }));
 
-      const results = await Promise.all(calls);
-      const textOnly = {};
-      const flags = {};
-      results.forEach(r => {
-        const { _contradictionFlags, ...rest } = r;
-        Object.assign(textOnly, rest);
-        Object.assign(flags, _contradictionFlags || {});
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+      const res = await fetch("/.netlify/functions/start-message-generation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({ groups }),
+      });
+      if (res.status === 429) {
+        const limitData = await res.json();
+        const e = new Error("rate_limit_exceeded"); e.type = "rate_limit_exceeded"; e.limitData = limitData;
+        throw e;
+      }
+      if (res.status === 402) {
+        const creditData = await res.json();
+        const e = new Error("credits_exhausted"); e.type = "credits_exhausted"; e.creditMessage = creditData.message;
+        throw e;
+      }
+      const startData = await res.json();
+      if (startData.error || !startData.jobId) {
+        const e = new Error(startData.error || "Failed to start generation."); e.type = "auth_or_server_error";
+        throw e;
+      }
+
+      // Listen for the Background Function to finish — replaces the old
+      // Promise.all(3 synchronous fetches). Resolves this promise once the
+      // job reaches a terminal state (complete/error), or after a 4-minute
+      // safety timeout if something got stuck — 15 minutes is the real
+      // ceiling a Background Function has, but 4 minutes is a reasonable
+      // "something's wrong, stop waiting silently" point for an
+      // interactive tool someone's sitting in front of.
+      await new Promise((resolve, reject) => {
+        const jobRef = doc(db, "generationJobs", startData.jobId);
+        const unsub = onSnapshot(jobRef, snap => {
+          if (!snap.exists()) return; // shouldn't happen, ignore a stray empty read
+          const job = snap.data();
+          if (job.status === "pending") return;
+
+          clearTimeout(activeJobRef.current.timeoutId);
+          unsub();
+          activeJobRef.current = { unsub: null, timeoutId: null };
+
+          if (job.status === "error") {
+            const e = new Error(job.error || "Generation failed."); e.type = "connection";
+            reject(e);
+            return;
+          }
+
+          const textOnly = {};
+          const flags = {};
+          let anySucceeded = false;
+          (job.groupResults || []).forEach(g => { if (applyGroupResult(g, textOnly, flags)) anySucceeded = true; });
+
+          if (!anySucceeded) {
+            const e = new Error("generation_failed"); e.type = "connection";
+            reject(e);
+            return;
+          }
+
+          setMessages(textOnly);
+          setContradictionFlags(flags);
+          resolve();
+        }, err => {
+          clearTimeout(activeJobRef.current.timeoutId);
+          activeJobRef.current = { unsub: null, timeoutId: null };
+          reject(err);
+        });
+
+        const timeoutId = setTimeout(() => {
+          unsub();
+          activeJobRef.current = { unsub: null, timeoutId: null };
+          const e = new Error("generation_timeout"); e.type = "connection";
+          reject(e);
+        }, 4 * 60 * 1000);
+
+        activeJobRef.current = { unsub, timeoutId };
       });
 
-      setMessages(textOnly);
-      setContradictionFlags(flags);
       setShowLoader(false);
       setView("results");
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1250,7 +1384,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
   return (
     <div style={{ minHeight:"100vh", background: view === "results" ? "#fafaf7" : T.pageBg, color:T.text, fontFamily:"'Atkinson Hyperlegible', Georgia, serif" }}>
       <style>{globalCSS}</style>
-      {showLoader && <DesertLoader />}
+      {showLoader && <DesertLoader statusMsg={genStatusMsg} />}
 
       {/* DRAFT RESUME MODAL */}
       {draftModal && pendingDraft && (
