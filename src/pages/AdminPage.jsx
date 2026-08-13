@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Inflate } from "fflate";
-import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, getDoc, setDoc, where, writeBatch } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, getDoc, setDoc, where, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -58,7 +58,7 @@ function isAtDailyLimit(u) {
 }
 
 export default function AdminPage() {
-  const { isManager, isAdmin, user: currentUser, profile: currentProfile } = useAuth();
+  const { isManager, isAdmin, isOrgAdmin, user: currentUser, profile: currentProfile } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -78,7 +78,7 @@ export default function AdminPage() {
   // invite can be sent (see send-invite.mjs / provision-account.mjs).
   const [inviteOrgChoice, setInviteOrgChoice] = useState({});
   const [editingUid, setEditingUid] = useState(null); // uid currently in edit mode
-  const [editForm, setEditForm]     = useState({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [], orgId: "", dailyLimitStanding: "", dailyLimitToday: "" });
+  const [editForm, setEditForm]     = useState({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [], orgId: "", dailyLimitStanding: "", dailyLimitToday: "", orgAdmin: false });
   const [detailsUid, setDetailsUid] = useState(null); // uid currently shown in the read-only details modal
   const [actionUid, setActionUid]   = useState(null); // uid currently mid disable/enable/delete call
   const [actionError, setActionError] = useState(null); // { uid, message }
@@ -165,7 +165,15 @@ export default function AdminPage() {
   // the modal opens on a different candidate so it doesn't carry over.
   const [expandedCandidateFields, setExpandedCandidateFields] = useState(new Set());
 
-  useEffect(() => { if (!isManager) navigate("/"); }, [isManager]);
+  // org-admin addition (August 2026): a plain org admin (not a Manager/
+  // Administrator) is allowed onto this page too, but never reaches the
+  // full tabbed UI below or its data fetches (candidates, waitlist, orgs,
+  // settings) — see the early-return to <OrgAdminPanel /> further down.
+  // Keeping the gate itself permissive and doing the real narrowing at
+  // render time (rather than duplicating a second route/page) means the
+  // org-admin surface can reuse this file's shared style constants and
+  // AuthContext wiring without a second gate to keep in sync.
+  useEffect(() => { if (!isManager && !isOrgAdmin) navigate("/"); }, [isManager, isOrgAdmin]);
   useEffect(() => { if (isManager) { fetchUsers(); fetchWaitlist(); } }, [isManager]);
   useEffect(() => { if (activeTab === "settings" && !pubRegenLoaded) fetchPubRegenSetting(); }, [activeTab]);
   useEffect(() => { if (activeTab === "orgs" && !orgsLoaded) fetchOrgs(); }, [activeTab]);
@@ -594,6 +602,12 @@ export default function AdminPage() {
       // a stale prior-day value reads as 0/empty here, same as everywhere
       // else this field is used.
       dailyLimitToday: overrideToday(u, todayUTC()) ? String(overrideToday(u, todayUTC())) : "",
+      // orgAdmin (August 2026, TODO #1) — grants the org-admin flag itself.
+      // Deliberately gated Administrator-only in saveEdit below, same as
+      // orgId/dailyLimitStanding — a Manager can see this checkbox but it's
+      // disabled for them, matching the pattern already used for the org
+      // fields above.
+      orgAdmin: u.orgAdmin === true,
     });
     // The Orgs tab normally loads its org list lazily, only when that tab
     // is opened — but the researchOrgIds multi-select and the orgId picker
@@ -603,7 +617,7 @@ export default function AdminPage() {
     if (!orgsLoaded && !orgsLoading) fetchOrgs();
   };
 
-  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [], orgId: "", dailyLimitStanding: "", dailyLimitToday: "" }); };
+  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [], orgId: "", dailyLimitStanding: "", dailyLimitToday: "", orgAdmin: false }); };
 
   const updateSocialField = (i, field, value) => {
     setEditForm(f => ({ ...f, socials: f.socials.map((s, idx) => idx === i ? { ...s, [field]: value } : s) }));
@@ -682,6 +696,16 @@ export default function AdminPage() {
         if (Number.isFinite(nextToday) && nextToday >= 0 && nextToday !== prevToday) {
           payload.dailyLimitOverride = nextToday;
           payload.dailyLimitOverrideDate = today;
+        }
+        // orgAdmin (August 2026, TODO #1) — grants/revokes the flag itself.
+        // Only meaningful when the target actually has an orgId; not
+        // enforced here (a flag with no org just does nothing, per
+        // isOrgAdmin()'s own scoped-update checks all requiring a real
+        // orgId match), but worth knowing if this looks like a no-op after
+        // saving.
+        const nextOrgAdmin = !!editForm.orgAdmin;
+        if (nextOrgAdmin !== (originalUser?.orgAdmin === true)) {
+          payload.orgAdmin = nextOrgAdmin;
         }
       }
 
@@ -1288,7 +1312,17 @@ export default function AdminPage() {
     setCnUploading(false);
   }
 
-  if (!isManager) return null;
+  if (!isManager && !isOrgAdmin) return null;
+
+  // org-admin addition (August 2026): early return before any of the
+  // Manager/Administrator tabbed UI below — an org admin gets a
+  // self-contained, deliberately much smaller panel (own-org members,
+  // invite, disable/enable) rather than a cut-down version of this giant
+  // component. Keeps the org-admin surface easy to reason about/audit on
+  // its own, and means nothing below this line needs an isOrgAdmin check
+  // scattered through it — everything below is still exactly what it was,
+  // reachable only by a real Manager or Administrator.
+  if (isOrgAdmin && !isManager) return <OrgAdminPanel />;
 
   return (
     <div style={{ minHeight: "100vh", background: "#f8f8f6", fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: CHARCOAL }}>
@@ -1594,9 +1628,19 @@ export default function AdminPage() {
                                     style={{ padding: "7px 10px", fontSize: 13.5, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL, width: 120 }}
                                   />
                                 </label>
+                                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: CHARCOAL, fontWeight: 600, cursor: isAdmin ? "pointer" : "default" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={editForm.orgAdmin}
+                                    onChange={e => setEditForm(f => ({ ...f, orgAdmin: e.target.checked }))}
+                                    disabled={!isAdmin}
+                                    style={{ width: 15, height: 15, accentColor: GOLD, cursor: isAdmin ? "pointer" : "default" }}
+                                  />
+                                  Org admin — can manage plain members of their own org (never Managers/Admins, never other org admins)
+                                </label>
                               </div>
                               <div style={{ fontSize: 11.5, color: "#999", marginTop: 8, lineHeight: 1.5 }}>
-                                Changing org membership moves this user onto a different org's shared credit pool — confirm before saving. Standing stays in effect until changed here; today-only resets to 0 at midnight UTC regardless of what's set here.
+                                Changing org membership moves this user onto a different org's shared credit pool — confirm before saving. Standing stays in effect until changed here; today-only resets to 0 at midnight UTC regardless of what's set here. Org admin only does anything once this user also has an org set above.
                               </div>
                             </div>
                             {/* researchOrgIds (Aug 2026 addition) — grants this
@@ -1647,6 +1691,7 @@ export default function AdminPage() {
                               <span style={{ fontSize: 17, fontWeight: 700, color: CHARCOAL }}>{u.fullName || "—"}</span>
                               {isMe && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: GOLD, color: TEAL, padding: "2px 8px", borderRadius: 4 }}>You</span>}
                               {isDisabled && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "#eee", color: "#777", border: "1px solid #ccc", padding: "2px 8px", borderRadius: 4 }}>Disabled</span>}
+                              {u.orgAdmin === true && <span title="Can manage this org's plain members (add/remove, own org only)" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "var(--gold-light)", color: "#9a7b00", border: `1px solid ${GOLD}`, padding: "2px 8px", borderRadius: 4 }}>Org Admin</span>}
                               {u.emailVerified === false && !isDisabled && (
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "var(--gold-light)", color: "#9a7b00", border: `1px solid ${GOLD}`, padding: "2px 8px", borderRadius: 4 }}>
                                   Unverified
@@ -2701,6 +2746,243 @@ function DetailRow({ label, value }) {
         {label}
       </div>
       <div style={{ fontSize: 14, color: CHARCOAL }}>{value}</div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// OrgAdminPanel — August 2026, TODO #1.
+// ══════════════════════════════════════════════════════════════════════
+// Deliberately a separate, self-contained component rather than a cut-down
+// branch of AdminPage above. An org admin's real scope is small (their own
+// org's plain members: invite one in, disable/enable one out) — building
+// that as its own component keeps it auditable on its own terms instead of
+// threading isOrgAdmin checks through 2,700 lines of Manager/Admin-only UI
+// that was never designed with a third, more-restricted role in mind.
+//
+// firestore.rules is the real enforcement (scoped get/list/update on
+// users/{uid}, plus manage-user.mjs and send-invite.mjs's own independent
+// authorize() checks) — everything here is UX on top of that, not a
+// second security boundary. A determined org admin poking the network
+// tab directly still can't do anything the rules don't already allow.
+//
+// Explicitly NOT included here, on purpose:
+//   - Research extra-org-visibility (researchOrgIds against a full org
+//     picker) — the picker needs to enumerate every coalition org, but
+//     orgs/{orgId}'s read rule only lets a member read THEIR OWN org's
+//     doc. Building that picker for an org admin would mean either
+//     loosening the orgs collection's read rule (a real cross-org
+//     information-disclosure risk — other orgs' addons/credit balances
+//     would become readable) or hardcoding a name list that goes stale.
+//     Deferred rather than rushed; Administrators still grant this today.
+//   - Role changes, org reassignment, standing/today limit overrides,
+//     granting the org-admin flag itself — all remain Administrator-only,
+//     both here (no controls exist) and at the rules layer (explicitly
+//     excluded from the org-admin update branch).
+//   - Real deletion — "remove" is disable only, matching the TODO's own
+//     scoping decision.
+function OrgAdminPanel() {
+  const { profile: currentProfile, user: currentUser } = useAuth();
+  const myOrgId = currentProfile?.orgId || null;
+
+  const [orgName, setOrgName] = useState("");
+  const [members, setMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [actionUid, setActionUid] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [notif, setNotif] = useState(null);
+  const [inviteForm, setInviteForm] = useState({ fullName: "", email: "" });
+  const [inviting, setInviting] = useState(false);
+
+  const notify = (msg, kind = "ok") => {
+    setNotif({ msg, kind });
+    setTimeout(() => setNotif(null), 4000);
+  };
+
+  const fetchOrgAndMembers = async () => {
+    if (!myOrgId) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const orgSnap = await getDoc(doc(db, "orgs", myOrgId));
+      setOrgName(orgSnap.exists() ? (orgSnap.data().name || myOrgId) : myOrgId);
+      // Scoped query — firestore.rules' list rule for an org admin only
+      // resolves when the query itself is filtered to their own orgId;
+      // an unscoped query here would simply fail closed. See the rules
+      // file's comment on users/{uid}'s list rule.
+      const snap = await getDocs(query(collection(db, "users"), where("orgId", "==", myOrgId)));
+      setMembers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error("[OrgAdminPanel] fetch failed:", err.message);
+      notify("Couldn't load your org's members.", "err");
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchOrgAndMembers(); }, [myOrgId]);
+
+  // Disable/enable — "remove"/"re-add" a member, per the TODO's own
+  // scoping decision (never real deletion). Goes through manage-user.mjs,
+  // which independently re-checks the same "own org, plain member only"
+  // boundary server-side — this UI only shows the button for members that
+  // boundary would actually allow, so a rejected call here would mean the
+  // two checks disagree, not that this is the only thing stopping misuse.
+  const toggleDisabled = async (m) => {
+    setActionUid(m.id);
+    setActionError(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch("/.netlify/functions/manage-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, action: m.disabled ? "enable" : "disable", targetUid: m.id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Action failed.");
+      setMembers(prev => prev.map(x => x.id === m.id ? { ...x, disabled: !m.disabled } : x));
+      notify(m.disabled ? "Member re-enabled." : "Member disabled.");
+    } catch (err) {
+      setActionError({ uid: m.id, message: err.message || "Action failed." });
+    }
+    setActionUid(null);
+  };
+
+  // "Add" a member — creates a fresh, minimal waitlist doc (status
+  // "pending", same shape the public WaitlistPage.jsx form itself
+  // produces, minus the social-handle fields that only matter for that
+  // public-facing flow) and immediately sends the invite. send-invite.mjs
+  // forces accountType:"org" and this org's own orgId server-side
+  // regardless of what's sent here — this two-step create-then-invite is
+  // the same real flow the Administrator Waitlist tab uses, just
+  // collapsed into one action since the org is already implied.
+  const inviteMember = async () => {
+    const fullName = inviteForm.fullName.trim();
+    const email = inviteForm.email.trim().toLowerCase();
+    if (!fullName || !email) { notify("Enter a name and email first.", "err"); return; }
+    setInviting(true);
+    try {
+      const waitlistRef = doc(collection(db, "waitlist"));
+      await setDoc(waitlistRef, {
+        fullName, email,
+        accountType: "org",
+        organization: orgName,
+        status: "pending",
+        submittedAt: serverTimestamp(),
+      });
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch("/.netlify/functions/send-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, waitlistId: waitlistRef.id, email, fullName, accountType: "org" }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Failed to send invite.");
+      await updateDoc(waitlistRef, { status: "invited", invitedAt: new Date() });
+      notify(`Invite sent to ${email}.`);
+      setInviteForm({ fullName: "", email: "" });
+    } catch (err) {
+      notify(err.message || "Failed to send invite.", "err");
+    }
+    setInviting(false);
+  };
+
+  if (!myOrgId) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#f8f8f6", fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: CHARCOAL, padding: 40 }}>
+        <p>Your account isn't assigned to an organization yet — an Administrator needs to set that before you can manage members.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#f8f8f6", fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: CHARCOAL }}>
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 24px" }}>
+        <h1 style={{ fontSize: 26, marginBottom: 4 }}>Managing: {orgName}</h1>
+        <p style={{ color: "#888", fontSize: 14, marginBottom: 24 }}>
+          You can invite new members into this org and disable/re-enable existing plain members. Role changes, other orgs, and Manager/Administrator accounts aren't part of this view.
+        </p>
+
+        {notif && (
+          <div style={{
+            marginBottom: 20, padding: "10px 16px", borderRadius: 8, fontSize: 14,
+            background: notif.kind === "err" ? "#fdf2f2" : "var(--gold-light)",
+            color: notif.kind === "err" ? RED : "#9a7b00",
+            border: `1.5px solid ${notif.kind === "err" ? "#f5c6c6" : GOLD}`,
+          }}>
+            {notif.msg}
+          </div>
+        )}
+
+        <div style={{ background: BG, border: "1.5px solid #ddd", borderRadius: 10, padding: "18px 22px", marginBottom: 28 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888", marginBottom: 12 }}>
+            Invite a new member
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <input
+              type="text" placeholder="Full name" value={inviteForm.fullName}
+              onChange={e => setInviteForm(f => ({ ...f, fullName: e.target.value }))}
+              style={{ flex: "1 1 180px", padding: "9px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL }}
+            />
+            <input
+              type="email" placeholder="Email address" value={inviteForm.email}
+              onChange={e => setInviteForm(f => ({ ...f, email: e.target.value }))}
+              style={{ flex: "1 1 220px", padding: "9px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL }}
+            />
+            <button
+              onClick={inviteMember}
+              disabled={inviting}
+              style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: inviting ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
+            >
+              {inviting ? "Sending…" : "Send Invite"}
+            </button>
+          </div>
+        </div>
+
+        <div style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888", marginBottom: 12 }}>
+          Members ({members.length})
+        </div>
+        {loading && <p style={{ color: "#888" }}>Loading…</p>}
+        {!loading && members.length === 0 && <p style={{ color: "#888" }}>No members yet.</p>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {members.map(m => {
+            const isMe = m.id === currentUser?.uid;
+            const isPlainMember = m.role === "user" && m.orgAdmin !== true;
+            const isBusy = actionUid === m.id;
+            const err = actionError?.uid === m.id ? actionError.message : null;
+            return (
+              <div key={m.id} style={{
+                background: m.disabled ? "#fafafa" : BG, border: "1.5px solid #ddd", borderRadius: 8,
+                padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+                opacity: m.disabled ? 0.7 : 1,
+              }}>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14.5 }}>
+                    {m.fullName || "—"} {isMe && <span style={{ fontSize: 11, color: "#999" }}>(you)</span>}
+                    {m.disabled && <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", background: "#eee", color: "#777", padding: "1px 6px", borderRadius: 4 }}>Disabled</span>}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: "#888" }}>{m.email} · {m.role || "user"}{m.orgAdmin === true ? " · org admin" : ""}</div>
+                  {err && <div style={{ fontSize: 12, color: RED, marginTop: 4 }}>{err}</div>}
+                </div>
+                {!isMe && isPlainMember ? (
+                  <button
+                    onClick={() => toggleDisabled(m)}
+                    disabled={isBusy}
+                    style={{
+                      background: "none", border: `2px solid ${m.disabled ? TEAL : TERRACOTTA}`,
+                      color: m.disabled ? TEAL : TERRACOTTA, borderRadius: 8, padding: "7px 14px",
+                      fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+                      cursor: isBusy ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                    }}
+                  >
+                    {isBusy ? "…" : m.disabled ? "Re-enable" : "Disable"}
+                  </button>
+                ) : (
+                  !isMe && <span style={{ fontSize: 12, color: "#aaa" }} title="Managers, Administrators, and other org admins aren't managed from this view">—</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
