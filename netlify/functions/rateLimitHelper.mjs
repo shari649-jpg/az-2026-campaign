@@ -18,6 +18,14 @@
 // override is actively cleared below rather than just ignored, so it can't
 // accidentally come back to life if a rollover-detection edge case ever
 // misfires.
+//
+// Standing override (added alongside the Admin-panel orgId editor, August
+// 2026): a PERSISTENT addition to a user's role-based limit, via
+// dailyLimitStanding on the same user doc. Unlike the same-day override
+// above, this does NOT reset or clear on date rollover — it stays in effect
+// every day until an Administrator changes or removes it. Distinct field,
+// distinct control in AdminPage.jsx; the two stack (base + standing +
+// today's same-day override, if any).
 
 import admin from "firebase-admin";
 
@@ -79,11 +87,17 @@ export async function checkAndIncrementRateLimit(app, uid) {
     const storedDate  = data.dailyCallsDate || "";
     const storedCalls = storedDate === today ? (data.dailyCalls || 0) : 0;
 
+    // Standing override — persistent, no date check, stays in effect until
+    // an Administrator changes it. Must be a positive number to count; a
+    // missing/zero/negative value contributes nothing.
+    const standingRaw = Number(data.dailyLimitStanding);
+    const standing = Number.isFinite(standingRaw) && standingRaw > 0 ? standingRaw : 0;
+
     // Same-day override only counts if it was granted today; otherwise it's
     // stale from a previous day and gets wiped out in the update below.
     const hasFreshOverride = data.dailyLimitOverrideDate === today;
     const override = hasFreshOverride ? (data.dailyLimitOverride || 0) : 0;
-    const limit = baseLimit + override;
+    const limit = baseLimit + standing + override;
     const staleOverrideFields = (!hasFreshOverride && (data.dailyLimitOverride || data.dailyLimitOverrideDate))
       ? { dailyLimitOverride: 0, dailyLimitOverrideDate: "" }
       : {};
