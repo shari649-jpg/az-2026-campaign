@@ -24,22 +24,22 @@ const PLATFORMS = [
   { id: "tiktok", name: "TikTok", abbr: "TK", maxChars: 2200, bg: "#b91c1c", text: "#fff" },
 ];
 
-// Split-call groups for generateAll — all three run in parallel via
-// Promise.all, each reading Issue/Content directly (no derive/draft step —
-// that Facebook-first design was reverted: it made every generation
-// sequential, since derive calls had to wait for the Facebook draft to
-// finish first. Real testing showed that made TOTAL wait time worse
-// (Facebook ~20s + derive ~15-17s ≈ 35s+) than true parallelism, even
-// though no individual call crossed the 26s ceiling on its own).
-// Three groups of two instead of two groups of three halves the output
-// each call has to produce, which directly speeds up the slowest call —
-// the thing that actually sets how long the person waits, since all calls
-// run at once. Each pair mixes one heavier/longer-form platform with one
-// short, hard-capped one, so no single call is left doing most of the work.
-const PLATFORM_GROUP_A = ["facebook", "bluesky"];
-const PLATFORM_GROUP_B = ["instagram", "twitter"];
-const PLATFORM_GROUP_C = ["tiktok", "threads"];
-const PLATFORM_GROUPS = [PLATFORM_GROUP_A, PLATFORM_GROUP_B, PLATFORM_GROUP_C];
+// Platform-call consolidation (Aug 2026, TODO #8) — generateAll now sends
+// ONE combined call for every selected platform instead of splitting into
+// PLATFORM_GROUP_A/B/C (removed). That splitting existed specifically to
+// keep each call's output small enough to stay fast under the old 26-
+// second synchronous Netlify timeout; now that generateAll runs through
+// Background Functions (no more 26s ceiling, real per-group work already
+// proven safe running concurrently), the tradeoff flips: one combined call
+// pays the ~7,000-char guardrail/platform-voice overhead once instead of
+// up to 3 times, which is the actual per-generation cost problem measured
+// in Handoff #36. Known, accepted tradeoff (same one already named in the
+// TODO item that scoped this): a single larger call is somewhat slower
+// end-to-end than the fastest of 3 parallel smaller ones, and a bad
+// response now affects the whole generation rather than one platform pair
+// — acceptable since Background Functions removed the timeout risk that
+// made the old design necessary, and a failed generation is fully visible
+// and retryable, not a silent partial gap.
 
 // Shared platform-voice guidance for Neutral + AZ modes (identical in both).
 // Each platform gets a real baseline persona — who's talking, to whom — not
@@ -71,7 +71,13 @@ const PLATFORM_VOICE_GUIDE_NATIONAL = `PLATFORM VOICE — each platform below ha
 // so there's no cost to setting this high. A calculated "just enough"
 // ceiling only recreates the truncation bug at a slightly larger input size;
 // a flat, generous number removes that failure mode instead of narrowing it.
-const GENERATION_MAX_TOKENS = 4000;
+//
+// RAISED (Aug 2026, platform-call consolidation, TODO #8): this used to
+// cover at most 2 platforms per call (PLATFORM_GROUPS); one combined call
+// now has to produce up to all 6 at once. Matches
+// generate-message-background.mjs's own MAX_TOKENS_CEILING exactly, so
+// this can't get silently clamped smaller than what's actually requested.
+const GENERATION_MAX_TOKENS = 8000;
 
 const AUDIENCES = ["Democrat","Independent","Persuadable Republican","Disillusioned Voter","Brand New Voter"];
 const STYLES = [
@@ -756,28 +762,46 @@ If, and only if, the SELF-CONTRADICTION rule above applies to one or more platfo
 
     // ── NATIONAL MODE ─────────────────────────────────────────────────────────
     // (only remaining possibility at this point is msgMode === "national")
+    // Beat structure revised Aug 2026 per Message_Machine_National_Prompt_
+    // Revision — cost now leads (was previously preceded by a "Freedom
+    // First" beat 0); freedom/rights/democracy framing moved to its own
+    // beat AFTER cost and mechanism are established, always anchored back
+    // to the specific cost, never standalone.
+    const audienceSwapNote = (formData.audience === "Persuadable Republican" || formData.audience === "Independent")
+      ? `\nAUDIENCE-CONDITIONAL BEAT EMPHASIS — Target Audience is ${formData.audience}: this audience tends to respond better to values-first framing, so you may give Beat 3's freedom/rights language MORE emphasis and weight relative to Beat 1's cost. This is an emphasis shift only, not a reorder: Beat 1 still opens the post with a concrete cost, and Beat 3's freedom language still must stay anchored to that same cost — don't drop Beat 1 or move Beat 3 ahead of it, just give Beat 3 more space and stronger language.\n`
+      : "";
     return `You are an expert political messaging strategist working for a legitimate progressive campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
 
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
 
 NATIONAL MESSAGING STYLE — APPLY TO ALL OUTPUT:
 
-VOICE — Write like a trusted neighbor explaining something important over a kitchen table, not a campaign press release. Short sentences. Plain words. Active voice. Present tense. "Families" not "constituents." "Your water bill" not "utility rates." First person only when it's real. Never sound like a committee wrote it.
+VOICE — Write like a trusted neighbor at a kitchen table, not a press release. Short sentences. Plain words. Active voice. Present tense. "Families" not "constituents." "Your water bill" not "utility rates." First person only when it's real. Never sound like a committee wrote it.
 
 STRUCTURE — Use the five-beat framework:
-0. FREEDOM FIRST: Before the cost, lead with what democracy and good governance give people — freedom to live the life they choose, freedom to have a say, freedom from a system rigged against them. Freedom is the entry point that crosses all partisan lines. Then connect that to the specific cost someone is paying when that freedom is taken away.
-1. THE COST: Lead with a specific cost someone is paying right now — in dollars, services lost, or dignity. Make it concrete and human.
-2. THE RIGGING: Name the mechanism that caused it — the system, the money, the deal. Who gave, who got, what it cost regular people. If the input names a specific villain (Trump, a political party, a named official), use that name directly. If it does not, do not invent one — keep it to the mechanism.
-3. THE FIX: A specific reform, bill, ban, or change — not "we need change." Give the audience a door to walk through.
-4. THE ASK — CLOSE THE DEMOCRATIC LOOP: End with one specific, low-barrier action — and frame it as the mechanism that delivers freedom back to the people. Voting, showing up, calling, signing — these aren't just tasks, they are the verdict. "Here's what you can do" should always connect to "and here's what changes when you do."
-
+1. THE COST: Lead with a specific, human cost — a price, a wait time, a denied claim, a lost hour of work, a specific number. Never open with an abstract value word (freedom, democracy, rights, justice) — the reader should feel a concrete consequence in the first sentence, before any framing is applied. If a sentence could apply to any topic, rewrite it with the specific fact from the input.
+2. THE RIGGING: Name the mechanism or villain responsible for the cost named in Beat 1. If the input names a specific villain (Trump, a political party, a named official), use that name directly. If it does not, do not invent one — frame it generally (a rigged system, corporate donors, the billionaire class). Corruption language must be earned — see EARNED CORRUPTION LANGUAGE below — never a bare label with no specific act behind it.
+3. THE THREAT TO AMERICANS: Only now, after the cost and mechanism are established, reframe the stakes using freedom, rights, or democracy language — and only when directly anchored to the specific cost already named in Beat 1. Freedom language must never stand alone as an abstraction.
+4. THE FIX: A specific reform, bill, ban, or change — not "we need change." The fix should map directly to the mechanism named in Beat 2.
+5. THE ASK: One low-barrier action, framed as the mechanism that restores what was named in Beat 1 and Beat 3 — vote, call, sign, share. Keep this concrete and singular: one ask per post, not a list.
+${audienceSwapNote}
 VILLAIN FRAMING — If the input content names a specific villain (Trump, a political party, a named official), use that name directly — don't launder it into vague language. If the input does NOT name a specific person or party, do not invent one: frame the villain generally as billionaires, corporate donors, or a rigged system, and let the audience make the connection. Never invent a named villain that isn't present in the input.
 
 HOPE DISCIPLINE — Anger opens the door. Hope closes the deal. Every message must end somewhere: a reform, an action, a change that's possible. Rage without resolution loses people.
 
 SPECIFICITY RULE — Every abstract claim needs a concrete anchor: a price, a place, a person, a number, a named reform. "Corporate greed" alone is not enough. "Record profits while your grocery bill went up 23%" is. Every message should answer: What exactly happened? To whom? What did it cost? Who made it happen? What would change it?
 
-FORBIDDEN PHRASES — Never use: "We must," "Now is the time," "History will judge," "a lot of us feel," "most people I know," "out here," "systemic inequities," "corporate accountability mechanisms," "electoral integrity." Replace with specific, grounded alternatives.
+EARNED CORRUPTION LANGUAGE — A corruption label (corrupt, rigged, bought off, etc.) is only earned when paired with the specific act and specific cost behind it, per the SPECIFICITY RULE above — never used bare.
+- Wrong: "Corrupt Republicans voted for this."
+- Right: "The politicians who voted for this took $2 million from the company that benefits. That's not a coincidence."
+
+FORBIDDEN PHRASES — Never use "We must," "Now is the time," or "History will judge," in any form. For the phrases below, use the specific replacement shown — don't just delete the phrase, replace it with the concrete alternative:
+- "systemic inequities" → "a system that's rigged"
+- "electoral integrity" → "your vote counting"
+- "reproductive freedom" → "the right to decide"
+- "corporate accountability mechanisms" → "rules that stop companies from cheating you"
+- "a lot of us feel..." → "most families are finding..."
+- "out here we know..." → "in [specific place], people are dealing with..."
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
 ${AI_TELL_PHRASING_BAN}
@@ -1074,10 +1098,11 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
 
     try {
       const selected = formData.platforms;
-      const groups = PLATFORM_GROUPS
-        .map(group => selected.filter(p => group.includes(p)))
-        .filter(group => group.length)
-        .map(group => ({ platformIds: group, prompt: buildPrompt(group), maxTokens: GENERATION_MAX_TOKENS }));
+      // One combined group, all selected platforms in a single call — see
+      // the "Platform-call consolidation" comment near the top of this
+      // file (right after the PLATFORMS array) for why this replaced the
+      // old 3-way PLATFORM_GROUPS split.
+      const groups = [{ platformIds: selected, prompt: buildPrompt(selected), maxTokens: GENERATION_MAX_TOKENS }];
 
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch("/.netlify/functions/start-message-generation", {
