@@ -58,10 +58,25 @@ const TOKENS_PER_CREDIT = 1000;
 // through. Distinct from the hard block, which only fires at ≤0.
 const GENERATION_WARNING_THRESHOLD = 500;
 
-export function creditsForTokens(inputTokens, outputTokens) {
-  const total = (inputTokens || 0) + (outputTokens || 0);
-  if (total <= 0) return 1; // never bill zero for a real call
-  return Math.ceil(total / TOKENS_PER_CREDIT);
+export function creditsForTokens(inputTokens, outputTokens, cacheCreationTokens = 0, cacheReadTokens = 0) {
+  // UPDATED (Aug 2026, prompt caching): cacheCreationTokens/cacheReadTokens
+  // are new parameters, weighted by their real price relative to base
+  // input price, confirmed via Anthropic's published pricing: a 5-minute
+  // cache write costs 1.25x base input price, a cache read costs 0.1x base
+  // input price. inputTokens/outputTokens keep today's existing 1x-each
+  // weighting unchanged (a known, pre-existing simplification — output is
+  // really ~5x input price for Sonnet — not something this change fixes).
+  // Without this weighting, a caller passing only Claude's separate,
+  // smaller `usage.input_tokens` field (which, once caching is live, only
+  // covers tokens after the last cache breakpoint) without ever reading
+  // the cache fields would silently charge the org less than what
+  // Anthropic actually bills for that call.
+  const weighted = (inputTokens || 0)
+    + (outputTokens || 0)
+    + (cacheCreationTokens || 0) * 1.25
+    + (cacheReadTokens || 0) * 0.1;
+  if (weighted <= 0) return 1; // never bill zero for a real call
+  return Math.ceil(weighted / TOKENS_PER_CREDIT);
 }
 
 /**
@@ -148,14 +163,16 @@ export function generationWarningPayload(balance) {
  * @param {string} params.functionName      - calling function's name, for log prefixing (e.g. "generate-message")
  * @param {number} params.inputTokens
  * @param {number} params.outputTokens
+ * @param {number} [params.cacheCreationTokens] - Aug 2026, prompt caching. Tokens written to a new cache entry this call (Claude's usage.cache_creation_input_tokens). Omit/0 for a non-caching caller.
+ * @param {number} [params.cacheReadTokens] - Aug 2026, prompt caching. Tokens read from an existing cache entry this call (Claude's usage.cache_read_input_tokens). Omit/0 for a non-caching caller.
  * @returns {Promise<{debited: boolean, credits?: number, reason?: string}>}
  */
-export async function debitGenerationCredits(app, { orgId, uid, functionName, inputTokens, outputTokens }) {
+export async function debitGenerationCredits(app, { orgId, uid, functionName, inputTokens, outputTokens, cacheCreationTokens = 0, cacheReadTokens = 0 }) {
   if (!orgId) {
     console.warn(`[creditHelper] ${functionName}: uid=${uid || "none"} has no orgId — generation not debited (pre-org-migration or individual account).`);
     return { debited: false, reason: "no_org" };
   }
-  const credits = creditsForTokens(inputTokens, outputTokens);
+  const credits = creditsForTokens(inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens);
   const db = admin.firestore(app);
   const orgRef = db.doc(`orgs/${orgId}`);
   try {
@@ -166,7 +183,8 @@ export async function debitGenerationCredits(app, { orgId, uid, functionName, in
     await db.runTransaction(async (tx) => {
       tx.set(orgRef, { credits: { generationBalance: admin.firestore.FieldValue.increment(-credits) } }, { merge: true });
     });
-    console.log(`[creditHelper] ${functionName}: debited ${credits} credit(s) from org=${orgId} uid=${uid || "none"} (${inputTokens || 0}+${outputTokens || 0} tokens)`);
+    const cacheNote = (cacheCreationTokens || cacheReadTokens) ? `, cache: ${cacheCreationTokens || 0} written + ${cacheReadTokens || 0} read` : "";
+    console.log(`[creditHelper] ${functionName}: debited ${credits} credit(s) from org=${orgId} uid=${uid || "none"} (${inputTokens || 0}+${outputTokens || 0} tokens${cacheNote})`);
     return { debited: true, credits };
   } catch (err) {
     console.error(`[creditHelper] ${functionName}: debit FAILED for org=${orgId} uid=${uid || "none"} —`, err.message);
