@@ -11,6 +11,21 @@
 [functions."generate-message"]
   timeout = 26
 
+# start-message-generation.mjs (Aug 2026, Background Functions
+# rearchitecture) — fast, no Claude call itself, just auth + a couple
+# Firestore reads + handing off to generate-message-background.mjs. 15s is
+# generous headroom over what it should normally take; same conservative
+# choice as manage-user.mjs below for a function doing a few reads.
+[functions."start-message-generation"]
+  timeout = 15
+
+# generate-message-background.mjs deliberately has NO timeout entry here —
+# the "-background" filename suffix makes this a Netlify Background
+# Function, which isn't subject to the synchronous-function timeout at
+# all (runs up to 15 minutes). This is the actual fix for the 26-second
+# ceiling that generate-message/generate-rebuttal/generate-storm-text/
+# rapid-response/browse-drive below are all still capped at.
+
 [functions."generate-rebuttal"]
   timeout = 26
 
