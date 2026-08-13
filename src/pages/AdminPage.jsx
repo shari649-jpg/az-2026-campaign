@@ -42,12 +42,18 @@ function todayUTC() { return new Date().toISOString().slice(0, 10); }
 function overrideToday(u, today) {
   return u.dailyLimitOverrideDate === today ? (u.dailyLimitOverride || 0) : 0;
 }
+// Standing override — persistent, no date check. Mirrors
+// rateLimitHelper.mjs's own standingRaw/standing calc.
+function standingLimit(u) {
+  const raw = Number(u.dailyLimitStanding);
+  return Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
 function usedToday(u, today) {
   return u.dailyCallsDate === today ? (u.dailyCalls || 0) : 0;
 }
 function isAtDailyLimit(u) {
   const today = todayUTC();
-  const limit = (DAILY_LIMITS[u.role] ?? DAILY_LIMITS.user) + overrideToday(u, today);
+  const limit = (DAILY_LIMITS[u.role] ?? DAILY_LIMITS.user) + standingLimit(u) + overrideToday(u, today);
   return usedToday(u, today) >= limit;
 }
 
@@ -72,7 +78,7 @@ export default function AdminPage() {
   // invite can be sent (see send-invite.mjs / provision-account.mjs).
   const [inviteOrgChoice, setInviteOrgChoice] = useState({});
   const [editingUid, setEditingUid] = useState(null); // uid currently in edit mode
-  const [editForm, setEditForm]     = useState({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [] });
+  const [editForm, setEditForm]     = useState({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [], orgId: "", dailyLimitStanding: "" });
   const [detailsUid, setDetailsUid] = useState(null); // uid currently shown in the read-only details modal
   const [actionUid, setActionUid]   = useState(null); // uid currently mid disable/enable/delete call
   const [actionError, setActionError] = useState(null); // { uid, message }
@@ -574,15 +580,24 @@ export default function AdminPage() {
       // The field and its read-side filtering have existed since Handoff
       // #32; this admin UI to actually SET it was the missing piece.
       researchOrgIds: Array.isArray(u.researchOrgIds) ? u.researchOrgIds : [],
+      // orgId + dailyLimitStanding (August 2026 addition) — which org this
+      // user actually belongs to (billing/credit-pool membership, distinct
+      // from researchOrgIds above, which only affects Research visibility)
+      // and their persistent daily-call-limit addition, if any. Both were
+      // previously only settable via a direct Firestore edit or the
+      // migration script; this is the missing Admin-panel UI for them.
+      orgId: u.orgId || "",
+      dailyLimitStanding: u.dailyLimitStanding ? String(u.dailyLimitStanding) : "",
     });
     // The Orgs tab normally loads its org list lazily, only when that tab
-    // is opened — but the researchOrgIds multi-select below needs the same
-    // org list regardless of which tab the admin is currently on, so fetch
-    // it here too if it hasn't been loaded yet this session.
+    // is opened — but the researchOrgIds multi-select and the orgId picker
+    // below both need the same org list regardless of which tab the admin
+    // is currently on, so fetch it here too if it hasn't been loaded yet
+    // this session.
     if (!orgsLoaded && !orgsLoading) fetchOrgs();
   };
 
-  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [] }); };
+  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [], orgId: "", dailyLimitStanding: "" }); };
 
   const updateSocialField = (i, field, value) => {
     setEditForm(f => ({ ...f, socials: f.socials.map((s, idx) => idx === i ? { ...s, [field]: value } : s) }));
@@ -622,6 +637,34 @@ export default function AdminPage() {
       };
       // Keep legacy secondarySocial in sync for any older display code that still reads it.
       if (socialAccounts[1]) payload.secondarySocial = socialAccounts[1];
+
+      // Single lookup, reused below for org/limit fields and for the email
+      // comparison further down.
+      const originalUser = users.find(u => u.id === uid);
+
+      // orgId + dailyLimitStanding (August 2026 addition) — Administrator
+      // only (firestore.rules protects both on the owner-edit path, and the
+      // form fields themselves are disabled for a non-admin — this is a
+      // second check, not the only one). Only included in the write when
+      // they actually changed, so every ordinary name/social edit doesn't
+      // also re-write org membership or the standing limit as a no-op.
+      if (isAdmin) {
+        const nextOrgId = editForm.orgId.trim();
+        if (nextOrgId !== (originalUser?.orgId || "")) {
+          // Empty selection clears org membership entirely (moves the user
+          // off any shared credit pool) — deliberate, not a default we want
+          // to silently skip, so this always writes a real value; an empty
+          // string reads the same as unset everywhere this app checks
+          // `data.orgId || null`, so deleteField() isn't needed here.
+          payload.orgId = nextOrgId || "";
+        }
+        const nextStanding = editForm.dailyLimitStanding.trim() === "" ? 0 : Number(editForm.dailyLimitStanding);
+        const prevStanding = Number(originalUser?.dailyLimitStanding) || 0;
+        if (Number.isFinite(nextStanding) && nextStanding >= 0 && nextStanding !== prevStanding) {
+          payload.dailyLimitStanding = nextStanding;
+        }
+      }
+
       await updateDoc(doc(db, "users", uid), payload);
 
       // Email lives in Firebase Auth, not just Firestore — changing it
@@ -630,7 +673,6 @@ export default function AdminPage() {
       // manage-user.mjs rather than a direct Firestore write. Only fires
       // if the email field was actually changed in this edit. Added
       // July 2026, Priority 5 cleanup.
-      const originalUser = users.find(u => u.id === uid);
       const newEmail = editForm.email.trim().toLowerCase();
       let emailUpdated = false;
       if (newEmail && originalUser && newEmail !== (originalUser.email || "").toLowerCase()) {
@@ -1446,6 +1488,57 @@ export default function AdminPage() {
                               style={{ alignSelf: "flex-start", background: "none", border: "none", color: TEAL, fontWeight: 700, fontSize: 13, cursor: "pointer", padding: "2px 0" }}>
                               + Add another social
                             </button>
+                            {/* orgId + dailyLimitStanding (August 2026 addition) —
+                                Administrator-only. orgId is which org this user
+                                actually belongs to (billing/credit-pool
+                                membership) — previously only settable via a
+                                direct Firestore edit or the migration script.
+                                dailyLimitStanding is a PERSISTENT addition to
+                                their role-based daily call limit, distinct from
+                                the same-day "+N today" control elsewhere on this
+                                card. Both write fields firestore.rules protects
+                                on the owner-edit path, so only an Administrator
+                                editing someone ELSE's doc can set them — matches
+                                the isAdmin-gated pattern already used for the
+                                org addon toggles below on this page. Managers
+                                see these fields but can't edit them, so it's
+                                clear the capability exists without implying it
+                                will silently work if they try. */}
+                            <div style={{ marginTop: 4, padding: "10px 12px", background: isAdmin ? "#fff8f0" : "#f7f7f7", borderRadius: 8, border: `1.5px solid ${isAdmin ? GOLD : "#e5e5e5"}` }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#888", marginBottom: 8 }}>
+                                Organization &amp; standing limit {!isAdmin && "(Administrator only)"}
+                              </div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5, color: CHARCOAL, fontWeight: 600 }}>
+                                  Org membership (billing/credits)
+                                  <select
+                                    value={editForm.orgId}
+                                    onChange={e => setEditForm(f => ({ ...f, orgId: e.target.value }))}
+                                    disabled={!isAdmin || (orgsLoading && !coalitionOrgs.length)}
+                                    style={{ padding: "7px 10px", fontSize: 13.5, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL, background: "#fff" }}
+                                  >
+                                    <option value="">— no org —</option>
+                                    {coalitionOrgs.map(org => (
+                                      <option key={org.id} value={org.id}>{org.name || org.id}</option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5, color: CHARCOAL, fontWeight: 600 }}>
+                                  Standing daily-limit addition (persists every day, on top of role limit)
+                                  <input
+                                    type="number" min="0" step="1"
+                                    value={editForm.dailyLimitStanding}
+                                    onChange={e => setEditForm(f => ({ ...f, dailyLimitStanding: e.target.value }))}
+                                    disabled={!isAdmin}
+                                    placeholder="0"
+                                    style={{ padding: "7px 10px", fontSize: 13.5, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL, width: 120 }}
+                                  />
+                                </label>
+                              </div>
+                              <div style={{ fontSize: 11.5, color: "#999", marginTop: 8, lineHeight: 1.5 }}>
+                                Changing org membership moves this user onto a different org's shared credit pool — confirm before saving. The standing limit is separate from the same-day "+N today" bump and stays in effect until changed here.
+                              </div>
+                            </div>
                             {/* researchOrgIds (Aug 2026 addition) — grants this
                                 user visibility into more than one org's Research
                                 candidates, via the "Viewing: [org] ▾" switcher
