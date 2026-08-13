@@ -78,7 +78,7 @@ export default function AdminPage() {
   // invite can be sent (see send-invite.mjs / provision-account.mjs).
   const [inviteOrgChoice, setInviteOrgChoice] = useState({});
   const [editingUid, setEditingUid] = useState(null); // uid currently in edit mode
-  const [editForm, setEditForm]     = useState({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [], orgId: "", dailyLimitStanding: "" });
+  const [editForm, setEditForm]     = useState({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [], orgId: "", dailyLimitStanding: "", dailyLimitToday: "" });
   const [detailsUid, setDetailsUid] = useState(null); // uid currently shown in the read-only details modal
   const [actionUid, setActionUid]   = useState(null); // uid currently mid disable/enable/delete call
   const [actionError, setActionError] = useState(null); // { uid, message }
@@ -588,6 +588,12 @@ export default function AdminPage() {
       // migration script; this is the missing Admin-panel UI for them.
       orgId: u.orgId || "",
       dailyLimitStanding: u.dailyLimitStanding ? String(u.dailyLimitStanding) : "",
+      // Same-day override, editable directly here now (not just via the
+      // "+N today" quick buttons, which only appear once a user is already
+      // AT their limit). overrideToday() already handles the date check —
+      // a stale prior-day value reads as 0/empty here, same as everywhere
+      // else this field is used.
+      dailyLimitToday: overrideToday(u, todayUTC()) ? String(overrideToday(u, todayUTC())) : "",
     });
     // The Orgs tab normally loads its org list lazily, only when that tab
     // is opened — but the researchOrgIds multi-select and the orgId picker
@@ -597,7 +603,7 @@ export default function AdminPage() {
     if (!orgsLoaded && !orgsLoading) fetchOrgs();
   };
 
-  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [], orgId: "", dailyLimitStanding: "" }); };
+  const cancelEdit = () => { setEditingUid(null); setEditForm({ fullName: "", email: "", socials: [{ platform: "", handle: "" }], researchOrgIds: [], orgId: "", dailyLimitStanding: "", dailyLimitToday: "" }); };
 
   const updateSocialField = (i, field, value) => {
     setEditForm(f => ({ ...f, socials: f.socials.map((s, idx) => idx === i ? { ...s, [field]: value } : s) }));
@@ -662,6 +668,20 @@ export default function AdminPage() {
         const prevStanding = Number(originalUser?.dailyLimitStanding) || 0;
         if (Number.isFinite(nextStanding) && nextStanding >= 0 && nextStanding !== prevStanding) {
           payload.dailyLimitStanding = nextStanding;
+        }
+        // Same-day override, settable directly here now — writes the exact
+        // same two fields (dailyLimitOverride, dailyLimitOverrideDate) the
+        // "+N today" quick buttons and rateLimitHelper.mjs already use, so
+        // this is a second way to reach an existing mechanism, not a new
+        // one. Only writes when it actually changed from what's in effect
+        // right now (today() only — a stale prior-day value doesn't count
+        // as "unchanged from 0", matching overrideToday()'s own logic).
+        const today = todayUTC();
+        const nextToday = editForm.dailyLimitToday.trim() === "" ? 0 : Number(editForm.dailyLimitToday);
+        const prevToday = overrideToday(originalUser || {}, today);
+        if (Number.isFinite(nextToday) && nextToday >= 0 && nextToday !== prevToday) {
+          payload.dailyLimitOverride = nextToday;
+          payload.dailyLimitOverrideDate = today;
         }
       }
 
@@ -1425,6 +1445,27 @@ export default function AdminPage() {
                 </div>
               );
             })()}
+            {/* Daily-limit legend (added Aug 2026 alongside the standing/
+                same-day override controls) — the base numbers a Manager or
+                Admin has to hold in their head every time they look at a
+                user's card. DAILY_LIMITS is the same constant used for the
+                at-limit badge calc above; shown once here instead of
+                requiring a lookup elsewhere or per-file digging. */}
+            {!loadingUsers && filteredUsers.length > 0 && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap",
+                background: "#f7f7f7", border: "1.5px solid #e5e5e5", borderRadius: 8,
+                padding: "10px 16px", marginBottom: 16, fontSize: 12.5, color: "#666",
+              }}>
+                <span style={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 11, color: "#888" }}>
+                  Daily AI-call limits (base, by role)
+                </span>
+                <span><strong style={{ color: CHARCOAL }}>Member</strong> {DAILY_LIMITS.user}</span>
+                <span><strong style={{ color: CHARCOAL }}>Manager</strong> {DAILY_LIMITS.manager}</span>
+                <span><strong style={{ color: CHARCOAL }}>Administrator</strong> {DAILY_LIMITS.administrator}</span>
+                <span style={{ color: "#999" }}>— plus any standing addition or today-only bump set per user below</span>
+              </div>
+            )}
             {!loadingUsers && filteredUsers.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {filteredUsers.map(u => {
@@ -1488,22 +1529,30 @@ export default function AdminPage() {
                               style={{ alignSelf: "flex-start", background: "none", border: "none", color: TEAL, fontWeight: 700, fontSize: 13, cursor: "pointer", padding: "2px 0" }}>
                               + Add another social
                             </button>
-                            {/* orgId + dailyLimitStanding (August 2026 addition) —
-                                Administrator-only. orgId is which org this user
-                                actually belongs to (billing/credit-pool
-                                membership) — previously only settable via a
-                                direct Firestore edit or the migration script.
+                            {/* orgId + dailyLimitStanding + dailyLimitToday
+                                (August 2026 addition) — Administrator-only.
+                                orgId is which org this user actually belongs
+                                to (billing/credit-pool membership) —
+                                previously only settable via a direct
+                                Firestore edit or the migration script.
                                 dailyLimitStanding is a PERSISTENT addition to
-                                their role-based daily call limit, distinct from
-                                the same-day "+N today" control elsewhere on this
-                                card. Both write fields firestore.rules protects
-                                on the owner-edit path, so only an Administrator
-                                editing someone ELSE's doc can set them — matches
-                                the isAdmin-gated pattern already used for the
-                                org addon toggles below on this page. Managers
-                                see these fields but can't edit them, so it's
-                                clear the capability exists without implying it
-                                will silently work if they try. */}
+                                their role-based daily call limit.
+                                dailyLimitToday sets the SAME same-day
+                                override the "+N today" quick buttons already
+                                write (dailyLimitOverride +
+                                dailyLimitOverrideDate) — added here directly
+                                because those quick buttons only render once a
+                                user is already AT their limit, and a same-day
+                                bump was needed as a normal, always-available
+                                action, not just an emergency one. All three
+                                write fields firestore.rules protects on the
+                                owner-edit path, so only an Administrator
+                                editing someone ELSE's doc can set them —
+                                matches the isAdmin-gated pattern already used
+                                for the org addon toggles below on this page.
+                                Managers see these fields but can't edit them,
+                                so it's clear the capability exists without
+                                implying it will silently work if they try. */}
                             <div style={{ marginTop: 4, padding: "10px 12px", background: isAdmin ? "#fff8f0" : "#f7f7f7", borderRadius: 8, border: `1.5px solid ${isAdmin ? GOLD : "#e5e5e5"}` }}>
                               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#888", marginBottom: 8 }}>
                                 Organization &amp; standing limit {!isAdmin && "(Administrator only)"}
@@ -1534,9 +1583,20 @@ export default function AdminPage() {
                                     style={{ padding: "7px 10px", fontSize: 13.5, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL, width: 120 }}
                                   />
                                 </label>
+                                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5, color: CHARCOAL, fontWeight: 600 }}>
+                                  Today-only addition (clears at midnight UTC — same mechanism as "+N today")
+                                  <input
+                                    type="number" min="0" step="1"
+                                    value={editForm.dailyLimitToday}
+                                    onChange={e => setEditForm(f => ({ ...f, dailyLimitToday: e.target.value }))}
+                                    disabled={!isAdmin}
+                                    placeholder="0"
+                                    style={{ padding: "7px 10px", fontSize: 13.5, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", color: CHARCOAL, width: 120 }}
+                                  />
+                                </label>
                               </div>
                               <div style={{ fontSize: 11.5, color: "#999", marginTop: 8, lineHeight: 1.5 }}>
-                                Changing org membership moves this user onto a different org's shared credit pool — confirm before saving. The standing limit is separate from the same-day "+N today" bump and stays in effect until changed here.
+                                Changing org membership moves this user onto a different org's shared credit pool — confirm before saving. Standing stays in effect until changed here; today-only resets to 0 at midnight UTC regardless of what's set here.
                               </div>
                             </div>
                             {/* researchOrgIds (Aug 2026 addition) — grants this
@@ -1653,6 +1713,27 @@ export default function AdminPage() {
                             </select>
                             {saving === u.id && <span style={{ fontSize: 12, color: "#888" }}>Saving…</span>}
                           </div>
+
+                          {/* Effective daily limit — added Aug 2026 alongside
+                              the standing/today override controls, so this
+                              never has to be looked up separately: base role
+                              limit plus whatever's currently added, computed
+                              the same way isAtDailyLimit()/rateLimitHelper.mjs
+                              do. Shown for every user, not just ones at their
+                              limit. */}
+                          {(() => {
+                            const base = DAILY_LIMITS[u.role] ?? DAILY_LIMITS.user;
+                            const standing = standingLimit(u);
+                            const todayAdd = overrideToday(u, todayUTC());
+                            const effective = base + standing + todayAdd;
+                            const hasAdditions = standing > 0 || todayAdd > 0;
+                            return (
+                              <div title={hasAdditions ? `${base} base + ${standing} standing + ${todayAdd} today` : "Base role limit, no additions"}
+                                style={{ fontSize: 12, color: hasAdditions ? TEAL : "#888", fontWeight: hasAdditions ? 700 : 400, whiteSpace: "nowrap" }}>
+                                Limit: {effective}/day{hasAdditions && " *"}
+                              </div>
+                            );
+                          })()}
 
                           {isAtDailyLimit(u) && (
                             <div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--terracotta-light)", border: `1.5px solid ${TERRACOTTA}`, borderRadius: 8, padding: "6px 10px" }}>
