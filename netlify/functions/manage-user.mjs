@@ -54,17 +54,47 @@ function getAdminApp() {
   return admin.initializeApp({ credential });
 }
 
-// Verify the caller's ID token and confirm they hold the administrator role
-// in Firestore before allowing any action. This is the only thing standing
-// between this endpoint and "anyone can disable, delete, or change the email
-// address of any account."
-async function requireAdmin(app, idToken) {
+// Verify the caller's ID token and confirm they're authorized for the
+// requested action. Two paths:
+//   1. Real Administrator — authorized for every action (disable, enable,
+//      delete, update_email), same as always.
+//   2. Org admin (August 2026, TODO #1) — a plain "user" with orgAdmin:true
+//      on their own doc — authorized ONLY for disable/enable, and ONLY on a
+//      target who (a) belongs to their own org, (b) is a plain "user", not
+//      a Manager/Administrator or another org admin. This mirrors
+//      firestore.rules' scoped update branch on users/{uid} exactly (same
+//      "own org, plain members only" boundary) — this function is the
+//      independent server-side enforcement point for the one action
+//      (disable/enable) that has to go through the Admin SDK rather than a
+//      direct client Firestore write, same two-independent-checks reasoning
+//      as grant-credits.mjs.
+// Throws "unauthenticated", "forbidden", or "not_found" (target doesn't
+// exist — only relevant on the org-admin path, since that one needs to
+// read the target doc to check org/role).
+async function authorize(app, idToken, action, targetUid) {
   if (!idToken) throw new Error("unauthenticated");
   const decoded = await admin.auth(app).verifyIdToken(idToken);
-  const snap = await admin.firestore(app).doc(`users/${decoded.uid}`).get();
-  const role = snap.exists ? snap.data().role : null;
-  if (role !== "administrator") throw new Error("forbidden");
-  return decoded.uid;
+  const db = admin.firestore(app);
+  const callerSnap = await db.doc(`users/${decoded.uid}`).get();
+  const caller = callerSnap.exists ? callerSnap.data() : {};
+
+  if (caller.role === "administrator") {
+    return { callerUid: decoded.uid, isOrgAdminCaller: false };
+  }
+
+  const isScopedAction = action === "disable" || action === "enable";
+  if (caller.orgAdmin === true && isScopedAction) {
+    if (!caller.orgId) throw new Error("forbidden");
+    const targetSnap = await db.doc(`users/${targetUid}`).get();
+    if (!targetSnap.exists) throw new Error("not_found");
+    const target = targetSnap.data();
+    if (target.orgId !== caller.orgId || target.role !== "user" || target.orgAdmin === true) {
+      throw new Error("forbidden");
+    }
+    return { callerUid: decoded.uid, isOrgAdminCaller: true };
+  }
+
+  throw new Error("forbidden");
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -94,10 +124,13 @@ export default async function (req) {
 
     let callerUid;
     try {
-      callerUid = await requireAdmin(app, idToken);
+      ({ callerUid } = await authorize(app, idToken, action, targetUid));
     } catch (err) {
-      const status = err.message === "unauthenticated" ? 401 : 403;
-      return new Response(JSON.stringify({ error: "Not authorized to perform this action." }), {
+      const status = err.message === "unauthenticated" ? 401 : err.message === "not_found" ? 404 : 403;
+      const msg = err.message === "not_found"
+        ? "That account no longer exists."
+        : "Not authorized to perform this action.";
+      return new Response(JSON.stringify({ error: msg }), {
         status, headers: corsHeaders(req),
       });
     }
