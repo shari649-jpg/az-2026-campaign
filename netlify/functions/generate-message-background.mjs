@@ -20,16 +20,40 @@
 // usage — only the transport/timeout mechanism changed, not what a
 // generation costs a user or an org.
 //
-// NOTE (not fixed here, pre-existing, out of scope for this change):
-// buildPrompt() in message-machine.jsx already embeds
-// FACTUAL_ACCURACY_GUARDRAIL and AI_TELL_PHRASING_BAN directly inside the
-// user-message prompt text. Because the client never sends a `system`
-// field, the missingPieces logic below (ported unchanged from
-// generate-message.mjs) also appends both of them via the `system`
-// parameter — meaning today's production calls already send this
-// guardrail text twice, once in `messages` and once in `system`. Faithful
-// port of existing behavior; flagged for a future cleanup pass, not
-// touched now.
+// PROMPT CACHING (Aug 2026). Each group now arrives as { staticSystem,
+// dynamicPrompt } instead of one flat { prompt, system } — see
+// buildPromptParts() in message-machine.jsx for exactly what's in each
+// half. staticSystem (guardrails, platform-voice guide, JSON-format
+// instructions, and the mode's own fixed intro/style-guide text) is sent
+// as a cache_control-tagged block in Claude's `system` array; dynamicPrompt
+// (Issue/Content, Focal Point, Audience, Voice, Style, Tone, Frame, County,
+// the platform list) is the `messages` user-turn content, never cached.
+// Confirmed against Anthropic's current docs at implementation time: no
+// special beta header is required for standard 5-minute ephemeral
+// caching, `system` just needs to be an array of content blocks with
+// `cache_control: {type:"ephemeral"}` on the block that should be cached,
+// and the minimum cacheable prompt length for this app's model
+// (claude-sonnet-4-5-20250929) is 1,024 tokens — comfortably below the
+// real ~2,000+-token static block this app sends (confirmed from real
+// production logs the same day this was built). This one FIXED a real,
+// pre-existing bug as a side effect, not a new one introduced: the old
+// buildPrompt() embedded FACTUAL_ACCURACY_GUARDRAIL and
+// AI_TELL_PHRASING_BAN directly inside the user-message prompt text AND
+// (because the client never sent a separate `system` field) this file's
+// own missingPieces safety net re-appended both into `system` too —
+// meaning every call sent that guardrail text twice. Now that staticSystem
+// is a real, separate field containing the guardrails and dynamicPrompt
+// deliberately does not, that duplication is gone.
+//
+// CREDIT CHARGING — see creditHelper.mjs's own comments for the full
+// reasoning, but the short version: Claude's response usage object
+// reports cache_creation_input_tokens and cache_read_input_tokens
+// SEPARATELY from input_tokens (which, once caching is live, only covers
+// tokens after the last cache breakpoint — not the full request). Passing
+// only input_tokens/output_tokens to debitGenerationCredits() the way this
+// file did before caching would have silently undercharged every org
+// relative to its real Anthropic bill the moment this shipped. Both cache
+// fields are read from the real response below and passed through.
 
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
@@ -52,26 +76,38 @@ function getAdminApp() {
   return admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 
-// Builds the effective `system` string exactly as generate-message.mjs
-// did — see the NOTE above for why this currently duplicates guardrail
-// text already present in the prompt itself.
-function buildEffectiveSystem(clientSystem) {
-  const cs = typeof clientSystem === "string" ? clientSystem : "";
+// Builds the effective, cache_control-tagged `system` ARRAY (not a plain
+// string anymore) from a group's staticSystem. The missingPieces safety
+// net is kept — same defense-in-depth reasoning generate-message.mjs
+// always had (never fully trust the client) — but now checks against the
+// real staticSystem field, which under normal operation already contains
+// both guardrails, so this should be a no-op in practice, not the thing
+// actually adding them.
+//
+// IMPORTANT: cache_control goes on the LAST block that should be part of
+// the cached prefix. There's only one static block here, so it goes on
+// that one, always — if missingPieces ever has to append something (the
+// safety-net case), it's appended INSIDE the same block's text, before
+// the cache_control tag is applied, not as a second block, so the cache
+// key still covers the complete static content, not just part of it.
+function buildEffectiveSystem(staticSystem) {
+  const ss = typeof staticSystem === "string" ? staticSystem : "";
   const missingPieces = [
-    !cs.includes("FACTUAL ACCURACY:") ? FACTUAL_ACCURACY_GUARDRAIL : null,
-    !cs.includes("AVOID AI-SOUNDING PHRASING:") ? AI_TELL_PHRASING_BAN : null,
+    !ss.includes("FACTUAL ACCURACY:") ? FACTUAL_ACCURACY_GUARDRAIL : null,
+    !ss.includes("AVOID AI-SOUNDING PHRASING:") ? AI_TELL_PHRASING_BAN : null,
   ].filter(Boolean);
-  return [cs, ...missingPieces].filter(Boolean).join("\n\n");
+  const fullStatic = [ss, ...missingPieces].filter(Boolean).join("\n\n");
+  return [{ type: "text", text: fullStatic, cache_control: { type: "ephemeral" } }];
 }
 
-async function callClaude({ prompt, maxTokens, system }) {
+async function callClaude({ dynamicPrompt, maxTokens, system }) {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
       model: GENERATION_MODEL,
       max_tokens: Math.min(maxTokens || 1000, MAX_TOKENS_CEILING),
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content: dynamicPrompt }],
       system,
     }),
   });
@@ -136,10 +172,10 @@ export default async function (req) {
         return { platformIds: group.platformIds, error: "credits_exhausted", creditMessage: generationBlockedPayload(balanceCheck.balance).message };
       }
 
-      const effectiveSystem = buildEffectiveSystem(group.system);
+      const effectiveSystem = buildEffectiveSystem(group.staticSystem);
       let claudeResult;
       try {
-        claudeResult = await callClaude({ prompt: group.prompt, maxTokens: group.maxTokens, system: effectiveSystem });
+        claudeResult = await callClaude({ dynamicPrompt: group.dynamicPrompt, maxTokens: group.maxTokens, system: effectiveSystem });
       } catch (err) {
         console.error(`[generate-message-background] Claude call failed for job=${jobId} group=${group.platformIds.join(",")}:`, err.message);
         return { platformIds: group.platformIds, error: "server_error", message: err.message };
@@ -150,11 +186,14 @@ export default async function (req) {
       }
 
       if (claudeResult.data.usage) {
+        const u = claudeResult.data.usage;
         await debitGenerationCredits(app, {
           orgId, uid,
           functionName: "generate-message-background",
-          inputTokens: claudeResult.data.usage.input_tokens,
-          outputTokens: claudeResult.data.usage.output_tokens,
+          inputTokens: u.input_tokens,
+          outputTokens: u.output_tokens,
+          cacheCreationTokens: u.cache_creation_input_tokens,
+          cacheReadTokens: u.cache_read_input_tokens,
         });
       }
 
