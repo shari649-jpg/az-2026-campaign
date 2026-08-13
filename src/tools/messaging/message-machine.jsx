@@ -46,7 +46,7 @@ const PLATFORMS = [
 // just formatting rules. The priority-rule paragraph up top ensures Tone/Style/
 // Voice settings modulate that persona rather than flattening it (e.g. a
 // "Professional" tone should still read sharper on Twitter/X than on Facebook).
-const PLATFORM_VOICE_GUIDE = `PLATFORM VOICE — each platform below has its own fixed baseline personality; the Tone, Style, and Voice/Persona settings above modulate HOW that personality delivers the message, they never flatten or replace it. A "Professional" tone on Twitter/X should still read sharper and more clipped than the same "Professional" tone on Facebook; a "Sarcastic" tone on Facebook should still read warmer and more explanatory than the same "Sarcastic" tone on Twitter/X.
+const PLATFORM_VOICE_GUIDE = `PLATFORM VOICE — each platform below has its own fixed baseline personality; the Tone, Style, and Voice/Persona settings specified for this post modulate HOW that personality delivers the message, they never flatten or replace it. A "Professional" tone on Twitter/X should still read sharper and more clipped than the same "Professional" tone on Facebook; a "Sarcastic" tone on Facebook should still read warmer and more explanatory than the same "Sarcastic" tone on Twitter/X.
 
 - Facebook: Older-skewing, community- and family-oriented readers. Warm, explanatory register — take the time to walk through context, like a longtime neighbor at a town meeting. Detailed storytelling, clear call to action, 2–5 paragraphs.
 - Instagram: Younger-adult, millennial-leaning readers. Visual, punchy, values-driven — write like a real feed post, not a press release. Emotional hook at start.
@@ -665,20 +665,36 @@ export default function App() {
   const upd = (k,v) => setFormData(p=>({...p,[k]:v}));
   const togglePlatform = (id) => setFormData(p=>({ ...p, platforms: p.platforms.includes(id) ? p.platforms.filter(x=>x!==id) : [...p.platforms,id] }));
 
-  const buildPrompt = (platforms) => {
+  // buildPromptParts (Aug 2026, prompt caching) — returns { staticSystem,
+  // dynamicPrompt } instead of one flat string. staticSystem is every block
+  // that's byte-identical across every call in this mode regardless of
+  // Issue/Content, Audience, Voice, Style, Tone, Frame, or County —
+  // structured so it can be sent as its own cache_control-tagged block by
+  // generate-message-background.mjs. dynamicPrompt is everything that
+  // varies per call. See the guardrail/platform-voice-guide constants
+  // above for the "settings specified for this post" wording fix this
+  // reorder required — that fix is what makes moving Tone/Style/Voice
+  // AFTER PLATFORM_VOICE_GUIDE actually safe, not just a reorder for its
+  // own sake.
+  //
+  // Single source of truth for prompt CONTENT: buildPrompt() below is a
+  // thin wrapper that just concatenates these two pieces back into one
+  // string, for the one caller that still needs a flat string
+  // (regenPlatform's fallback path, which goes through the original
+  // synchronous generate-message.mjs — deliberately NOT extended to
+  // caching in this pass, same "generateAll only" scoping Background
+  // Functions and consolidation both used). generateAll uses
+  // buildPromptParts() directly.
+  const buildPromptParts = (platforms) => {
     const plats = PLATFORMS.filter(p=>platforms.includes(p.id)).map(p=>`${p.name} (max ${p.maxChars} chars)`).join(", ");
     const audienceLabel = formData.audience || DEFAULT_AUDIENCE;
     const styleObj = STYLES.find(s=>s.id===(formData.style||DEFAULT_STYLE));
     const styleLabel = styleObj ? styleObj.label : "Neutral";
     const modifierLine = formData.modifier ? `Tone: ${formData.modifier}` : "";
 
-    // Speaker perspective injection
     const perspObj = SPEAKER_PERSPECTIVES.find(p => p.id === formData.perspective);
     const perspLine = perspObj ? `Grammatical person: ${perspObj.label} — ${perspObj.desc}` : "";
 
-    // County voice injection — AZ mode only. Layered ON TOP of Voice/Persona, not a
-    // replacement for it. Only applies if the user explicitly selected a county
-    // (or the Rural Multi-County option) in Pro Mode.
     const countyVoiceText = formData.county === RURAL_MULTI_COUNTY
       ? RURAL_MULTI_COUNTY_VOICE
       : formData.county ? COUNTY_VOICES[formData.county] : null;
@@ -689,24 +705,36 @@ export default function App() {
       ? `\nCOUNTY VOICE — ${countyLabel}:\n${countyVoiceText}\n`
       : "";
 
-    // Layer 2 frame injection (available in both modes)
     const frameObj = NATIONAL_FRAMES.find(f => f.id === msgFrame);
     const frameBlock = frameObj
       ? `\nMESSAGING FRAME — ${frameObj.label.toUpperCase()}:\n${frameObj.prompt}\n`
       : "";
 
-    // ── NEUTRAL MODE (default — no mode selected) ──────────────────────────────
+    const focalPointMandatory = formData.focalPoint
+      ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.`
+      : "";
+    const platformIdsLine = `Only include these platform ids: ${platforms.join(", ")}`;
+    const formatLine = `Format: {"platform_id": "message text"}\nIf, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
+
+    // ── NEUTRAL MODE (default — no mode selected) ────────────────────────
     if (msgMode !== "az" && msgMode !== "national") {
-      return `You are an expert political messaging strategist working for a legitimate political campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
+      const staticSystem = `You are an expert political messaging strategist working for a legitimate political campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
 
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
 ${AI_TELL_PHRASING_BAN}
-${frameBlock}
+${PLATFORM_VOICE_GUIDE}
+
+${HASHTAG_BODY_BAN}
+
+${JSON_ONLY_INSTRUCTION}
+${JSON_ESCAPING_INSTRUCTION}`;
+
+      const dynamicPrompt = `${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
-${formData.focalPoint ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.` : ""}
+${focalPointMandatory}
 Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
 Style: ${styleLabel}
@@ -715,32 +743,34 @@ ${perspLine}
 
 Generate compelling social media posts for: ${plats}
 
-${PLATFORM_VOICE_GUIDE}
+${platformIdsLine}
+${formatLine}`;
 
-${HASHTAG_BODY_BAN}
-
-${JSON_ONLY_INSTRUCTION}
-${JSON_ESCAPING_INSTRUCTION}
-Only include these platform ids: ${platforms.join(", ")}
-Format: {"platform_id": "message text"}
-If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
+      return { staticSystem, dynamicPrompt };
     }
 
-    // ── AZ MODE ──────────────────────────────────────────────────────────────
+    // ── AZ MODE ───────────────────────────────────────────────────────────
     if (msgMode === "az") {
-      return `You are an expert political messaging strategist working for a legitimate, registered Arizona Democratic campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
+      const staticSystem = `You are an expert political messaging strategist working for a legitimate, registered Arizona Democratic campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
 
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
 
 ARIZONA CONTEXT — GROUND ALL MESSAGING HERE:
 Ground all messaging in the Arizona context. Reference communities, landscapes, and values familiar to Arizona voters — urban centers like Phoenix and Tucson, rural and tribal communities, the border, the desert. Reflect issues as they affect Arizonans specifically. When referencing costs, use Arizona examples where possible (utility bills, housing, healthcare, water, education). Write for an Arizona audience, not a generic national one.
-${countyBlock}
+
 ${FACTUAL_ACCURACY_GUARDRAIL}
 ${AI_TELL_PHRASING_BAN}
-${frameBlock}
+${PLATFORM_VOICE_GUIDE}
+
+${HASHTAG_BODY_BAN}
+
+${JSON_ONLY_INSTRUCTION}
+${JSON_ESCAPING_INSTRUCTION}`;
+
+      const dynamicPrompt = `${countyBlock}${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
-${formData.focalPoint ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.` : ""}
+${focalPointMandatory}
 Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
 ${formData.county ? `County Voice: ${formData.county === RURAL_MULTI_COUNTY ? RURAL_MULTI_COUNTY_LABEL : `${formData.county} County`}\n` : ""}Style: ${styleLabel}
@@ -749,28 +779,25 @@ ${perspLine}
 
 Generate compelling social media posts for: ${plats}
 
-${PLATFORM_VOICE_GUIDE}
+${platformIdsLine}
+${formatLine}`;
 
-${HASHTAG_BODY_BAN}
-
-${JSON_ONLY_INSTRUCTION}
-${JSON_ESCAPING_INSTRUCTION}
-Only include these platform ids: ${platforms.join(", ")}
-Format: {"platform_id": "message text"}
-If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
+      return { staticSystem, dynamicPrompt };
     }
 
-    // ── NATIONAL MODE ─────────────────────────────────────────────────────────
+    // ── NATIONAL MODE ─────────────────────────────────────────────────────
     // (only remaining possibility at this point is msgMode === "national")
-    // Beat structure revised Aug 2026 per Message_Machine_National_Prompt_
-    // Revision — cost now leads (was previously preceded by a "Freedom
-    // First" beat 0); freedom/rights/democracy framing moved to its own
-    // beat AFTER cost and mechanism are established, always anchored back
-    // to the specific cost, never standalone.
+    // audienceSwapNote moved from the STRUCTURE section into the dynamic
+    // tail (Aug 2026, prompt caching) — it depends on formData.audience,
+    // so it can't live in the cacheable static block without collapsing
+    // the cache to "only hits when the same audience is picked twice,"
+    // which defeats the point of splitting cost/mechanism/beats out as
+    // static in the first place.
     const audienceSwapNote = (formData.audience === "Persuadable Republican" || formData.audience === "Independent")
       ? `\nAUDIENCE-CONDITIONAL BEAT EMPHASIS — Target Audience is ${formData.audience}: this audience tends to respond better to values-first framing, so you may give Beat 3's freedom/rights language MORE emphasis and weight relative to Beat 1's cost. This is an emphasis shift only, not a reorder: Beat 1 still opens the post with a concrete cost, and Beat 3's freedom language still must stay anchored to that same cost — don't drop Beat 1 or move Beat 3 ahead of it, just give Beat 3 more space and stronger language.\n`
       : "";
-    return `You are an expert political messaging strategist working for a legitimate progressive campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
+
+    const staticSystem = `You are an expert political messaging strategist working for a legitimate progressive campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
 
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
 
@@ -784,7 +811,7 @@ STRUCTURE — Use the five-beat framework:
 3. THE THREAT TO AMERICANS: Only now, after the cost and mechanism are established, reframe the stakes using freedom, rights, or democracy language — and only when directly anchored to the specific cost already named in Beat 1. Freedom language must never stand alone as an abstraction.
 4. THE FIX: A specific reform, bill, ban, or change — not "we need change." The fix should map directly to the mechanism named in Beat 2.
 5. THE ASK: One low-barrier action, framed as the mechanism that restores what was named in Beat 1 and Beat 3 — vote, call, sign, share. Keep this concrete and singular: one ask per post, not a list.
-${audienceSwapNote}
+
 VILLAIN FRAMING — If the input content names a specific villain (Trump, a political party, a named official), use that name directly — don't launder it into vague language. If the input does NOT name a specific person or party, do not invent one: frame the villain generally as billionaires, corporate donors, or a rigged system, and let the audience make the connection. Never invent a named villain that isn't present in the input.
 
 HOPE DISCIPLINE — Anger opens the door. Hope closes the deal. Every message must end somewhere: a reform, an action, a change that's possible. Rage without resolution loses people.
@@ -805,27 +832,34 @@ FORBIDDEN PHRASES — Never use "We must," "Now is the time," or "History will j
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
 ${AI_TELL_PHRASING_BAN}
-${frameBlock}
+${PLATFORM_VOICE_GUIDE_NATIONAL}
+
+${HASHTAG_BODY_BAN}
+
+${JSON_ONLY_INSTRUCTION}
+${JSON_ESCAPING_INSTRUCTION}`;
+
+    const dynamicPrompt = `${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
-${formData.focalPoint ? `FOCAL POINT IS MANDATORY: The Focal Point above is not background information — it is the one message every single post must build around and clearly land, in the reader's own words. Every post you generate, regardless of platform or style, must make this focal point unmistakable. Do not let it become a passing mention buried in other content.` : ""}
+${focalPointMandatory}
 Target Audience: ${audienceLabel}
-Voice/Persona: ${formData.voice || "Not specified"}
+${audienceSwapNote}Voice/Persona: ${formData.voice || "Not specified"}
 Style: ${styleLabel}
 ${modifierLine}
 ${perspLine}
 
 Generate compelling social media posts for: ${plats}
 
-${PLATFORM_VOICE_GUIDE_NATIONAL}
+${platformIdsLine}
+${formatLine}`;
 
-${HASHTAG_BODY_BAN}
+    return { staticSystem, dynamicPrompt };
+  };
 
-${JSON_ONLY_INSTRUCTION}
-${JSON_ESCAPING_INSTRUCTION}
-Only include these platform ids: ${platforms.join(", ")}
-Format: {"platform_id": "message text"}
-If, and only if, the SELF-CONTRADICTION rule above applies to one or more platforms, also include a "_contradictionFlags" key: {"platform_id": "one-sentence explanation of the contradiction"} — one entry per affected platform id, omitted entirely (or {}) if none apply.`;
+  const buildPrompt = (platforms) => {
+    const { staticSystem, dynamicPrompt } = buildPromptParts(platforms);
+    return `${staticSystem}\n\n${dynamicPrompt}`;
   };
 
   const MM_DRAFT_KEY = "mm_draft_session";
@@ -1102,7 +1136,13 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
       // the "Platform-call consolidation" comment near the top of this
       // file (right after the PLATFORMS array) for why this replaced the
       // old 3-way PLATFORM_GROUPS split.
-      const groups = [{ platformIds: selected, prompt: buildPrompt(selected), maxTokens: GENERATION_MAX_TOKENS }];
+      // Prompt caching (Aug 2026) — sends the static/dynamic split from
+      // buildPromptParts() instead of one flat string, so
+      // generate-message-background.mjs can send Claude a real
+      // cache_control-tagged system block. See buildPromptParts() itself
+      // for exactly what's in each half.
+      const { staticSystem, dynamicPrompt } = buildPromptParts(selected);
+      const groups = [{ platformIds: selected, staticSystem, dynamicPrompt, maxTokens: GENERATION_MAX_TOKENS }];
 
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch("/.netlify/functions/start-message-generation", {
