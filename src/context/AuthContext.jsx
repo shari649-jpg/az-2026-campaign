@@ -86,9 +86,14 @@ export function AuthProvider({ children }) {
   const role = profile?.role ?? "user";
   const isManager = role === "manager" || role === "administrator";
   const isAdmin = role === "administrator";
+  // Independent boolean flag (August 2026, TODO #1) — never tied to role,
+  // never implies isManager. Matches firestore.rules' isOrgAdmin() exactly:
+  // a plain "user" can be an org admin, a Manager/Administrator's orgAdmin
+  // field is simply irrelevant since they already have broader access.
+  const isOrgAdmin = profile?.orgAdmin === true;
 
   return (
-    <AuthContext.Provider value={{ user, profile, role, isManager, isAdmin, loading, logout, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, role, isManager, isAdmin, isOrgAdmin, loading, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
