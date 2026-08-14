@@ -1636,7 +1636,7 @@ export default function AdminPage() {
                                     disabled={!isAdmin}
                                     style={{ width: 15, height: 15, accentColor: GOLD, cursor: isAdmin ? "pointer" : "default" }}
                                   />
-                                  Org admin — can manage plain members of their own org (never Managers/Admins, never other org admins)
+                                  Org admin — can manage members of their own org (never Managers/Admins, never other org admins)
                                 </label>
                               </div>
                               <div style={{ fontSize: 11.5, color: "#999", marginTop: 8, lineHeight: 1.5 }}>
@@ -1691,7 +1691,7 @@ export default function AdminPage() {
                               <span style={{ fontSize: 17, fontWeight: 700, color: CHARCOAL }}>{u.fullName || "—"}</span>
                               {isMe && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: GOLD, color: TEAL, padding: "2px 8px", borderRadius: 4 }}>You</span>}
                               {isDisabled && <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "#eee", color: "#777", border: "1px solid #ccc", padding: "2px 8px", borderRadius: 4 }}>Disabled</span>}
-                              {u.orgAdmin === true && <span title="Can manage this org's plain members (add/remove, own org only)" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "var(--gold-light)", color: "#9a7b00", border: `1px solid ${GOLD}`, padding: "2px 8px", borderRadius: 4 }}>Org Admin</span>}
+                              {u.orgAdmin === true && <span title="Can manage this org's members (add/remove, own org only)" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "var(--gold-light)", color: "#9a7b00", border: `1px solid ${GOLD}`, padding: "2px 8px", borderRadius: 4 }}>Org Admin</span>}
                               {u.emailVerified === false && !isDisabled && (
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "var(--gold-light)", color: "#9a7b00", border: `1px solid ${GOLD}`, padding: "2px 8px", borderRadius: 4 }}>
                                   Unverified
@@ -2876,7 +2876,14 @@ function OrgAdminPanel() {
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Failed to send invite.");
-      await updateDoc(waitlistRef, { status: "invited", invitedAt: new Date() });
+      // No client-side status update here anymore (Aug 2026 fix) —
+      // send-invite.mjs now sets status:"invited" itself via the Admin
+      // SDK, in the same write it already does for accountType/orgId.
+      // The client-side updateDoc() this used to be threw "Missing or
+      // insufficient permissions" for an org admin every time, even
+      // though the invite email above had already sent successfully —
+      // firestore.rules' waitlist update rule was never scoped to allow
+      // it. See send-invite.mjs's own comment on this same fix.
       notify(`Invite sent to ${email}.`);
       setInviteForm({ fullName: "", email: "" });
     } catch (err) {
@@ -2898,7 +2905,7 @@ function OrgAdminPanel() {
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 24px" }}>
         <h1 style={{ fontSize: 26, marginBottom: 4 }}>Managing: {orgName}</h1>
         <p style={{ color: "#888", fontSize: 14, marginBottom: 24 }}>
-          You can invite new members into this org and disable/re-enable existing plain members. Role changes, other orgs, and Manager/Administrator accounts aren't part of this view.
+          You can invite new members into this org and disable/re-enable existing members. Role changes, other orgs, and Manager/Administrator accounts aren't part of this view.
         </p>
 
         {notif && (
