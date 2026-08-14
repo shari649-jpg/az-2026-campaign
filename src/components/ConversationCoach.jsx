@@ -396,11 +396,6 @@ export default function ConversationCoach() {
             </div>
           </div>
 
-          {/* AI disclaimer */}
-          <div style={{ background: "rgba(29,92,74,0.08)", borderBottom: `2px solid ${TEAL}`, padding: "10px 14px", fontSize: 14, fontWeight: 700, color: TEAL, display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            <span style={{ fontSize: 16 }}>⚠️</span> AI-generated — always verify before publishing.
-          </div>
-
           {/* Body */}
           <div style={S.body} ref={step === 4 ? threadRef : null}>
 
@@ -639,6 +634,9 @@ export default function ConversationCoach() {
                 )}
               </>
             )}
+            <p style={{ textAlign:"center", fontSize:11, color:"#999", padding:"10px 4px 2px", margin:0, flexShrink:0 }}>
+              ⚠️ AI-generated — always verify before publishing.
+            </p>
           </div>
         </div>
       )}
