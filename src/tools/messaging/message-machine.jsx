@@ -1606,13 +1606,6 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
         </div>
       </header>
 
-      {/* AI DISCLAIMER */}
-      <div style={{ maxWidth:860, margin:"0 auto", padding:"16px 20px 0" }}>
-        <div style={{ background: "rgba(29,92,74,0.08)", border: `2px solid ${T.teal}`, borderRadius: 8, padding: "14px 20px", fontSize: 17, fontWeight: 700, color: T.teal, display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 20 }}>⚠️</span> AI-generated content — always verify facts and claims before publishing.
-        </div>
-      </div>
-
       {/* TOAST */}
       {notif && (
         <div className="slide-down" role="alert" aria-live="assertive" style={{
@@ -2446,6 +2439,15 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
           </div>
         </div>
       )}
+      {/* AI DISCLAIMER — moved to the bottom and made smaller (Aug 2026).
+          Was a large bordered box directly under the header, the first
+          thing visible on the page. Now a small, muted footer line at the
+          very end of the page content, in normal document flow (renders
+          before the position:fixed modals below, which is irrelevant to
+          where they visually appear). */}
+      <p style={{ textAlign:"center", fontSize:12, color:"var(--text-mute)", padding:"20px 20px 28px", margin:0 }}>
+        ⚠️ AI-generated content — always verify facts and claims before publishing.
+      </p>
     </div>
   );
 }
