@@ -38,9 +38,7 @@ export const HELP = {
     messagingFrame:
       "Focuses the whole message around one strategic theme. Leave it blank for general-purpose messaging.",
     countyVoice:
-      "Grounds your message in one of Arizona's 15 counties — its local stakes and landmarks. This is separate from Voice/Persona below, so you can set both.",
-    countyDetected:
-      "We noticed a single, clear county in what you sent over. Apply its voice, or dismiss this — your call.",
+      "Grounds your message in a shared rural Arizona voice — small towns, tribal communities, farm-and-ranch families. This is separate from Voice/Persona below, so you can set both.",
     voicePersona:
       "Who are you speaking as? Pick a preset to instantly fill in a detailed voice style — then edit it however you like. Click the preset again to clear it. Type in your own, like 'co-worker' or 'rural neighbor'",
     audienceStyleTone:
