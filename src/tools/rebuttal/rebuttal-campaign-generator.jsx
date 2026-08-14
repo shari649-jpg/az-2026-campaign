@@ -17,19 +17,28 @@ const PROFILES = [
   { key: "small_biz_owner",  label: "Small Business Owner",  desc: "Local economy · community roots" },
 ];
 
-// ── Tone options ──────────────────────────────────────────────────────────
+// ── Tone options (Aug 2026 messaging-modifier revision) ───────────────────
+// Replaced with the same tested instruction text built for Message Machine
+// (see TONE_MODIFIER_DEFINITIONS in message-machine.jsx) — not a copy of
+// what was here before. The old text below had real instructions per tone
+// (unlike Message Machine's pre-revision bare labels), but it was written
+// independently, was looser/non-mechanical (no required markers — e.g. the
+// old Sarcastic just said "use dry, pointed sarcasm," no required
+// rhetorical-question/irony instance), and still had Casual and Friendly
+// as two separate, largely-overlapping options. This brings Rebuttal to
+// the same structure and definitions Message Machine now uses. Casual and
+// Friendly are merged into one "Friendly" option, same as Message Machine.
 const TONES = [
-  { key: "casual",       label: "Casual",       instruction: "Use relaxed, everyday language. Posts should feel like a real person talking, not a press release." },
-  { key: "friendly",     label: "Friendly",     instruction: "Use approachable, inclusive, encouraging language. Make readers feel welcomed, not lectured." },
-  { key: "witty",        label: "Witty",        instruction: "Use clever wordplay, sharp observations, and light humor. Posts should make people smile while landing the point." },
-  { key: "sarcastic",    label: "Sarcastic",    instruction: "Use dry, pointed sarcasm to expose the absurdity of the false claim. Keep it cutting but not mean-spirited." },
-  { key: "empathetic",   label: "Empathetic",   instruction: "Lead with understanding and human connection. Acknowledge real concerns before pivoting to the rebuttal." },
-  { key: "professional", label: "Professional", instruction: "Use clear, measured, authoritative language. Sound like the most credible voice in the room." },
-  { key: "excited",      label: "Excited",      instruction: "Use high-energy, enthusiastic language. Posts should feel like the writer can barely contain themselves." },
-  { key: "funny",        label: "Funny",        instruction: "Use genuine humor — jokes, absurdist comparisons, comic timing. Make people laugh and share." },
-  { key: "dramatic",     label: "Dramatic",     instruction: "Lean into the stakes. Use vivid, heightened language that underscores the gravity of the situation." },
-  { key: "disgusted",    label: "Disgusted",    instruction: "Express genuine moral indignation — viscerally disappointed and outraged, but always grounded in fact." },
-  { key: "angry",        label: "Angry",        instruction: "Channel controlled, righteous anger. Direct and forceful — not ranting, but clearly furious about injustice." },
+  { key: "friendly",     label: "Friendly",     instruction: "Contractions required. Conversational connectors (\"look,\" \"here's the thing,\" \"so\"). Shorter paragraphs. Warmer address terms and softer transitions. Vary sentence length — don't let every sentence run the same length or rhythm." },
+  { key: "sarcastic",    label: "Sarcastic",    instruction: "Must include one instance of irony, exaggeration, or mock-sincerity (e.g., stating the opposite of what's meant, or restating an official's justification in a way that exposes its absurdity). Include at least one rhetorical question mocking the framing." },
+  { key: "angry",        label: "Angry",        instruction: "Shorter, clipped sentences. Fragments allowed. Direct address. No hedging language (\"might,\" \"could,\" \"seems\")." },
+  { key: "disgusted",    label: "Disgusted",    instruction: "Visceral or contemptuous language. Physical/sensory metaphors acceptable. Shorter sentences than Friendly." },
+  { key: "witty",        label: "Witty",        instruction: "Requires wordplay, an unexpected comparison, or a punchline structure in at least one sentence. Should not read as purely declarative." },
+  { key: "empathetic",   label: "Empathetic",   instruction: "Recognizes people's concerns and emotions, uses compassionate language, and focuses on shared experiences and support." },
+  { key: "professional", label: "Professional", instruction: "Clear, polished, factual, and respectful; avoids slang, exaggeration, and overly casual phrasing." },
+  { key: "excited",      label: "Excited",      instruction: "Energetic, optimistic, and action-oriented; uses vivid language and momentum to make an opportunity or achievement feel urgent and motivating." },
+  { key: "funny",        label: "Funny",        instruction: "Light, witty, and approachable; may use playful phrasing or gentle humor without mocking people or minimizing serious issues." },
+  { key: "dramatic",     label: "Dramatic",     instruction: "High-stakes, emotionally resonant, and urgent; emphasizes consequences, conflict, and the importance of the moment without overstating facts." },
 ];
 
 // ── System prompt — 1 activist, optional profile ─────────────────────────
