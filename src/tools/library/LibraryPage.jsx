@@ -196,9 +196,6 @@ export default function LibraryPage() {
               🔒 You can delete your own saved items. Managers and administrators can delete any item.
             </div>
           )}
-          <div style={{ marginTop: 14, background: "rgba(29,92,74,0.08)", border: `2px solid ${TEAL}`, borderRadius: 8, padding: "14px 20px", fontSize: 17, fontWeight: 700, color: TEAL, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 20 }}>⚠️</span> AI-generated content — always verify facts and claims before publishing.
-          </div>
         </div>
       </div>
 
@@ -431,6 +428,9 @@ export default function LibraryPage() {
           </div>
         </div>
       )}
+      <p style={{ textAlign:"center", fontSize:12, color:"var(--text-mute)", padding:"20px 0 28px", margin:0 }}>
+        ⚠️ AI-generated content — always verify facts and claims before publishing.
+      </p>
     </div>
   );
 }
