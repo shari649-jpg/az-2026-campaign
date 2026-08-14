@@ -4,8 +4,10 @@
 // Opened from a storm card in StormsHubPage.
 
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   loadPosts, deletePost, MEDIA_TYPES, PUSH_TO_STORM_KEY, PUSH_TO_STORM_TTL_MS,
+  STORM_TO_MM_KEY,
   canReview, STORM_STATUS, MAX_GRAPHIC_MB, PUBLIC_STORM_BASE_URL,
   setStormPublic, setStormPublicCardImage, uploadPublicCardImage, formatGenParams,
 } from "../../lib/stormLibrary";
@@ -20,11 +22,13 @@ const SURFACE_ALT = "var(--surface-alt)";
 
 export default function StormPostsPanel({ storm, justCreated, onClose }) {
   const { role } = useAuth();
+  const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
   const [pendingPush, setPendingPush] = useState(null); // { texts, title } staged from Message Machine
+  const [sendError, setSendError] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -54,7 +58,35 @@ export default function StormPostsPanel({ storm, justCreated, onClose }) {
     finally { setLoading(false); }
   }
 
-  function openNew() { setEditingPost(null); setPendingPush(null); setEditorOpen(true); }
+  // "+ Add Post" (Aug 2026 revision) — previously opened StormPostEditor
+  // directly (openEdit's sibling, now removed) on a completely empty post,
+  // relying on Storm Chasers' own thin native generation (no Mode/Audience/
+  // Voice/Style/Tone/Focal Point — grounded only in these same storm
+  // fields, one platform at a time). Now sends the user to Message Machine
+  // instead, with the storm's title/summary/description combined into a
+  // single Issue/Content string, so post creation goes through Message
+  // Machine's full generation machinery. The user pushes the result back
+  // into this storm via Message Machine's existing "Push to Storm" flow —
+  // no new machinery needed for that return trip, see stormLibrary.js.
+  function sendToMessageMachine() {
+    setSendError(false);
+    const issueText = [storm.title, storm.summary, storm.description]
+      .map(s => (s || "").trim())
+      .filter(Boolean)
+      .join("\n\n");
+    try {
+      localStorage.setItem(STORM_TO_MM_KEY, JSON.stringify({
+        issueText,
+        sourceStormId: storm.id,
+        sourceStormTitle: storm.title || "",
+        pushedAt: new Date().toISOString(),
+      }));
+    } catch {
+      setSendError(true);
+      return;
+    }
+    navigate("/messaging");
+  }
   function openEdit(post) { setEditingPost(post); setPendingPush(null); setEditorOpen(true); }
 
   async function handleDelete(post) {
@@ -95,12 +127,17 @@ export default function StormPostsPanel({ storm, justCreated, onClose }) {
             : <p style={{ fontSize: 12.5, color: "#aaa", margin: "10px 0 0" }}>Public page settings become available once this storm is Active.</p>
         )}
 
-        <button onClick={openNew} style={{
+        <button onClick={sendToMessageMachine} style={{
           background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px",
           fontWeight: 800, fontSize: 13.5, cursor: "pointer", margin: "14px 0",
         }}>
           + Add Post
         </button>
+        {sendError && (
+          <p style={{ color: TERRACOTTA, fontSize: 12.5, margin: "-8px 0 14px" }}>
+            Browser storage is disabled — can't stage this handoff. Open Message Machine directly and paste in the title/summary/description instead.
+          </p>
+        )}
 
         {loading ? (
           <p style={{ color: "#888", padding: "20px 0", textAlign: "center" }}>Loading posts…</p>
