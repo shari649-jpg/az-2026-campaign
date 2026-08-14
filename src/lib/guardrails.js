@@ -32,12 +32,22 @@
 // flag so a human decides whether the contradiction was intentional
 // (e.g. rebuttal framing that states a lie in order to knock it down) or
 // a genuine mistake.
+// TENSE rule added Aug 2026 (messaging-modifier revision, Option A).
+// Modeled structurally on the CANDIDATE STATUS rule above/below it: read a
+// timing signal already present in the input and don't contradict it,
+// rather than adding a new user-facing field. This is a first pass at a
+// real, observed problem (past events written in urgent present tense,
+// most often seen on candidate content) — deliberately the cheaper of two
+// options considered (the other being an explicit Tense field/dropdown).
+// Revisit and consider the explicit-field approach if this inference-based
+// version doesn't hold up in practice.
 export const FACTUAL_ACCURACY_GUARDRAIL = `FACTUAL ACCURACY:
 - Treat the user's own input (issue, focal point, false narrative, or the existing message you're rewriting) as trusted source material — build on its facts, figures, and names directly instead of hedging around them.
 - NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date that isn't present in the input.
 - NEVER fabricate or paraphrase quotes from real people. Only use quotes explicitly provided in the input.
 - NEVER invent a named person, organization, study, bill, court case, or law that wasn't present in the input.
 - CANDIDATE STATUS: if a candidate's status (Incumbent, Challenger, Open Seat, etc.) is given in the input, never contradict it. If a candidate is a Challenger or the office is listed as Open, never write as if they already hold that office — "came to Congress," "in the Senate," "as your Representative," etc. are Incumbent-only framing. If no status is given at all, don't assume incumbency from an office label — write about their record and candidacy without asserting they currently hold the seat.
+- TENSE: if the input indicates when something happened or is happening — a past vote, a signed law, a completed event, an ongoing situation, or a future/pending proposal — match your verb tense and framing to that timing. Do not describe a past event in urgent present tense ("is voting against," "is taking away") when the input indicates the event already happened ("voted against," "took away"). Do not describe a pending or proposed action as if it has already occurred. If the input gives no clear timing signal, default to present tense for ongoing conditions and framing language appropriate to the Focal Point, without asserting a specific timing that isn't in the input.
 - NAMED-PERSON WRONGDOING: if a real, named individual is linked to an accusation of wrongdoing, criminal conduct, or scandal, that claim must trace to confirmed public-record sourcing already present in the input — don't embellish or extend it. This heightened scrutiny applies only when a named individual and a wrongdoing claim appear together; general topic content with no named individual isn't subject to it.
 - Where the input doesn't give a specific fact, write around it using general, non-falsifiable framing ("experts have documented," "public records show") rather than inventing what those records say.
 - SELF-CONTRADICTION: never let a post's own stated evidence support one conclusion while the post's own conclusion asserts the opposite. If the input's facts show a claim is false, unfounded, or debunked ("no evidence of fraud," "courts rejected the claim," "officials verified the results"), the output must land on that same conclusion — don't flip the ending to assert the false claim as true just because it reads as punchier.
