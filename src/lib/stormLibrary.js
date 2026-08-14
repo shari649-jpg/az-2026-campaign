@@ -82,6 +82,21 @@ export const MAX_GRAPHICS_PER_POST = 10;
 export const PUSH_TO_STORM_KEY = "mm_push_to_storm";
 export const PUSH_TO_STORM_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+// Aug 2026 — the reverse direction of the above. "+ Add Post" on a storm
+// (StormPostsPanel.jsx) previously opened StormPostEditor directly on an
+// empty post, relying on Storm Chasers' own thin, non-persona, no-mode
+// native generation. That's been replaced: "+ Add Post" now stages the
+// storm's title/summary/description as a single combined Issue/Content
+// string and sends the user to Message Machine instead, so post creation
+// goes through Message Machine's full mode/frame/audience/style/tone
+// machinery. The user then uses Message Machine's EXISTING "Push to
+// Storm" flow (pushToExistingStorm, above) to send the result back into
+// this same storm — that path already writes directly to Firestore and
+// already lets the user pick any storm from a list, so no new machinery
+// was needed for the return trip, only this outbound leg.
+export const STORM_TO_MM_KEY = "storm_pending_post";
+export const STORM_TO_MM_TTL_MS = 10 * 60 * 1000; // 10 minutes — matches the reverse direction's TTL
+
 // ── Permissions (storm container) ─────────────────────────────────────────
 export function canReview(role)  { return role === "administrator" || role === "manager"; }
 export function canArchive(role) { return role === "administrator" || role === "manager"; }
