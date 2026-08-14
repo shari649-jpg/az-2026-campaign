@@ -114,6 +114,17 @@ export default function AppShell() {
   // the app's manual-fetch style — so a scheduled message can start/stop
   // showing without anyone reloading the page, just up to a minute late.
   const [activeAnnouncement, setActiveAnnouncement] = useState(null);
+  // Dismiss state (Aug 2026) — sessionStorage-backed, keyed by announcement
+  // id, not just a boolean. This means: dismissing today's announcement
+  // hides it for the rest of this browser session (survives navigating
+  // between pages, doesn't require re-dismissing on every page), but a
+  // NEW announcement (different id) that starts later — or the same one
+  // reappearing in a future browser session — is not suppressed by an old
+  // dismissal. Session-scoped rather than permanent, since these are
+  // time-boxed (startAt/endAt) messages, not a one-time notice.
+  const [dismissedId, setDismissedId] = useState(() => {
+    try { return sessionStorage.getItem("dismissed_announcement_id") || null; } catch { return null; }
+  });
   useEffect(() => {
     let cancelled = false;
     const check = async () => {
@@ -227,14 +238,13 @@ export default function AppShell() {
         zIndex: 100,
         background: "var(--bg)",
         borderBottom: "3px solid var(--gold)",
-        height: "var(--nav-height)",
         boxShadow: "0 2px 12px rgba(74,69,88,0.08)",
       }}>
         <div style={{
           maxWidth: "var(--max-width)",
           margin: "0 auto",
           padding: "0 24px",
-          height: "100%",
+          height: "var(--nav-height)",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -507,10 +517,20 @@ export default function AppShell() {
           </div>
         </div>
 
-        {/* Scheduled announcement ticker — only rendered while one is active */}
-        {activeAnnouncement && (
+        {/* Scheduled announcement ticker — only rendered while one is active
+            AND its id hasn't been dismissed this session (see dismissedId
+            above). Recolored Aug 2026: plum background / white text (was
+            gold background / teal text — matched the screenshot the person
+            flagged as too visually loud). The header no longer has a fixed
+            height (see the header style above) specifically so this can
+            add its own real space to the page instead of overflowing past
+            the header's box and covering the page content underneath it —
+            that was the actual root cause of the overlap issue on Research
+            and elsewhere, not just a color/z-index thing. */}
+        {activeAnnouncement && activeAnnouncement.id !== dismissedId && (
           <div style={{
-            background: "var(--gold)",
+            position: "relative",
+            background: "var(--purple)",
             borderTop: "1px solid rgba(0,0,0,0.08)",
             overflow: "hidden",
             height: 30,
@@ -520,11 +540,37 @@ export default function AppShell() {
             <div className="ticker-track" style={{
               fontSize: 13,
               fontWeight: 700,
-              color: "var(--teal)",
+              color: "#fff",
               letterSpacing: "0.02em",
             }}>
               📢 {activeAnnouncement.text}
             </div>
+            <button
+              onClick={() => {
+                setDismissedId(activeAnnouncement.id);
+                try { sessionStorage.setItem("dismissed_announcement_id", activeAnnouncement.id); } catch {}
+              }}
+              aria-label="Dismiss announcement"
+              style={{
+                position: "absolute",
+                top: 0,
+                right: 0,
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                background: "var(--purple)",
+                boxShadow: "-14px 0 10px -2px var(--purple)", // fades the scrolling text out before it reaches the button, instead of an abrupt clip
+                border: "none",
+                color: "#fff",
+                fontSize: 15,
+                fontWeight: 700,
+                cursor: "pointer",
+                padding: "0 14px",
+                lineHeight: 1,
+                opacity: 0.9,
+              }}>
+              ✕
+            </button>
           </div>
         )}
       </header>
