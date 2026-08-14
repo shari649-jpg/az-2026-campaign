@@ -227,9 +227,27 @@ export default async function (req) {
       await admin.firestore(app).doc(`waitlist/${waitlistId}`).update({
         accountType: resolvedAccountType,
         ...(resolvedAccountType === "org" ? { resolvedOrgId } : {}),
+        // status: "invited" moved here (Aug 2026, org-admin invite bug
+        // fix). This used to be a SEPARATE client-side updateDoc() call
+        // made by whoever's UI triggered the invite (AdminPage.jsx's
+        // Waitlist tab, or OrgAdminPanel's own invite form). firestore.
+        // rules' waitlist update rule only ever allowed isAdmin() (plus
+        // the unrelated self-registration-flip case) to make that write —
+        // so a real Administrator's client-side status update quietly
+        // worked, but an org admin's never could. The invite email below
+        // still sent successfully either way, but the org admin then hit
+        // an unhandled "Missing or insufficient permissions" error right
+        // after, the invite form didn't clear, and the waitlist doc stayed
+        // stuck on "pending" — a real risk of someone re-clicking Send
+        // Invite and generating a second live invite token for the same
+        // person. Setting status here instead means it's written by the
+        // one thing (this function, via the Admin SDK) that already
+        // succeeds regardless of who invoked it — no client-side write of
+        // this field is needed anymore, from either caller.
+        status: "invited",
       });
     } catch (err) {
-      console.error(`[send-invite] failed to write accountType/orgId onto waitlist/${waitlistId}:`, err.message);
+      console.error(`[send-invite] failed to write accountType/orgId/status onto waitlist/${waitlistId}:`, err.message);
     }
 
     // Send invite email via Resend
