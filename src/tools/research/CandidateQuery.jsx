@@ -384,11 +384,6 @@ export default function CandidateQuery() {
 
   return (
     <div style={{ ...S.wrap, padding: '0 24px' }}>
-      {/* ── AI disclaimer ── */}
-      <div style={{ background: "rgba(29,92,74,0.08)", border: `2px solid ${B.teal}`, borderRadius: 8, padding: '14px 20px', fontSize: 17, fontWeight: 700, color: B.teal, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-        <span style={{ fontSize: 20 }}>⚠️</span> AI-generated content — always verify facts and claims before publishing.
-      </div>
-
       {/* ── Instructions ── */}
       <div style={{ background: B.surfaceAlt, border: `1px solid ${B.border}`, borderRadius: 10, padding: '14px 18px', marginBottom: 20 }}>
         <p style={{ fontSize: 14, color: B.textMid, lineHeight: 1.7, margin: 0 }}>
@@ -714,6 +709,9 @@ export default function CandidateQuery() {
           )}
         </>
       )}
+      <p style={{ textAlign:"center", fontSize:12, color:"var(--text-mute)", padding:"20px 0 28px", margin:0 }}>
+        ⚠️ AI-generated content — always verify facts and claims before publishing.
+      </p>
     </div>
   );
 }
