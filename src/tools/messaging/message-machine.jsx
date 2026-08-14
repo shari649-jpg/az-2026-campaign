@@ -7,7 +7,7 @@ import {
 } from "../../lib/messageRules";
 import {
   loadAllStorms, loadPosts as loadStormPosts, createPost as createStormPost,
-  MEDIA_TYPES as STORM_MEDIA_TYPES, STORM_STATUS, PUSH_TO_STORM_KEY,
+  MEDIA_TYPES as STORM_MEDIA_TYPES, STORM_STATUS, PUSH_TO_STORM_KEY, STORM_TO_MM_KEY,
 } from "../../lib/stormLibrary";
 import { useAuth } from "../../context/AuthContext";
 import { auth, db } from "../../firebase";
@@ -643,6 +643,23 @@ export default function App() {
         setFormData(f => ({ ...f, issue: p.issueText || "", focalPoint: "", platforms: Object.keys(p.messages || {}) }));
         setView("results");
         localStorage.removeItem("rebuttal_push_results");
+        try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
+        return;
+      }
+    } catch {}
+
+    // Check if a Storm's "+ Add Post" sent us here (Aug 2026 revision —
+    // see stormLibrary.js's STORM_TO_MM_KEY comment for the full reasoning).
+    // Checked before the Research block below so a storm handoff always
+    // wins if somehow both are present, though in practice only one path
+    // writes at a time.
+    try {
+      const pendingStorm = localStorage.getItem(STORM_TO_MM_KEY);
+      if (pendingStorm) {
+        const p = JSON.parse(pendingStorm);
+        setFormData(f => ({ ...f, issue: p.issueText || "" }));
+        setFromResearch(true); // reuses the same "add a focal point" nudge UI
+        localStorage.removeItem(STORM_TO_MM_KEY);
         try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
         return;
       }
