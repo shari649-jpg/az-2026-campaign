@@ -80,13 +80,50 @@ const PLATFORM_VOICE_GUIDE_NATIONAL = `PLATFORM VOICE — each platform below ha
 const GENERATION_MAX_TOKENS = 8000;
 
 const AUDIENCES = ["Democrat","Independent","Persuadable Republican","Disillusioned Voter","Brand New Voter"];
+
+// Style (Aug 2026 messaging-modifier revision): collapsed from 4 options to
+// 3 — "Contrast with Opponent" is gone, absorbed into "Strong Contrast".
+// Each non-neutral style now carries a real instructional block (see
+// STYLE_DEFINITIONS below) instead of just a label with nothing behind it —
+// previously "Style: Contrast with Opponent" reached Claude as a bare
+// string with zero definition, same root gap the Tone Modifiers had.
 const STYLES = [
   { id: "neutral", label: "Neutral" },
   { id: "pro_democrat", label: "Pro Democrat" },
-  { id: "contrast", label: "Contrast with Opponent" },
   { id: "strong_contrast", label: "Strong Contrast" },
 ];
-const MODIFIERS = ["Casual","Friendly","Witty","Sarcastic","Empathetic","Professional","Excited","Funny","Dramatic","Disgusted","Angry"];
+
+// Real instructional text per style, injected into the prompt alongside the
+// bare label. Neutral intentionally has no entry — no additional
+// instruction beyond the label, matching prior (lack of) behavior.
+const STYLE_DEFINITIONS = {
+  pro_democrat: `PRO DEMOCRAT STYLE: Focus this post on what we stand for and the specific, concrete benefits to people — economic gains, quality of life, stronger families, better education building a stronger society and economy. Lead with what's offered, not what's opposed.`,
+  strong_contrast: `STRONG CONTRAST STYLE: Create a strong, direct contrast with opposing candidates, parties, or policies using specific, verifiable records, votes, public statements, and policy consequences. State what we support, what they support or have done, and how the difference affects people. Use assertive language. This must comply fully with the FACTUAL ACCURACY guardrail above — do not invent facts, misrepresent positions, speculate about motives, demean individuals, or target protected characteristics. Where a claim is uncertain, flag it for verification rather than presenting it as fact.`,
+};
+
+// Tone Modifiers (Aug 2026 messaging-modifier revision): previously these 11
+// labels reached Claude as bare words with NO instructional text behind any
+// of them anywhere in this file — that absence is why modifiers were
+// inconsistent and why Casual/Friendly read as nearly identical. Casual and
+// Friendly are now merged into one option, "Friendly", combining both
+// definitions. Every modifier below now carries a real, concrete
+// instruction — most with a specific required mechanical marker (a rhetorical
+// question, clipped fragments, etc.) so the model has something to actually
+// execute, not just a vibe to approximate.
+const MODIFIERS = ["Friendly","Witty","Sarcastic","Empathetic","Professional","Excited","Funny","Dramatic","Disgusted","Angry"];
+
+const TONE_MODIFIER_DEFINITIONS = {
+  Friendly: "Contractions required. Conversational connectors (\"look,\" \"here's the thing,\" \"so\"). Shorter paragraphs. Warmer address terms and softer transitions. Vary sentence length — don't let every sentence run the same length or rhythm.",
+  Sarcastic: "Must include one instance of irony, exaggeration, or mock-sincerity (e.g., stating the opposite of what's meant, or restating an official's justification in a way that exposes its absurdity). Include at least one rhetorical question mocking the framing.",
+  Angry: "Shorter, clipped sentences. Fragments allowed. Direct address. No hedging language (\"might,\" \"could,\" \"seems\").",
+  Disgusted: "Visceral or contemptuous language. Physical/sensory metaphors acceptable. Shorter sentences than Friendly.",
+  Witty: "Requires wordplay, an unexpected comparison, or a punchline structure in at least one sentence. Should not read as purely declarative.",
+  Empathetic: "Recognizes people's concerns and emotions, uses compassionate language, and focuses on shared experiences and support.",
+  Professional: "Clear, polished, factual, and respectful; avoids slang, exaggeration, and overly casual phrasing.",
+  Excited: "Energetic, optimistic, and action-oriented; uses vivid language and momentum to make an opportunity or achievement feel urgent and motivating.",
+  Funny: "Light, witty, and approachable; may use playful phrasing or gentle humor without mocking people or minimizing serious issues.",
+  Dramatic: "High-stakes, emotionally resonant, and urgent; emphasizes consequences, conflict, and the importance of the moment without overstating facts.",
+};
 const VOICE_PRESETS = [
   {
     id: "mom_blog",
@@ -100,34 +137,32 @@ const VOICE_PRESETS = [
   },
 ];
 
-// County-specific voice grounding — from the AZ County Voices doc (15 counties).
-// Layered ON TOP of Voice/Persona, not a replacement for it — county is about place/local
-// stakes, persona (Mom Blog, Bro Code, etc.) is about who's speaking.
-// Sentinel value for formData.county when a multi-county district doesn't map
-// cleanly to one of the 15 named counties below. Kept out of COUNTY_VOICES so
-// downstream code that assumes every key is a real AZ county (e.g. anything
-// that titlecases a key as "<County> County") doesn't have to special-case it.
-const RURAL_MULTI_COUNTY = "__rural_multi__";
-const RURAL_MULTI_COUNTY_LABEL = "Rural Multi-County";
-const RURAL_MULTI_COUNTY_VOICE = "Rural Arizona neighbors across county lines — small towns, tribal communities, and farm-and-ranch families who share more with each other than with any single county seat. Speak as a plainspoken local (40-60s) — warm, practical, no jargon, like a feed-store counter or county-fair conversation. \"We/our\" dominant; lean on shared rural stakes rather than any one county's specific landmarks, since this covers a district that crosses county lines. Respect distance and self-reliance — long drives, thin services, tight budgets — without sounding bleak. Pillars: rural infrastructure and roads, water and land, healthcare and school access across long distances, voting access for spread-out communities.";
+// Rural Arizona Style (Aug 2026 messaging-modifier revision) — REPLACES the
+// former County Voice system entirely (the 15 individual county profiles +
+// Rural Multi-County sentinel/voice are gone). This is now a single,
+// unified style, available as one toggle any time AZ Coalition mode is
+// selected — not gated to specific counties or a dropdown. If the input
+// names a specific place, the model is instructed to ground any additional
+// place references within that same area rather than pulling in landmarks
+// from elsewhere in Arizona (see the instruction folded into the block
+// itself, below). The bilingual-integration instruction some of the old
+// county profiles carried (e.g. Cochise, Santa Cruz, Yuma) was deliberately
+// NOT carried forward into this unified version — dropped on purpose, not
+// an oversight.
+//
+// Layered ON TOP of Voice/Persona, not a replacement for it — Rural AZ
+// Style is about place/local stakes, persona (Mom Blog, Bro Code, etc.) is
+// about who's speaking. Same relationship the old County Voice layer had.
+const RURAL_AZ_STYLE = `RURAL ARIZONA STYLE:
+Core Positioning: Rural Arizona neighbors fighting for our water, jobs, families, and fair votes—from small towns to tribal lands. We live your realities, show up consistently, fix what [name villain] (corporations, DC politicians, billionaires, etc.) break, instead talk about small business, local leaders, communities. Speak as a lifelong rural neighbor (40-65)—blunt, warm, no jargon, like coffee chats at the county fair or VFW.
 
-const COUNTY_VOICES = {
-  "Apache": "Apache County neighbors protecting tribal and rural communities — from chapter houses to small towns. Speak as a longtime local — warm, humble, plainspoken, no jargon, like a chapter-house meeting or front-porch conversation. \"We/our\" dominant, respectful and grounded, culturally aware, service-first. Use Indigenous language only when accurate and natural. Never preachy or performative; lead with trust, listening, and practical support. Pillars: sovereignty and respect, water and roads, schools and healthcare, voting access, community resilience.",
-  "Coconino": "Coconino neighbors protecting our lands, homes, and futures — from Flagstaff to the Navajo/Hopi Nations. Speak as a lifelong local (30-50s) — warm, inclusive, no jargon, like NAU coffee or canyon trail talk. Lean on \"we/our,\" bilingual English/Spanish/Diné phrases where natural. Ground posts in local stakes (rising rents from Flagstaff to Page, tourism jobs needing water security) and local landmarks (San Francisco Peaks, Lowell Observatory). Pillars: land/heritage, homes/cost of living, youth opportunity, every voice counted.",
-  "Cochise": "Cochise neighbors delivering fair votes, steady jobs, strong families — from Sierra Vista to Bisbee. Speak as a pragmatic local (40-60s) — calm, neighborly, plainspoken, like a Sierra Vista office chat. Name-drop Bisbee/Douglas/Willcox/Palominas/Fort Huachuca. Bilingual Spanish integration (about a third of the county is Latino). \"We/our\" over party labels; never partisan drama. Pillars: local democracy, economic/senior security, Latino dignity, shared values first.",
-  "Gila": "Gila neighbors fixing rural families — from Payson trails to Globe mines. Speak as a teacher/farmer/volunteer (50+) — warm \"rural fixer,\" short and plain, \"we/us/our\" unity. Local touchstones: trails, families, mine shifts, childcare deserts. Low-barrier, neighborly CTAs (\"Drop by Payson HQ\"). Pillars: family support, economic stability, water/resources, fair elections.",
-  "Graham": "Graham neighbors grounded in work, family, faith, and land — from Safford to Bylas, honoring Apache ties and the Gila Valley. Speak as a proud/humble local (40-60s) — warm/direct, plain words, \"we/our.\" Place-based (Mount Graham, Salsa Trail, EAC, Friday night lights), faith-respectful (\"church groups\"), hopeful realism. Pillars: neighbors first, roots/land, kids/future, work/dignity.",
-  "Greenlee": "Greenlee neighbors with mining grit and family resilience — from Clifton pits to York farms. Speak as a lifelong miner/local (40-60s) — warm/direct, plain and short, \"we/our.\" Rugged plainspoken tone grounded in wildfire/drought realities and mining heritage, honored without flash. Pillars: drought/wildfires, mining economy/housing, rural connectivity.",
-  "La Paz": "La Paz neighbors rising together — from Parker tribes to Quartzsite retirees, sharing river-isolation realities. Speak as a town hall host (50+) — practical, hopeful, simple bilingual phrasing, empathetic. Mostly hyper-local solutions, with local imagery (river sunsets, retiree picnics). Pillars: water/infrastructure, senior/worker supports, election equity, inclusive unity.",
-  "Maricopa": "Maricopa neighbors keeping a fast-growing county livable — from Phoenix suburbs to the desert edge. Speak as a local in their 30s-50s — clear, confident, no jargon, like neighborhood chat, not a think tank. \"We/our\" dominant, family-centered, broad and inclusive. Bilingual English/Spanish where natural. Use place names and everyday scenes (rent in Mesa, school funding in Glendale); never coastal, preachy, or abstract. Pillars: housing/costs, water/infrastructure, schools/family stability, growth that works for everyone.",
-  "Mohave": "Mohave neighbors straight-talking water, jobs, and retirees — from Kingman VFW to Lake Mead. Speak as a tough/caring local (50+) — plain, no jargon, county-first before any partisan tag. Respect gun culture and independence (\"responsible gun owners, law-abiding neighbors\"); villains are \"career politicians/grifters,\" never local conservatives. Structure: local-stakes hook, then contrast, then a simple CTA. Pillars: local stakes, independence respect, outsider villains, practical wins.",
-  "Navajo": "Navajo County empowering land stewards — from the Nation to rural towns, centering Hózhó and family resilience. Speak as a Native-rooted neighbor (30-50s) — warm, inclusive, Diné phrases used only when culturally vetted. Resilience stories, youth and tribal spotlights, cultural imagery. Pillars: tribal rights, rural security, voter protections, cultural resilience.",
-  "Pima": "Pima neighbors protecting Tucson's future and the communities around it — from downtown to the desert towns. Speak as a local adult in their 30s-50s — warm, civic, grounded, no jargon, like a Tucson neighborhood or campus conversation. \"We/our\" dominant, inclusive, plainspoken but smart. Use Tucson landmarks and neighborhood references; bilingual English/Spanish naturally. Never detached or overly academic; connect city issues to daily life. Pillars: affordable housing, schools/childcare, heat and water resilience, healthcare access, inclusive countywide democracy.",
-  "Pinal": "Pinal neighbors keeping a growing county livable — from suburbs to rural edges. Speak as a practical local in their 30s-50s — plain, steady, future-focused, like a school pickup line or community meeting. \"We/our\" dominant, family-first, growth-aware, no jargon. Use place names and everyday scenes (crowded roads, stretched schools); Spanish where it fits naturally. Never sound like you're ignoring growth pains. Pillars: housing and infrastructure, schools and childcare, water and land-use planning, healthcare access, responsible growth.",
-  "Santa Cruz": "Santa Cruz familias unidas — from the Nogales port to rural homes. Speak as a warm abuelita/tío figure (30-50s) — bilingual, solutions-oriented, visual-heavy. Fight border fear with concrete wins on jobs and schools (\"puentes no muros\"). Bilingual Spanish phrasing should feel authentic, not like translation. Pillars: trade revival, education/health, youth engagement, immigration dignity.",
-  "Yavapai": "Yavapai rural families standing for their wallets and way of life — from Prescott to the Verde Valley. Speak as an everywoman/everyman senior (50+) — empathetic populism, testimonial-driven, non-confrontational and cross-aisle. Anchor in retirement security (Social Security, fixed incomes) and sustainable growth. Pillars: secure retirements, sustainable growth, safety/environment, cross-aisle appeal.",
-  "Yuma": "Yuma families and fields building voting culture — from farms to the border. Speak as a working neighbor (30-50s) — vivid, localized Yuma stories (farmers feeling heat, students needing cooler classrooms), step-by-step and mentoring in tone. Spanish integration where natural; family-event framing. Pillars: Yuma stories first, voting culture, youth/family focus, local wins and services.",
-};
+Key traits: neighborly ("we/our" over "I/you"), practical (solutions before complaints), proud/humble (honoring hard work, faith, land without flash). Emotional promise: "We see your struggles because we live them too. Let's fix this together." Target Democrats, left-leaning Independents, and democracy-minded Republicans craving stability over DC drama.
+
+Tone & Execution Rules: Use short sentences, plain words ("jobs/water/schools/SS checks"), active voice—warm but direct: "Phoenix water cuts hit our farms hard. Here's the fix." Practice hopeful realism: name problems (drought/childcare deserts), end with steps ("Join a community group," "attend a local meeting of your school board or city council," etc). Bridge-build with "neighbors/families/retirees/workers/tribes" over "Democrats"; invite indies/soft GOP. Start every post with local stakes ("When Phoenix cuts water, [County] farms/lake/seniors feel it first"), weave in place names (Kingman VFW, Navajo Nation, Payson trails), dominate "we/our" ("Our kids need childcare").
+
+If the input names a specific place or county, ground any additional place references — landmarks, towns, local institutions — within that same county or region. Do not introduce place names from elsewhere in Arizona.
+
+Never mock conservatives/guns/faith (shared rural culture), never use coastal jargon ("defund/Latinx"), never go party-first—instead lead with shared values. Always respect regional culture: Diné nods north, mining grit east, military Cochise, retirees west. Never use "out here" or any derivative.`;
 
 // National frames defined above; SPEAKER_PERSPECTIVES defined above
 
@@ -530,9 +565,17 @@ export default function App() {
   const [view, setView]             = useState("form");
   const [msgMode, setMsgMode]       = useState("");   // "" (neutral, default) | "az" | "national"
   const [msgFrame, setMsgFrame]     = useState("");      // NATIONAL_FRAMES id or ""
-  const [formData, setFormData]     = useState({ issue:"", focalPoint:"", audience:"", voice:"", county:"", style:"", modifier:"", perspective:"", platforms:[] });
+  const [formData, setFormData]     = useState({ issue:"", focalPoint:"", audience:"", voice:"", ruralStyle:false, style:"", modifier:"", perspective:"", platforms:[] });
   const [fromResearch, setFromResearch] = useState(false);
-  const [countySuggestion, setCountySuggestion] = useState(""); // detected from Research push, not yet applied
+  // NOTE (Aug 2026 messaging-modifier revision): the old countySuggestion
+  // state — which surfaced an "Apply <County> voice" pill when Research/
+  // RaceComparison pushed a detected county — was removed along with
+  // COUNTY_VOICES. There's no longer a per-county voice to suggest;
+  // Rural AZ Style (below) is a single manual toggle, not county-detected.
+  // RaceComparison.jsx and DistrictProfiles.jsx still push a `county` field
+  // in their payload (see rr_pending_article below) — it's simply no longer
+  // read here. Left as a flagged, deliberate decision, not fixed elsewhere
+  // in this pass; those two files were out of scope for this session.
   const [proModeOpen, setProModeOpen] = useState(false); // Pro Mode panel — collapsed by default
   const [messages, setMessages]     = useState({});
   const [generating, setGenerating] = useState(false);
@@ -612,14 +655,9 @@ export default function App() {
         const p = JSON.parse(pending);
         setFormData(f => ({ ...f, issue: p.issueText || "", focalPoint: p.focalPoint || "" }));
         setFromResearch(true);
-        // Surface a detected county as a suggestion only — never auto-applied.
-        // Only recognized if it matches one of the counties in COUNTY_VOICES.
-        // Recognized if it's either a real county in COUNTY_VOICES, or the
-        // rural multi-county sentinel (set upstream for districts that span
-        // more than one county and don't map cleanly to a single one).
-        if (p.county && (COUNTY_VOICES[p.county] || p.county === RURAL_MULTI_COUNTY)) {
-          setCountySuggestion(p.county);
-        }
+        // p.county (pushed by RaceComparison.jsx / DistrictProfiles.jsx) is
+        // deliberately not read here anymore — see the note above
+        // formData's ruralStyle field. No per-county suggestion exists now.
         localStorage.removeItem("rr_pending_article");
         try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
         return;
@@ -690,19 +728,26 @@ export default function App() {
     const audienceLabel = formData.audience || DEFAULT_AUDIENCE;
     const styleObj = STYLES.find(s=>s.id===(formData.style||DEFAULT_STYLE));
     const styleLabel = styleObj ? styleObj.label : "Neutral";
-    const modifierLine = formData.modifier ? `Tone: ${formData.modifier}` : "";
+    // Style definitions (Aug 2026 messaging-modifier revision) — see
+    // STYLE_DEFINITIONS above. Neutral has no entry, so styleDefBlock is ""
+    // and behavior is unchanged from before this revision for that case.
+    const styleDef = STYLE_DEFINITIONS[formData.style] || "";
+    const styleDefBlock = styleDef ? `${styleDef}\n` : "";
+    // Tone Modifier definitions (Aug 2026 messaging-modifier revision) —
+    // previously this was just "Tone: <label>" with no instructional text
+    // behind the label at all. See TONE_MODIFIER_DEFINITIONS above.
+    const modifierDef = formData.modifier ? TONE_MODIFIER_DEFINITIONS[formData.modifier] : "";
+    const modifierLine = formData.modifier ? `Tone: ${formData.modifier} — ${modifierDef}` : "";
 
     const perspObj = SPEAKER_PERSPECTIVES.find(p => p.id === formData.perspective);
     const perspLine = perspObj ? `Grammatical person: ${perspObj.label} — ${perspObj.desc}` : "";
 
-    const countyVoiceText = formData.county === RURAL_MULTI_COUNTY
-      ? RURAL_MULTI_COUNTY_VOICE
-      : formData.county ? COUNTY_VOICES[formData.county] : null;
-    const countyLabel = formData.county === RURAL_MULTI_COUNTY
-      ? RURAL_MULTI_COUNTY_LABEL.toUpperCase()
-      : `${(formData.county || "").toUpperCase()} COUNTY`;
-    const countyBlock = countyVoiceText
-      ? `\nCOUNTY VOICE — ${countyLabel}:\n${countyVoiceText}\n`
+    // Rural AZ Style (Aug 2026 messaging-modifier revision) — REPLACES the
+    // old per-county COUNTY_VOICES lookup. A single manual toggle
+    // (formData.ruralStyle), available only in AZ mode (enforced below,
+    // same scoping the old County Voice layer had).
+    const ruralStyleBlock = formData.ruralStyle
+      ? `\n${RURAL_AZ_STYLE}\n`
       : "";
 
     const frameObj = NATIONAL_FRAMES.find(f => f.id === msgFrame);
@@ -737,7 +782,7 @@ Focal Point: ${formData.focalPoint || "Not specified"}
 ${focalPointMandatory}
 Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
-Style: ${styleLabel}
+${styleDefBlock}Style: ${styleLabel}
 ${modifierLine}
 ${perspLine}
 
@@ -767,13 +812,13 @@ ${HASHTAG_BODY_BAN}
 ${JSON_ONLY_INSTRUCTION}
 ${JSON_ESCAPING_INSTRUCTION}`;
 
-      const dynamicPrompt = `${countyBlock}${frameBlock}
+      const dynamicPrompt = `${ruralStyleBlock}${frameBlock}
 Issue/Content: ${formData.issue}
 Focal Point: ${formData.focalPoint || "Not specified"}
 ${focalPointMandatory}
 Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
-${formData.county ? `County Voice: ${formData.county === RURAL_MULTI_COUNTY ? RURAL_MULTI_COUNTY_LABEL : `${formData.county} County`}\n` : ""}Style: ${styleLabel}
+${formData.ruralStyle ? `Rural AZ Style: enabled\n` : ""}${styleDefBlock}Style: ${styleLabel}
 ${modifierLine}
 ${perspLine}
 
@@ -845,7 +890,7 @@ Focal Point: ${formData.focalPoint || "Not specified"}
 ${focalPointMandatory}
 Target Audience: ${audienceLabel}
 ${audienceSwapNote}Voice/Persona: ${formData.voice || "Not specified"}
-Style: ${styleLabel}
+${styleDefBlock}Style: ${styleLabel}
 ${modifierLine}
 ${perspLine}
 
@@ -886,7 +931,18 @@ function detectArrivalSource() {
     const audienceLabel = formData.audience || DEFAULT_AUDIENCE;
     const styleObj = STYLES.find(s=>s.id===(formData.style||DEFAULT_STYLE));
     const styleLabel = styleObj ? styleObj.label : "Neutral";
-    const modifierLine = formData.modifier ? `Tone modifier: ${formData.modifier}` : "";
+    // Style/Tone definitions (Aug 2026 messaging-modifier revision) — same
+    // constants buildPromptParts uses, so regen (Shorten/Expand/Rephrase)
+    // gets the same real instructional text behind Style/Tone that initial
+    // generation now does, instead of a bare label as before. Rural AZ
+    // Style is deliberately NOT added here — regen never carried county/
+    // persona-layer content before this revision either (a known, flagged
+    // gap — see the accompanying report's §9), and this revision doesn't
+    // change that scoping.
+    const styleDef = STYLE_DEFINITIONS[formData.style] || "";
+    const styleDefLine = styleDef ? `- ${styleDef}\n` : "";
+    const modifierDef = formData.modifier ? TONE_MODIFIER_DEFINITIONS[formData.modifier] : "";
+    const modifierLine = formData.modifier ? `Tone modifier: ${formData.modifier} — ${modifierDef}` : "";
     const frameObj = NATIONAL_FRAMES.find(f => f.id === msgFrame);
     const frameBlock = frameObj ? `\nMESSAGING FRAME — ${frameObj.label.toUpperCase()}:\n${frameObj.prompt}\n` : "";
     const modeLabel = msgMode === "national" ? "progressive coalition (National Messaging Style)"
@@ -916,7 +972,7 @@ INSTRUCTION: ${instruction}
 Context:
 - Platform: ${platform?.name} (max ${platform?.maxChars} chars)
 - Target Audience: ${audienceLabel}
-- Style: ${styleLabel}
+${styleDefLine}- Style: ${styleLabel}
 ${modifierLine}
 ${perspLine}
 - Original issue: ${formData.issue}
@@ -1396,7 +1452,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
   // County picker lives inside Pro Mode — open the panel when a loaded campaign
   // has a county so the restored selection is visible, not silently applied.
-  const loadCampaign = (c) => { setFormData(c.formData); if (c.formData?.county) setProModeOpen(true); setMessages(c.messages); setHashtags(null); setView("results"); notify(`Loaded: ${c.name}`); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const loadCampaign = (c) => { setFormData(c.formData); if (c.formData?.ruralStyle) setProModeOpen(true); setMessages(c.messages); setHashtags(null); setView("results"); notify(`Loaded: ${c.name}`); window.scrollTo({ top: 0, behavior: "smooth" }); };
 
   const deleteCampaign = async (id) => {
     try {
@@ -1410,7 +1466,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
 
   const startNewCampaign = () => {
     try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
-    setFormData({ issue:"", focalPoint:"", audience:"", voice:"", county:"", style:"", modifier:"", perspective:"", platforms:[] });
+    setFormData({ issue:"", focalPoint:"", audience:"", voice:"", ruralStyle:false, style:"", modifier:"", perspective:"", platforms:[] });
     setMsgMode("");
     setMsgFrame("");
     setFromResearch(false);
@@ -1852,33 +1908,11 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               {/* ── Pro Mode toggle ── */}
               {(() => {
                 const proModeActiveCount = [
-                  formData.audience, formData.voice, formData.county,
+                  formData.audience, formData.voice, formData.ruralStyle,
                   formData.style, formData.modifier, formData.perspective, msgFrame,
                 ].filter(Boolean).length;
                 return (
                   <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                    {countySuggestion && !formData.county && (() => {
-                      const isRural = countySuggestion === RURAL_MULTI_COUNTY;
-                      const label = isRural ? RURAL_MULTI_COUNTY_LABEL : `${countySuggestion} County`;
-                      return (
-                        <div style={{
-                          display:"flex", alignItems:"center", gap:10, flexWrap:"wrap",
-                          background:"var(--gold-light)", border:`1.5px solid ${T.gold}`, borderRadius:10,
-                          padding:"10px 16px", fontSize:14, color:T.text,
-                        }}>
-                          <span>📍 <strong>{label}</strong> detected from Research — apply its local voice?</span>
-                          <button type="button"
-                            onClick={() => { upd("county", countySuggestion); setProModeOpen(true); }}
-                            style={{ padding:"5px 14px", borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit", background:T.teal, color:"#fff", border:"none" }}>
-                            Apply {isRural ? RURAL_MULTI_COUNTY_LABEL : `${countySuggestion}`} voice
-                          </button>
-                          <button type="button" onClick={() => setCountySuggestion("")}
-                            style={{ padding:"5px 14px", borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit", background:"transparent", color:T.textMute, border:`1px solid ${T.border}` }}>
-                            No thanks
-                        </button>
-                      </div>
-                      );
-                    })()}
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                     <button type="button" onClick={() => setProModeOpen(o => !o)}
                       style={{
@@ -1892,7 +1926,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                         borderBottom: proModeOpen ? "none" : `2px solid ${T.border}`,
                         color: T.teal,
                       }}>
-                      <span>⚙️ Pro Mode — Frame, Audience, Voice, Style &amp; County
+                      <span>⚙️ Pro Mode — Frame, Audience, Voice, Style &amp; Rural AZ Style
                         {proModeActiveCount > 0 ? ` (${proModeActiveCount} active)` : ""}
                       </span>
                       <span style={{ fontSize:18, transform: proModeOpen ? "rotate(180deg)" : "none", transition:"transform 0.15s" }}>▾</span>
@@ -1942,49 +1976,20 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 </fieldset>
               </section>
 
-              {/* County Voice — AZ mode only */}
+              {/* Rural AZ Style — AZ mode only. Replaces the old 15-county +
+                  Rural Multi-County picker with a single toggle (Aug 2026
+                  messaging-modifier revision). */}
               {msgMode === "az" && (
                 <section style={S.card}>
                   <fieldset style={{ border:"none", padding:0 }}>
-                    <legend style={S.label}>County Voice <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional — layers on top of Voice/Persona)</span><HelpTooltip text={HELP.messageMachine.countyVoice} label="Help: County Voice" /></legend>
-                    <p style={{ ...S.hint, marginBottom:10 }}>Grounds the message in a specific county's local style — landmarks, local stakes, and tone. Stacks with Voice/Persona rather than replacing it.</p>
-                    <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginTop:4 }}>
-                      {Object.keys(COUNTY_VOICES).map(c => {
-                        const on = formData.county === c;
-                        return (
-                          <button key={c} type="button"
-                            onClick={() => upd("county", on ? "" : c)}
-                            style={{
-                              padding:"7px 16px", borderRadius:20, fontSize:13, fontWeight:700,
-                              cursor:"pointer", fontFamily:"inherit",
-                              background: on ? T.teal : "transparent",
-                              color: on ? "#fff" : T.teal,
-                              border: `1.5px solid ${T.teal}`,
-                            }}>
-                            {c}
-                          </button>
-                        );
-                      })}
-                      {/* Distinct from the named counties above — for districts that span
-                          county lines and don't map cleanly to any single one. */}
-                      {(() => {
-                        const on = formData.county === RURAL_MULTI_COUNTY;
-                        return (
-                          <button type="button"
-                            onClick={() => upd("county", on ? "" : RURAL_MULTI_COUNTY)}
-                            title="For districts spanning multiple counties"
-                            style={{
-                              padding:"7px 16px", borderRadius:20, fontSize:13, fontWeight:700,
-                              cursor:"pointer", fontFamily:"inherit",
-                              background: on ? T.terracotta : "transparent",
-                              color: on ? "#fff" : T.terracotta,
-                              border: `1.5px dashed ${T.terracotta}`,
-                            }}>
-                            {RURAL_MULTI_COUNTY_LABEL}
-                          </button>
-                        );
-                      })()}
-                    </div>
+                    <legend style={S.label}>Rural AZ Style <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional — layers on top of Voice/Persona)</span><HelpTooltip text={HELP.messageMachine.countyVoice} label="Help: Rural AZ Style" /></legend>
+                    <p style={{ ...S.hint, marginBottom:10 }}>Grounds the message in a shared rural Arizona voice — small towns, tribal communities, farm-and-ranch families. Stacks with Voice/Persona rather than replacing it. If your Issue/Content names a specific place, the model will keep any added place references within that same area.</p>
+                    <label style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer", marginTop:4 }}>
+                      <input type="checkbox" checked={!!formData.ruralStyle}
+                        onChange={() => upd("ruralStyle", !formData.ruralStyle)}
+                        style={{ width:24, height:24, accentColor:T.teal, cursor:"pointer", flexShrink:0 }} />
+                      <span style={{ fontSize:18, fontWeight: formData.ruralStyle ? 700 : 400, color:T.text }}>Enable Rural AZ Style</span>
+                    </label>
                   </fieldset>
                 </section>
               )}
