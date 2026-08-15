@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
+import { Outlet, NavLink, Link, useNavigate, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import ConversationCoach from "./ConversationCoach";
@@ -821,6 +821,32 @@ export default function AppShell() {
         }}>
           <span style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", letterSpacing: "0.04em" }}>
             © 2026 Arizona Coalition. All rights reserved.
+          </span>
+          {/* Legal links — Aug 2026. TermsPage/PrivacyPage/AIPolicyPage were
+              routed (App.jsx) but, until now, never actually linked
+              anywhere once someone was logged in — only RegisterPage.jsx
+              and WaitlistPage.jsx reference them, both pre-login. This
+              bottom bar's own comment ("copyright + legal") already
+              implied these belonged here; they just hadn't been added.
+              target="_blank" matches how Register/Waitlist already open
+              these, since navigating away from an in-progress tool to read
+              a policy would be a worse experience than a new tab. */}
+          <span style={{ display: "flex", gap: 16, fontSize: 12 }}>
+            <Link to="/terms" target="_blank" style={{ color: "rgba(255,255,255,0.45)", textDecoration: "none" }}
+              onMouseEnter={e => e.target.style.color = "var(--gold)"}
+              onMouseLeave={e => e.target.style.color = "rgba(255,255,255,0.45)"}>
+              Terms
+            </Link>
+            <Link to="/privacy" target="_blank" style={{ color: "rgba(255,255,255,0.45)", textDecoration: "none" }}
+              onMouseEnter={e => e.target.style.color = "var(--gold)"}
+              onMouseLeave={e => e.target.style.color = "rgba(255,255,255,0.45)"}>
+              Privacy
+            </Link>
+            <Link to="/ai-policy" target="_blank" style={{ color: "rgba(255,255,255,0.45)", textDecoration: "none" }}
+              onMouseEnter={e => e.target.style.color = "var(--gold)"}
+              onMouseLeave={e => e.target.style.color = "rgba(255,255,255,0.45)"}>
+              AI Policy
+            </Link>
           </span>
           <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", letterSpacing: "0.03em", textAlign: "right" }}>
             Internal coalition use only · Not for public distribution · Paid for by Arizona Coalition
