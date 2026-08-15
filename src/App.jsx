@@ -7,6 +7,9 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import AuthActionPage from "./pages/AuthActionPage";
 import WaitlistPage from "./pages/WaitlistPage";
+import TermsPage from "./pages/legal/TermsPage";
+import PrivacyPage from "./pages/legal/PrivacyPage";
+import AIPolicyPage from "./pages/legal/AIPolicyPage";
 import AdminPage from "./pages/AdminPage";
 import ProfilePage from "./pages/ProfilePage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
@@ -42,6 +45,18 @@ export default function App() {
               icon) to point here — see AuthActionPage.jsx's header comment. */}
           <Route path="/auth-action" element={<AuthActionPage />} />
           <Route path="/waitlist" element={<WaitlistPage />} />
+          {/* Legal pages — Aug 2026. TermsPage/PrivacyPage/AIPolicyPage
+              already existed as standalone components (self-contained via
+              LegalPageLayout, no AppShell dependency) but were never
+              actually routed anywhere — RegisterPage.jsx and
+              WaitlistPage.jsx have linked to /terms, /privacy, /ai-policy
+              (target="_blank") all along, but every click 404'd since
+              nothing in this file registered those paths. Public routes,
+              same as /waitlist above, since people see these before
+              they're ever logged in. */}
+          <Route path="/terms"     element={<TermsPage />} />
+          <Route path="/privacy"   element={<PrivacyPage />} />
+          <Route path="/ai-policy" element={<AIPolicyPage />} />
           <Route path="/storm/:token" element={<PublicStormPage />} />
           <Route path="/storms/public" element={<PublicStormsListPage />} />
           <Route path="/voter-lookup" element={<VoterLookupPage />} />
