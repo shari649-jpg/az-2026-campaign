@@ -92,6 +92,7 @@ function VideoEmbed({ src, label, color = TEAL }) {
       <div style={{ fontSize: 13, fontWeight: 700, color, marginBottom: 8 }}>▶️ {label}</div>
       <video
         controls
+        playsInline
         preload="metadata"
         style={{ width: "100%", borderRadius: 12, border: "1.5px solid var(--border)", display: "block", background: "#000" }}
       >
