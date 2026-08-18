@@ -84,6 +84,41 @@ function Callout({ icon, title, children, color = TEAL, bg = "#E0F2EC" }) {
     </div>
   );
 }
+// Inline video walkthrough — native <video> with controls, styled to match
+// the guide's card language (rounded, bordered, consistent with Callout).
+function VideoEmbed({ src, label, color = TEAL }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color, marginBottom: 8 }}>▶️ {label}</div>
+      <video
+        controls
+        preload="metadata"
+        style={{ width: "100%", borderRadius: 12, border: "1.5px solid var(--border)", display: "block", background: "#000" }}
+      >
+        <source src={src} type="video/mp4" />
+        Your browser doesn't support embedded video — you can still{" "}
+        <a href={src} download style={{ color }}>download the video</a> directly.
+      </video>
+    </div>
+  );
+}
+// Download button for the PDF addenda — visually distinct from the inline
+// text links used elsewhere so it reads as an action, not just a reference.
+function DownloadButton({ href, children, color = TEAL }) {
+  return (
+    <a
+      href={href}
+      download
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 18px",
+        background: color, color: "#fff", borderRadius: 8, fontSize: 13.5, fontWeight: 700,
+        fontFamily: "var(--font-body)", letterSpacing: "0.02em", textDecoration: "none", marginBottom: 16,
+      }}
+    >
+      ⬇ {children}
+    </a>
+  );
+}
 function Section({ id, children }) {
   const s = byId(id);
   return (
@@ -158,6 +193,7 @@ export default function ManualPage() {
         {/* ── How to Use This Guide ── */}
         <Section id="how-to-use">
           <P>This guide is organized from easiest to most advanced. If you're brand new, start at the top and work down — each section builds on skills from the one before it. If you already know the basics, jump straight to the section you need using the Table of Contents above.</P>
+          <VideoEmbed src="/videos/comms-hub-guide.mp4" label="Watch: the full Comms Hub walkthrough" color={TEAL} />
           <Callout icon="🕵️‍♂️" title="Look for this icon" color={TEAL} bg="#E0F2EC">
             Small help pop-ups marked with the detective icon are built into the tools themselves, so you can get a quick reminder without leaving the page you're on. This guide is the full reference behind those pop-ups.
           </Callout>
@@ -181,6 +217,12 @@ export default function ManualPage() {
             <><strong>Manager</strong> — everything a Member can do, plus the ability to review and publish Storms, manage any Storm's posts, and lock platform text once it's finalized.</>,
             <><strong>Administrator</strong> — everything a Manager can do, plus user management (roles, invitations, account status) and the ability to permanently delete Storms.</>,
           ]} />
+          <Callout icon="🗂️" title="Just been made an Org Manager?" color={GOLD_DEEP} bg="#fdf3c0">
+            Org Manager is a separate, independent permission from the three roles above — it lets you manage your own organization's members without touching anything else. Read the{" "}
+            <a href="/docs/AZ-Coalition-Org-Manager-Addendum.pdf" target="_blank" rel="noopener noreferrer" style={{ color: GOLD_DEEP, fontWeight: 700 }}>
+              Org Manager Addendum (PDF)
+            </a>{" "}for the full walkthrough.
+          </Callout>
 
           <H3>1.3 Finding Your Way Around</H3>
           <P>The top navigation bar holds the tools you'll use most often. Tools used less frequently are tucked under a "More" menu to keep the bar uncluttered. Your account menu (top right) is where you'll find your Profile and, if you administer the coalition's accounts, the Admin panel.</P>
@@ -364,6 +406,11 @@ export default function ManualPage() {
         <Section id="storms">
           <P>A "Storm" is a coordinated, multi-platform campaign — think of it as a container that holds one or more finished Posts (a video or graphics plus matching text for all six platforms), built around a candidate, an issue, a race, or the coalition as a whole. This is the most advanced tool in the Comms Hub, and it's where individual messages come together into a shared, staff-coordinated push.</P>
 
+          <VideoEmbed src="/videos/storms-guide.mp4" label="Watch: creating & managing a Storm" color={GOLD_DEEP} />
+          <DownloadButton href="/docs/AZ-Coalition-Storms-Addendum.pdf" color={GOLD_DEEP}>
+            Download the full Storms Addendum (PDF)
+          </DownloadButton>
+
           <H3 color={GOLD_DEEP}>9.1 One Page for Everyone</H3>
           <P>Managers and Administrators land on Manager View — the full list of storms with status controls. A Manager View / User View toggle lets staff preview exactly what a Member sees. Members always see User View, which includes browsing active storms plus a "My Storms" section for anything they've personally started.</P>
 
@@ -432,6 +479,17 @@ export default function ManualPage() {
 
           <H3>What's Not Covered Yet</H3>
           <P>BS Monitor and the Resources Hub are still being finalized and are intentionally left out of this guide for now. They'll be added in a future update once those tools are ready for general use.</P>
+
+          <H3>Downloadable Addenda</H3>
+          <P>Two topics get their own standalone PDF, for anyone who wants the full detail without paging through this whole guide, or wants something they can forward on its own:</P>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+            <DownloadButton href="/docs/AZ-Coalition-Storms-Addendum.pdf" color={GOLD_DEEP}>
+              Storms Addendum (PDF)
+            </DownloadButton>
+            <DownloadButton href="/docs/AZ-Coalition-Org-Manager-Addendum.pdf" color={CHARCOAL}>
+              Org Manager Addendum (PDF)
+            </DownloadButton>
+          </div>
         </Section>
 
       </div>
