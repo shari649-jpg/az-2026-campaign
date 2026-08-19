@@ -85,6 +85,8 @@ export default function AdminPage() {
   const [resendingVerification, setResendingVerification] = useState(false); // bulk or single in flight
   const [verificationResult, setVerificationResult] = useState(null); // { sent, failed } from last run
   const [confirmDeleteUid, setConfirmDeleteUid] = useState(null); // uid pending delete confirmation
+  const [reactivatePickerUid, setReactivatePickerUid] = useState(null); // uid whose "reactivate into org" picker is open
+  const [reactivateOrgChoice, setReactivateOrgChoice] = useState({}); // { [uid]: chosen orgId }
   const [cnFiles, setCnFiles]        = useState([]);
   const [cnParsing, setCnParsing]   = useState(false);
   const [cnPreview, setCnPreview]   = useState(null); // { count, totalR, totalD }
@@ -740,8 +742,8 @@ export default function AdminPage() {
     setSaving(null);
   };
 
-  // ── Disable / Enable / Delete — server-side, requires Firebase Admin SDK ──
-  const callManageUser = async (targetUid, action) => {
+  // ── Disable / Enable / Delete / Reactivate — server-side, requires Firebase Admin SDK ──
+  const callManageUser = async (targetUid, action, extra = {}) => {
     setActionUid(targetUid);
     setActionError(null);
     try {
@@ -749,7 +751,7 @@ export default function AdminPage() {
       const res = await fetch("/.netlify/functions/manage-user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken, action, targetUid }),
+        body: JSON.stringify({ idToken, action, targetUid, ...extra }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -758,6 +760,16 @@ export default function AdminPage() {
       if (action === "delete") {
         setUsers(prev => prev.filter(u => u.id !== targetUid));
         notify("User deleted.");
+      } else if (action === "reactivate_org" || action === "reactivate_individual") {
+        setUsers(prev => prev.map(u => u.id === targetUid
+          ? { ...u, disabled: false, orgId: data.orgId, requiresPurchase: action === "reactivate_individual" }
+          : u));
+        notify(
+          action === "reactivate_org"
+            ? "Account reactivated into the organization — no purchase required."
+            : "Account reactivated as an individual — they'll need to complete a purchase to unlock the app."
+        );
+        setReactivatePickerUid(null);
       } else {
         setUsers(prev => prev.map(u => u.id === targetUid ? { ...u, disabled: action === "disable" } : u));
         notify(action === "disable" ? "User disabled — they can no longer sign in." : "User re-enabled.");
@@ -1799,6 +1811,65 @@ export default function AdminPage() {
                                 </button>
                               ))}
                             </div>
+                          )}
+
+                          {isDisabled && isAdmin && (
+                            reactivatePickerUid === u.id ? (
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#f0f7f8", border: `1.5px solid ${TEAL}`, borderRadius: 8, padding: "6px 10px", flexWrap: "wrap" }}>
+                                <select
+                                  value={reactivateOrgChoice[u.id] || ""}
+                                  onChange={e => setReactivateOrgChoice(prev => ({ ...prev, [u.id]: e.target.value }))}
+                                  disabled={isBusy || (orgsLoading && !coalitionOrgs.length)}
+                                  style={{ borderRadius: 6, border: "1.5px solid #ccc", padding: "5px 8px", fontSize: 12.5, fontFamily: "inherit" }}
+                                >
+                                  <option value="">Choose an organization…</option>
+                                  {coalitionOrgs.map(org => (
+                                    <option key={org.id} value={org.id}>{org.name || org.id}</option>
+                                  ))}
+                                </select>
+                                <button
+                                  onClick={() => callManageUser(u.id, "reactivate_org", { targetOrgId: reactivateOrgChoice[u.id] })}
+                                  disabled={isBusy || !reactivateOrgChoice[u.id]}
+                                  style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: isBusy || !reactivateOrgChoice[u.id] ? "not-allowed" : "pointer" }}
+                                >
+                                  {isBusy ? "…" : "Confirm"}
+                                </button>
+                                <button
+                                  onClick={() => setReactivatePickerUid(null)}
+                                  disabled={isBusy}
+                                  style={{ background: "none", border: "1.5px solid #ccc", color: "#888", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: isBusy ? "not-allowed" : "pointer" }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <button
+                                  onClick={() => setReactivatePickerUid(u.id)}
+                                  disabled={isBusy}
+                                  title="Re-enable this account directly into an organization — no purchase required."
+                                  style={{
+                                    background: "none", border: `2px solid ${TEAL}`, color: TEAL,
+                                    borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700,
+                                    fontFamily: "inherit", cursor: isBusy ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  Reactivate → Org
+                                </button>
+                                <button
+                                  onClick={() => callManageUser(u.id, "reactivate_individual")}
+                                  disabled={isBusy}
+                                  title="Re-enable this account as a standalone individual — routes through the purchase gate, same as a fresh signup."
+                                  style={{
+                                    background: "none", border: `2px solid ${GOLD}`, color: "#8a6d00",
+                                    borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700,
+                                    fontFamily: "inherit", cursor: isBusy ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {isBusy ? "…" : "Reactivate → Individual"}
+                                </button>
+                              </div>
+                            )
                           )}
 
                           {!isMe && (
