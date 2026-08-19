@@ -86,6 +86,7 @@ const RESOURCE_GROUPS = [
     color: "var(--turquoise)",
     items: [
       { label: "SocialPilot", desc: "Scheduled posting and analytics across all platforms", href: "https://socialpilot.co", tag: "Tool" },
+      { label: "Social Searcher", desc: "Real-time social media search and monitoring", href: "https://www.social-searcher.com/", tag: "Tool" },
       { label: "Canva — AZ Coalition", desc: "Coalition graphics and design templates", href: null, tag: "Tool" },
       { label: "AZ Coalition Linktree", desc: "Public-facing action hub", href: null, tag: "Link" },
       { label: "Signal Group", desc: "Secure coalition communications", href: null, tag: "Secure" },
