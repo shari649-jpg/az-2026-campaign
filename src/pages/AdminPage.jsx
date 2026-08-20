@@ -2857,6 +2857,7 @@ function OrgAdminPanel() {
   const myOrgId = currentProfile?.orgId || null;
 
   const [orgName, setOrgName] = useState("");
+  const [orgCredits, setOrgCredits] = useState(null); // { generationBalance, transcriptionBalance } or null while loading
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionUid, setActionUid] = useState(null);
@@ -2876,6 +2877,14 @@ function OrgAdminPanel() {
     try {
       const orgSnap = await getDoc(doc(db, "orgs", myOrgId));
       setOrgName(orgSnap.exists() ? (orgSnap.data().name || myOrgId) : myOrgId);
+      // Credits visibility (Aug 2026) — an org admin is scoped to their
+      // own org's members already; showing the same org's own credit
+      // balance here is well within that boundary (same firestore.rules
+      // isSameOrg() read this page already relies on for orgName above,
+      // no new access). Deliberately read-only here — no purchase/top-up
+      // control, since self-serve org top-up isn't built (see punch
+      // list); this is visibility only, same scope as what was asked for.
+      setOrgCredits(orgSnap.exists() ? (orgSnap.data().credits || { generationBalance: 0, transcriptionBalance: 0 }) : null);
       // Scoped query — firestore.rules' list rule for an org admin only
       // resolves when the query itself is filtered to their own orgId;
       // an unscoped query here would simply fail closed. See the rules
@@ -2987,6 +2996,23 @@ function OrgAdminPanel() {
             border: `1.5px solid ${notif.kind === "err" ? "#f5c6c6" : GOLD}`,
           }}>
             {notif.msg}
+          </div>
+        )}
+
+        {orgCredits && (
+          <div style={{ background: BG, border: "1.5px solid #ddd", borderRadius: 10, padding: "18px 22px", marginBottom: 20, display: "flex", gap: 28, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888", marginBottom: 4 }}>
+                Generation Credits
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: TEAL }}>{orgCredits.generationBalance ?? 0}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888", marginBottom: 4 }}>
+                Transcription Credits
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: TEAL }}>{orgCredits.transcriptionBalance ?? 0}</div>
+            </div>
           </div>
         )}
 
