@@ -51,8 +51,8 @@ const PLATFORM_VOICE_GUIDE = `PLATFORM VOICE — each platform below has its own
 - Facebook: Older-skewing, community- and family-oriented readers. Warm, explanatory register — take the time to walk through context, like a longtime neighbor at a town meeting. Detailed storytelling, clear call to action, 2–5 paragraphs.
 - Instagram: Younger-adult, millennial-leaning readers. Visual, punchy, values-driven — write like a real feed post, not a press release. Emotional hook at start.
 - Threads: Conversational middle ground between Instagram and Twitter/X — casual, in-the-moment, like joining a conversation already happening. 2–4 sentences.
-- BlueSky: Policy-literate, community-minded readers who reward nuance and depth over punchlines. Thoughtful and substantive. Strict 300-char limit.
-- Twitter/X: Baseline snark and wit — sharp, a little irreverent, even when the underlying topic is serious. This is Twitter's inherent voice and should come through regardless of tone. Punchy headline style, max 280 chars.
+- BlueSky: Policy-literate, community-minded readers who reward nuance and depth over punchlines. Thoughtful and substantive — willing to sit with a claim and unpack it. Measured, explanatory tone even when angry. Strict 300-char limit.
+- Twitter/X: Confrontational, visceral, built to be screenshotted. Readers scroll past hundreds of posts a minute — this one has to physically land, not just make a point. Short, blunt words over precise ones ("gutted," "stole," "torched" — not "reduced," "obtained," "damaged"). Land on one raw image or gut-punch line, not a reasoned takeaway — this is NOT the same register as BlueSky's careful, explanatory tone turned up in volume; it's a different instinct entirely, closer to a shout than an essay. Fragments and blunt declaratives over full explanatory sentences. Punchy headline style, max 280 chars.
 - TikTok: Gen Z-adjacent, informal, "smart friend" energy. Trendy hook in first line, energetic language.`;
 
 // National mode's platform-voice guidance — same persona layer, laid over the
@@ -61,9 +61,56 @@ const PLATFORM_VOICE_GUIDE_NATIONAL = `PLATFORM VOICE — each platform below ha
 
 - Facebook: Older-skewing, community- and family-oriented readers. Richardson letter format — full story with history and context, 3–4 paragraphs, start with the cost a real person is paying, end with one specific action.
 - Instagram/Threads: Younger-adult, millennial-leaning readers. Lead with the most visceral, concrete version of the cost. Make the first sentence hit. Keep it human and visual.
-- BlueSky: Policy-literate, community-minded readers who reward nuance and depth. Thoughtful and substantive. Strict 300-char limit.
-- Twitter/X: Baseline snark and wit — sharp, a little irreverent, even on serious topics. One devastating specific fact. Or one contrast. Or one direct question. Never vague. Max 280 chars.
+- BlueSky: Policy-literate, community-minded readers who reward nuance and depth. Thoughtful and substantive — willing to sit with a claim and unpack it. Strict 300-char limit.
+- Twitter/X: Confrontational, visceral, built to be screenshotted. One raw image or gut-punch line, not a reasoned takeaway — this is NOT the same register as BlueSky's careful, explanatory tone turned up in volume; it's a shout, not an essay. Short, blunt words over precise ones. Fragments and blunt declaratives over full sentences. Max 280 chars.
 - TikTok: Gen Z-adjacent, informal, "smart friend" energy. Open with the hook nobody expects a politician to say out loud. Authenticity and mild irreverence. The "wait, really?" moment.`;
+
+// Shared "guardrail + AI-tell + platform-voice" block and its "hashtag ban
+// + JSON contract" counterpart (added Aug 2026, Batch 2 messaging-system
+// pass) — pulled out after buildRegenPrompt was found carrying its own
+// separate, hand-typed copy of this exact sequence, on top of three
+// already near-identical inline copies across buildPromptParts' three
+// modes (neutral/az/national). Four independently-maintained copies meant
+// any future guardrail or platform-voice change had to be made in up to
+// four places and could silently drift — the same "doubling introduces
+// mistakes" problem guardrails.js's own header comment already flagged
+// once for FACTUAL_ACCURACY_GUARDRAIL specifically. One function, one
+// constant, every call site below references the same source.
+//
+// Real behavior change from this unification, not just a refactor:
+// buildRegenPrompt previously had NO platform-voice guidance at all —
+// Shorten/Expand/Rephrase never received PLATFORM_VOICE_GUIDE(_NATIONAL),
+// so a Twitter regen carried none of Twitter's baseline-snark instruction
+// a fresh Twitter generation gets. Folding regen into this shared block
+// closes that gap as a direct side effect, not a separate fix.
+function guardrailAndVoiceBlock(mode) {
+  const platformVoice = mode === "national" ? PLATFORM_VOICE_GUIDE_NATIONAL : PLATFORM_VOICE_GUIDE;
+  return `${FACTUAL_ACCURACY_GUARDRAIL}
+${AI_TELL_PHRASING_BAN}
+${platformVoice}`;
+}
+const OUTPUT_CONTRACT_BLOCK = `${HASHTAG_BODY_BAN}
+
+${JSON_ONLY_INSTRUCTION}
+${JSON_ESCAPING_INSTRUCTION}`;
+
+// EXPERIMENTAL — Message_Machine_Modifier_Fixes.docx (Aug 10), recommended
+// fix #2. Parked since Aug 14 pending a live-content retest against
+// TONE_MODIFIER_DEFINITIONS alone (Handoff #38, TODO item 2) — that
+// retest never happened until now. Added here as part of that retest, not
+// a confirmed permanent fix; decide whether to keep after comparing
+// output with/without it.
+//
+// This targets a DIFFERENT failure than TONE_MODIFIER_DEFINITIONS' own
+// per-tone technique requirements. The doc's original diagnosis: tone
+// differentiation showed up only in a post's opening line, then converged
+// back to the same "stat → impact → call to action" structure by the
+// second paragraph — even with a tone label present. A single required
+// technique (e.g., Sarcastic's one rhetorical question) can be satisfied
+// once near the top while the rest of the post still reads identical to
+// every other tone. This instruction is aimed at that convergence, not at
+// giving tone a technique — that part's already built.
+const TONE_CONTRAST_INSTRUCTION = "This post must be structurally distinguishable from a neutral-tone version of the same content for its entire length, not just the opening line — vary sentence length and opening structure, and keep applying this tone's required technique throughout rather than using it once near the top.";
 
 // Fixed generous max_tokens for every generateAll call. Deliberately NOT a
 // formula scaled to input size (an earlier version of this file had one) —
@@ -754,7 +801,7 @@ export default function App() {
     // previously this was just "Tone: <label>" with no instructional text
     // behind the label at all. See TONE_MODIFIER_DEFINITIONS above.
     const modifierDef = formData.modifier ? TONE_MODIFIER_DEFINITIONS[formData.modifier] : "";
-    const modifierLine = formData.modifier ? `Tone: ${formData.modifier} — ${modifierDef}` : "";
+    const modifierLine = formData.modifier ? `Tone: ${formData.modifier} — ${modifierDef} ${TONE_CONTRAST_INSTRUCTION}` : "";
 
     const perspObj = SPEAKER_PERSPECTIVES.find(p => p.id === formData.perspective);
     const perspLine = perspObj ? `Grammatical person: ${perspObj.label} — ${perspObj.desc}` : "";
@@ -784,14 +831,9 @@ export default function App() {
 
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
 
-${FACTUAL_ACCURACY_GUARDRAIL}
-${AI_TELL_PHRASING_BAN}
-${PLATFORM_VOICE_GUIDE}
+${guardrailAndVoiceBlock("neutral")}
 
-${HASHTAG_BODY_BAN}
-
-${JSON_ONLY_INSTRUCTION}
-${JSON_ESCAPING_INSTRUCTION}`;
+${OUTPUT_CONTRACT_BLOCK}`;
 
       const dynamicPrompt = `${frameBlock}
 Issue/Content: ${formData.issue}
@@ -820,14 +862,9 @@ This is a professional political communications tool. Content will reference pub
 ARIZONA CONTEXT — GROUND ALL MESSAGING HERE:
 Ground all messaging in the Arizona context. Reference communities, landscapes, and values familiar to Arizona voters — urban centers like Phoenix and Tucson, rural and tribal communities, the border, the desert. Reflect issues as they affect Arizonans specifically. When referencing costs, use Arizona examples where possible (utility bills, housing, healthcare, water, education). Write for an Arizona audience, not a generic national one.
 
-${FACTUAL_ACCURACY_GUARDRAIL}
-${AI_TELL_PHRASING_BAN}
-${PLATFORM_VOICE_GUIDE}
+${guardrailAndVoiceBlock("az")}
 
-${HASHTAG_BODY_BAN}
-
-${JSON_ONLY_INSTRUCTION}
-${JSON_ESCAPING_INSTRUCTION}`;
+${OUTPUT_CONTRACT_BLOCK}`;
 
       const dynamicPrompt = `${ruralStyleBlock}${frameBlock}
 Issue/Content: ${formData.issue}
@@ -892,14 +929,9 @@ FORBIDDEN PHRASES — Never use "We must," "Now is the time," or "History will j
 - "a lot of us feel..." → "most families are finding..."
 - "out here we know..." → "in [specific place], people are dealing with..."
 
-${FACTUAL_ACCURACY_GUARDRAIL}
-${AI_TELL_PHRASING_BAN}
-${PLATFORM_VOICE_GUIDE_NATIONAL}
+${guardrailAndVoiceBlock("national")}
 
-${HASHTAG_BODY_BAN}
-
-${JSON_ONLY_INSTRUCTION}
-${JSON_ESCAPING_INSTRUCTION}`;
+${OUTPUT_CONTRACT_BLOCK}`;
 
     const dynamicPrompt = `${frameBlock}
 Issue/Content: ${formData.issue}
@@ -959,7 +991,7 @@ function detectArrivalSource() {
     const styleDef = STYLE_DEFINITIONS[formData.style] || "";
     const styleDefLine = styleDef ? `- ${styleDef}\n` : "";
     const modifierDef = formData.modifier ? TONE_MODIFIER_DEFINITIONS[formData.modifier] : "";
-    const modifierLine = formData.modifier ? `Tone modifier: ${formData.modifier} — ${modifierDef}` : "";
+    const modifierLine = formData.modifier ? `Tone modifier: ${formData.modifier} — ${modifierDef} ${TONE_CONTRAST_INSTRUCTION}` : "";
     const frameObj = NATIONAL_FRAMES.find(f => f.id === msgFrame);
     const frameBlock = frameObj ? `\nMESSAGING FRAME — ${frameObj.label.toUpperCase()}:\n${frameObj.prompt}\n` : "";
     const modeLabel = msgMode === "national" ? "progressive coalition (National Messaging Style)"
@@ -976,8 +1008,7 @@ function detectArrivalSource() {
 
     return `You are an expert political messaging strategist for a legitimate ${modeLabel}.
 
-${FACTUAL_ACCURACY_GUARDRAIL}
-${AI_TELL_PHRASING_BAN}
+${guardrailAndVoiceBlock(msgMode)}
 ${frameBlock}
 Your task is to rewrite the following existing ${platform?.name} post.
 
@@ -995,9 +1026,7 @@ ${perspLine}
 - Original issue: ${formData.issue}
 ${formData.focalPoint ? `- Focal Point (mandatory — do not let ${regenOpt === "shorten" ? "shortening" : regenOpt === "expand" ? "expanding" : "rephrasing"} drop or dilute this): ${formData.focalPoint}` : ""}
 
-${HASHTAG_BODY_BAN}
-${JSON_ONLY_INSTRUCTION}
-${JSON_ESCAPING_INSTRUCTION}
+${OUTPUT_CONTRACT_BLOCK}
 Format: {"${platformId}": "rewritten message text"}
 If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_contradictionFlags": {"${platformId}": "one-sentence explanation of the contradiction"}} — omitted entirely if it doesn't apply.`;
   };
