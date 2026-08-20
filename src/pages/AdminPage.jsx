@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Inflate } from "fflate";
 import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, getDoc, setDoc, where, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import AdminHeadshots from "./AdminHeadshots";
+import AddonCreditsPurchase from "../components/AddonCreditsPurchase";
 
 const GOLD       = "var(--gold)";
 const TEAL       = "var(--teal)";
@@ -2858,6 +2859,8 @@ function OrgAdminPanel() {
 
   const [orgName, setOrgName] = useState("");
   const [orgCredits, setOrgCredits] = useState(null); // { generationBalance, transcriptionBalance } or null while loading
+  const orgCreditsRef = useRef(null);
+  useEffect(() => { orgCreditsRef.current = orgCredits; }, [orgCredits]);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionUid, setActionUid] = useState(null);
@@ -2899,6 +2902,24 @@ function OrgAdminPanel() {
   };
 
   useEffect(() => { fetchOrgAndMembers(); }, [myOrgId]);
+
+  // Lighter-weight than re-running fetchOrgAndMembers() (which also
+  // re-lists every member) — used by AddonCreditsPurchase's post-purchase
+  // polling, which ticks every 2s for up to ~30s; no reason to re-fetch
+  // and re-render the whole member list that often.
+  async function refetchOrgCredits() {
+    if (!myOrgId) return false;
+    try {
+      const orgSnap = await getDoc(doc(db, "orgs", myOrgId));
+      const fresh = orgSnap.exists() ? (orgSnap.data().credits || { generationBalance: 0, transcriptionBalance: 0 }) : null;
+      const changed = !!fresh && !!orgCreditsRef.current && fresh.generationBalance !== orgCreditsRef.current.generationBalance;
+      setOrgCredits(fresh);
+      return changed;
+    } catch (err) {
+      console.error("[OrgAdminPanel] credits refetch failed:", err.message);
+      return false;
+    }
+  }
 
   // Disable/enable — "remove"/"re-add" a member, per the TODO's own
   // scoping decision (never real deletion). Goes through manage-user.mjs,
@@ -3000,18 +3021,23 @@ function OrgAdminPanel() {
         )}
 
         {orgCredits && (
-          <div style={{ background: BG, border: "1.5px solid #ddd", borderRadius: 10, padding: "18px 22px", marginBottom: 20, display: "flex", gap: 28, flexWrap: "wrap" }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888", marginBottom: 4 }}>
-                Generation Credits
+          <div style={{ background: BG, border: "1.5px solid #ddd", borderRadius: 10, padding: "18px 22px", marginBottom: 20 }}>
+            <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginBottom: 18 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888", marginBottom: 4 }}>
+                  Generation Credits
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: TEAL }}>{orgCredits.generationBalance ?? 0}</div>
               </div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: TEAL }}>{orgCredits.generationBalance ?? 0}</div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888", marginBottom: 4 }}>
+                  Transcription Credits
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: TEAL }}>{orgCredits.transcriptionBalance ?? 0}</div>
+              </div>
             </div>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888", marginBottom: 4 }}>
-                Transcription Credits
-              </div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: TEAL }}>{orgCredits.transcriptionBalance ?? 0}</div>
+            <div style={{ borderTop: "1px solid #e8e8e4", paddingTop: 16 }}>
+              <AddonCreditsPurchase returnPath="/admin" onRefreshBalance={refetchOrgCredits} />
             </div>
           </div>
         )}
