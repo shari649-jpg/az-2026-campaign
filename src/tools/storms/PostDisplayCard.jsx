@@ -194,11 +194,24 @@ Format: {"${platformKey}": "rewritten post text"}`;
     const data = await res.json();
     if (res.status === 429) { const err = new Error("rate_limit"); err.type = "ratelimit"; throw err; }
     if (data.error === "disabled") { const err = new Error("disabled"); err.type = "disabled"; throw err; }
+    if (data.error === "locked") { const err = new Error("locked"); err.type = "locked"; throw err; }
     if (!data.ok) throw new Error("generation_failed");
     return data.text || "";
   }
 
   async function handleRegenerate(platformKey) {
+    // Client-side guard, both paths — the button below is hidden whenever
+    // a platform is locked, so this shouldn't be reachable, but it's cheap
+    // insurance against any stale-render edge case. This mirrors
+    // StormPostEditor.jsx's own client-side-only lock enforcement for its
+    // Rephrase button — generate-storm-text.mjs (the member path's
+    // backend) is a deliberately generic prompt-forwarding function with
+    // no postId/lock awareness at all, shared with generate-sandbox-text.mjs,
+    // so lock enforcement for the member path lives here, not server-side.
+    // The public path is different: public-storm-regenerate.mjs enforces
+    // this server-side too, since that caller has no authenticated session
+    // to already be trusted the way a signed-in member is.
+    if (post.lockedFields?.[platformKey]) return;
     setRegenLoading(platformKey);
     try {
       const text = isPublic ? await regenerateAsPublic(platformKey) : await regenerateAsMember(platformKey);
@@ -209,6 +222,8 @@ Format: {"${platformKey}": "rewritten post text"}`;
         setRegenNotice({ type: "ratelimit", msg: "🚦 Regenerate limit reached for now — resets at midnight UTC." });
       } else if (e.type === "disabled") {
         setRegenNotice({ type: "disabled", msg: "Regenerate is temporarily turned off by staff. Try again later." });
+      } else if (e.type === "locked") {
+        setRegenNotice({ type: "disabled", msg: "🔒 This platform's wording is locked by staff and can't be regenerated." });
       } else {
         setRegenNotice({ type: "error", msg: "⚠️ Couldn't regenerate — please try again." });
       }
@@ -307,6 +322,15 @@ Format: {"${platformKey}": "rewritten post text"}`;
         const regenText = regenTexts[key];
         const isRegenLoading = regenLoading === key;
         const displayedText = regenText ?? post.texts[key];
+        // Lock check — now applies to BOTH contexts. Public: lockedFields
+        // is only sent to the client via public-storm.mjs (Aug 2026 fix),
+        // matching public-storm-regenerate.mjs's own server-side check.
+        // Member/User View: post.lockedFields is already present in the
+        // authenticated fetch this component receives regardless (no
+        // gating needed there), and handleRegenerate above adds the
+        // matching client-side guard for this path — see its comment for
+        // why member-path enforcement lives client-side, not server-side.
+        const isLocked = !!post.lockedFields?.[key];
         return (
           <div style={{ marginTop: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, background: regenText ? "#fffaf0" : SURFACE_ALT, border: regenText ? `1.5px solid #e0c568` : "none", borderRadius: 8, padding: "10px 12px" }}>
@@ -324,18 +348,27 @@ Format: {"${platformKey}": "rewritten post text"}`;
               </button>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 6 }}>
-              <button
-                onClick={() => handleRegenerate(key)}
-                disabled={isRegenLoading || regenNotice?.type === "ratelimit" || regenNotice?.type === "disabled"}
-                style={{
-                  background: "none", border: `1.5px solid ${TURQUOISE}`, borderRadius: 6, padding: "3px 10px",
-                  fontSize: 11.5, fontWeight: 700, color: TURQUOISE,
-                  cursor: (isRegenLoading || regenNotice?.type === "ratelimit" || regenNotice?.type === "disabled") ? "default" : "pointer",
-                  opacity: (isRegenLoading || regenNotice?.type === "ratelimit" || regenNotice?.type === "disabled") ? 0.55 : 1,
-                }}
-              >
-                {isRegenLoading ? "Regenerating…" : "🔁 Regenerate"}
-              </button>
+              {isLocked ? (
+                <span style={{
+                  fontSize: 11, fontWeight: 700, color: "#8a6215", background: "#fff3d6",
+                  border: "1px solid #e0c568", borderRadius: 999, padding: "2px 8px", letterSpacing: "0.02em",
+                }}>
+                  🔒 Locked by staff
+                </span>
+              ) : (
+                <button
+                  onClick={() => handleRegenerate(key)}
+                  disabled={isRegenLoading || regenNotice?.type === "ratelimit" || regenNotice?.type === "disabled"}
+                  style={{
+                    background: "none", border: `1.5px solid ${TURQUOISE}`, borderRadius: 6, padding: "3px 10px",
+                    fontSize: 11.5, fontWeight: 700, color: TURQUOISE,
+                    cursor: (isRegenLoading || regenNotice?.type === "ratelimit" || regenNotice?.type === "disabled") ? "default" : "pointer",
+                    opacity: (isRegenLoading || regenNotice?.type === "ratelimit" || regenNotice?.type === "disabled") ? 0.55 : 1,
+                  }}
+                >
+                  {isRegenLoading ? "Regenerating…" : "🔁 Regenerate"}
+                </button>
+              )}
               {regenText && (
                 <button onClick={() => revertRegenerated(key)} style={{ background: "none", border: "none", color: "#888", fontSize: 11.5, fontWeight: 700, cursor: "pointer", textDecoration: "underline", padding: 0 }}>
                   Revert to original
