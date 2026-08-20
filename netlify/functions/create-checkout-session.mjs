@@ -69,12 +69,36 @@ async function requireSignedIn(app, idToken) {
 
 // ── Credit packs (Aug 2026 pricing decision) ──────────────────────────
 // The ONLY source of truth for price/credits. amountCents is what Stripe
-// actually charges; never derived from anything client-supplied.
+// actually charges (per unit — see quantity handling below); never
+// derived from anything client-supplied.
 const CREDIT_PACKS = {
   starter:  { name: "Starter Pack — 500 credits",   credits: 500,  amountCents: 2000  }, // $20.00, $0.040/credit
   standard: { name: "Standard Pack — 2,000 credits", credits: 2000, amountCents: 7000  }, // $70.00, $0.035/credit
   value:    { name: "Value Pack — 5,000 credits",    credits: 5000, amountCents: 15000 }, // $150.00, $0.030/credit
+  // Add-on top-up (Aug 2026 decision) — deliberately separate from the
+  // three packs above, which are the one-time INITIAL-purchase options
+  // shown on the requiresPurchase gate. This is for topping up an
+  // already-unlocked account later. "5,000-credit batches only, no
+  // stepped plan" per the decision — one flat per-unit price regardless
+  // of how many batches are bought in a single checkout; quantity multiplies
+  // linearly, never discounted. Same $/credit as "value" by coincidence of
+  // the pricing decision, not because they're the same pack — kept as a
+  // separate entry since they serve different UI surfaces and quantity>1
+  // only makes sense for this one.
+  addon:    { name: "Add-On Credits — 5,000/batch",  credits: 5000, amountCents: 15000 }, // $150.00/batch, $0.030/credit
 };
+
+// Only the "addon" pack supports quantity>1 in one checkout — the three
+// initial-purchase packs above are each a single, named, one-time choice
+// (quantity always 1, unchanged from original design).
+const QUANTITY_ALLOWED_PACKS = new Set(["addon"]);
+const MAX_ADDON_QUANTITY = 20; // 100,000 credits/purchase ceiling — sanity bound, not a real expected case
+
+// Where the client gets sent back after Checkout. Whitelisted server-side
+// rather than trusting an arbitrary client-supplied path — this becomes
+// part of a redirect URL, so an open redirect isn't an acceptable risk
+// even though every caller today is a legitimate page in this app.
+const ALLOWED_RETURN_PATHS = new Set(["/", "/profile", "/admin"]);
 
 export default async function (req) {
   if (req.method === "OPTIONS") {
@@ -110,6 +134,21 @@ export default async function (req) {
     }
     const pack = CREDIT_PACKS[packId];
 
+    // Quantity — only meaningful for "addon" (see QUANTITY_ALLOWED_PACKS
+    // above). Any client-supplied quantity on the three fixed initial
+    // packs is ignored outright, not just defaulted — those stay exactly
+    // the single-purchase flow they always were.
+    let quantity = 1;
+    if (QUANTITY_ALLOWED_PACKS.has(packId)) {
+      const requested = Number.parseInt(body.quantity, 10);
+      if (!Number.isInteger(requested) || requested < 1 || requested > MAX_ADDON_QUANTITY) {
+        return new Response(JSON.stringify({ error: `Quantity must be a whole number between 1 and ${MAX_ADDON_QUANTITY}.` }), { status: 400, headers: corsHeaders(req) });
+      }
+      quantity = requested;
+    }
+
+    const returnPath = ALLOWED_RETURN_PATHS.has(body.returnPath) ? body.returnPath : "/";
+
     let decoded;
     try {
       decoded = await requireSignedIn(app, idToken);
@@ -141,6 +180,25 @@ export default async function (req) {
       return new Response(JSON.stringify({ error: "Your account isn't fully set up yet. Contact an Administrator." }), { status: 400, headers: corsHeaders(req) });
     }
 
+    // Authorization for the "addon" top-up specifically (Aug 2026
+    // decision) — restricted to an org-of-one buying their own credits, or
+    // an org admin buying for their own org. The three initial-purchase
+    // packs stay open to "any signed-in user" exactly as before (both of
+    // THEIR callers are already ordinary individuals buying their own
+    // access — see file header). Without this check, a plain, non-admin
+    // member of a shared org could call this endpoint directly (not
+    // through any UI button that exists) and spend real money against
+    // their org's shared Stripe Customer with no authorization at all —
+    // this is a real purchase, not a read, so it's checked server-side
+    // rather than left to "no button for it exists in the UI."
+    if (packId === "addon") {
+      const isOrgOfOne = orgId === uid;
+      const isOrgAdmin = userData.orgAdmin === true;
+      if (!isOrgOfOne && !isOrgAdmin) {
+        return new Response(JSON.stringify({ error: "Only an org admin or an individual account can purchase add-on credits." }), { status: 403, headers: corsHeaders(req) });
+      }
+    }
+
     const orgRef = db.doc(`orgs/${orgId}`);
     const orgSnap = await orgRef.get();
     const orgData = orgSnap.exists ? orgSnap.data() : null;
@@ -167,19 +225,20 @@ export default async function (req) {
       line_items: [{
         price_data: {
           currency: "usd",
-          product_data: { name: pack.name },
+          product_data: { name: quantity > 1 ? `${pack.name} × ${quantity}` : pack.name },
           unit_amount: pack.amountCents,
         },
-        quantity: 1,
+        quantity,
       }],
       // Read back verbatim by stripe-webhook.mjs when the purchase
       // completes — this is how the webhook knows who to credit and how
       // much, without trusting anything the client says at that point
       // (the client isn't even part of that later request; Stripe calls
-      // the webhook directly).
-      metadata: { uid, orgId, packId, credits: String(pack.credits) },
-      success_url: `${siteUrl}/?purchase=success`,
-      cancel_url: `${siteUrl}/?purchase=cancelled`,
+      // the webhook directly). quantity included (Aug 2026) so the
+      // webhook can grant credits × quantity, not just credits.
+      metadata: { uid, orgId, packId, credits: String(pack.credits), quantity: String(quantity) },
+      success_url: `${siteUrl}${returnPath}?purchase=success`,
+      cancel_url: `${siteUrl}${returnPath}?purchase=cancelled`,
     });
 
     return new Response(JSON.stringify({ url: session.url }), { status: 200, headers: corsHeaders(req) });
