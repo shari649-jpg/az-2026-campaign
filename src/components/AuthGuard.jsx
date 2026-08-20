@@ -165,6 +165,11 @@ function PurchaseRequiredScreen() {
             </div>
 
             <div style={{ paddingTop: 16, borderTop: "1px solid #eee" }}>
+              <p style={{ fontSize: 12.5, color: "#999", marginBottom: 12 }}>
+                Something wrong with your account — like a mistyped email? Contact{" "}
+                <a href="mailto:info@arizonacoalition.net" style={{ color: "#999", fontWeight: 700 }}>info@arizonacoalition.net</a>{" "}
+                and an Administrator can fix it.
+              </p>
               <button
                 onClick={() => auth.signOut()}
                 style={{ background: "none", border: "none", color: "#aaa", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}
