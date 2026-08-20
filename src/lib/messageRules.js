@@ -98,7 +98,7 @@ export function lengthTargetHint(min, max) {
 // that catches "[he/she/they/you] is not X, [same subject] is Y" the same
 // way it already caught the demonstrative forms.
 export const AI_TELL_PHRASING_BAN = `AVOID AI-SOUNDING PHRASING: Never end a post by summarizing or labeling what you just described in a short standalone "verdict" sentence — this is the single most common AI tell in political social copy, and it shows up in more than one form:
-- Contrastive reframing, where the SAME subject is negated then re-asserted: "This is not X, it is Y," "That's not X, that's Y," "It isn't X, it is Y," "He's not X, he's Y," "They're not X, they're Y" — with ANY subject (a demonstrative like this/that/it, OR a personal pronoun like he/she/they/you), joined by a comma OR split into two short sentences ("He's not governing. He's day-trading the entire country."). Changing the subject word or the punctuation is not a workaround — it's the identical construction.
+- Contrastive reframing, where the SAME subject is negated then re-asserted: "This is not X, it is Y," "This isn't X, this is Y," "That's not X, that's Y," "That isn't X, that's Y," "It isn't X, it is Y," "He's not X, he's Y," "They're not X, they're Y" — with ANY subject (a demonstrative like this/that/it, OR a personal pronoun like he/she/they/you), in ANY negated form (contracted "isn't/aren't" or spelled-out "is not/are not"), joined by a comma OR split into two short sentences ("He's not governing. He's day-trading the entire country."). Changing the subject word, the contraction, or the punctuation is not a workaround — it's the identical construction.
 - A closing sentence that just names the offense in the abstract, with no new information: "This is corruption." "That's a scandal." "That's looting in broad daylight." "It's right there in the paperwork."
 Real anger doesn't explain its own punchline. End on the concrete detail itself, a specific consequence, a real question, or what should happen next — not a sentence that restates the point as a label. Test: if a post's last sentence could be swapped into a completely different post about a different scandal and still make sense, it's a label, not an ending. Cut it, or replace it with something specific to this post's own facts.`;
 
@@ -116,11 +116,38 @@ Real anger doesn't explain its own punchline. End on the concrete detail itself,
 // phrasing at all. All of these are heuristics, not proof — they catch
 // the patterns seen in real testing, not every possible paraphrase, and
 // the next dodge may still need another round like this one.
+//
+// FOURTH round (Aug 2026, Batch 2 messaging-system pass): real output
+// found two more dodges neither existing pattern caught, PLUS a
+// pre-existing bug surfaced while fixing them. Pattern 1 (this is
+// not...) already incidentally tried to match "this isn't" via its
+// n['’]?t? suffix, but that suffix only ever matched the bare letters
+// "n"+"'t" glued straight onto "is" — it had no "o", so it could never
+// actually match the fully spelled-out "is not" (the exact wording the
+// ban text above uses as its own lead example: "This is not X, it is
+// Y"). That's been broken since the original extraction, not something
+// this round introduced — worth fixing here since the same bug pattern
+// is what's being touched anyway. All five patterns below now use a
+// proper (?:not\b|n['’]?t\b) alternation so both "is not" and "isn't"
+// (and "are not"/"aren't" for the pronoun pattern) are actually caught,
+// not just the contraction. On top of that fix: pattern 1's continuation
+// only ever checked for "it's/it is," so "This isn't a mistake. This is
+// a strategy." (same subject, "this" on both sides) slipped through
+// untouched — now also accepts a same-subject "this is" follow-up. And
+// "that isn't" had NO coverage at all before this round — the old
+// pattern 2 only ever matched the contracted "that's not" form, never
+// "that is not"/"that isn't" — a new pattern below covers that the same
+// way the "it isn't" pattern already worked. Known remaining gap, not
+// addressed this round: "it's not X, it is Y" (apostrophe-s contraction
+// of "it is" used as the negated subject) isn't caught either, since
+// textually "it's" never contains the literal letters "is" — flagging
+// for the next round rather than expanding scope here.
 const BANNED_STRUCTURE_PATTERNS = [
-  { label: `"this is not X, it is Y" structure`, regex: /\bthis\s+is\s*n['’]?t?\b[^.?!]{0,80}[,.]\s*(it['’]?s|it\s+is)\b/i },
+  { label: `"this is not X, it is / this is Y" structure`, regex: /\bthis\s+is\s*(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.]\s*(it['’]?s|it\s+is|this\s+is)\b/i },
   { label: `"that's not X, that's Y" structure`, regex: /\bthat['’]?s\s+not\b[^.?!]{0,80}[,.]\s*that['’]?s\b/i },
-  { label: `"it isn't X, it is Y" structure`,     regex: /\bit\s+is\s*n['’]?t\b[^.?!]{0,80}[,.]\s*it(['’]?s|\s+is)\b/i },
-  { label: `"[he/she/they/you] is not X, [same subject] is Y" structure`, regex: /\b(he|she|they|you)\b(?:['’]s)?\s*(?:is\s+|are\s+)?(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.]\s*\1\b(?:['’]s)?\s+/i },
+  { label: `"that isn't X, that's / that is Y" structure`, regex: /\bthat\s+is\s*(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.]\s*that(['’]?s|\s+is)\b/i },
+  { label: `"it isn't X, it is Y" structure`,     regex: /\bit\s+is\s*(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.]\s*it(['’]?s|\s+is)\b/i },
+  { label: `"[he/she/they/you] is not X, [same subject] is Y" structure`, regex: /\b(he|she|they|you)\b(?:['’]s|\s+is|\s+are)?\s*(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.]\s*\1\b(?:['’]s)?\s+/i },
 ];
 
 // Flags a post whose LAST sentence is a short demonstrative "verdict" —
