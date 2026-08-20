@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { doc, updateDoc } from "firebase/firestore";
+import { useState, useEffect } from "react";
+import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { EmailAuthProvider, linkWithCredential } from "firebase/auth";
 import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
@@ -23,6 +23,35 @@ const ROLE_COLORS = {
 
 export default function ProfilePage() {
   const { user, profile, role, refreshProfile } = useAuth();
+
+  // ── Credits visibility, org-of-one only (Aug 2026) ──────────────────────
+  // "Org of one" is signaled the same way manage-user.mjs and
+  // provision-account.mjs already treat it: orgId === the account's own
+  // uid. Deliberately NOT shown for a plain member of a real shared org —
+  // that visibility belongs to that org's admin (OrgAdminPanel), not to
+  // every individual member, per the scoping decision this was built
+  // under. firestore.rules' isSameOrg() already permits this read (same
+  // rule OrgAdminPanel's org-credits fetch relies on) — no rules change
+  // needed. Read-only, same as the org-admin side: no purchase/top-up
+  // control here, since self-serve top-up isn't built yet (separate,
+  // already-tracked gap).
+  const isOrgOfOne = !!user && !!profile && profile.orgId === user.uid;
+  const [myCredits, setMyCredits] = useState(null);
+
+  useEffect(() => {
+    if (!isOrgOfOne) { setMyCredits(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "orgs", user.uid));
+        if (cancelled) return;
+        setMyCredits(snap.exists() ? (snap.data().credits || { generationBalance: 0, transcriptionBalance: 0 }) : null);
+      } catch (err) {
+        console.error("[ProfilePage] credits fetch failed:", err.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOrgOfOne, user?.uid]);
 
   // ── Editable profile fields (name / org / social handles) ──
   const seedSocials = (() => {
@@ -132,6 +161,22 @@ export default function ProfilePage() {
       </div>
 
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "28px 24px 60px" }}>
+
+        {isOrgOfOne && myCredits && (
+          <section style={cardStyle}>
+            <h2 style={sectionTitleStyle}>Your Credits</h2>
+            <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ ...labelStyle, marginBottom: 4 }}>Generation Credits</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: TEAL }}>{myCredits.generationBalance ?? 0}</div>
+              </div>
+              <div>
+                <div style={{ ...labelStyle, marginBottom: 4 }}>Transcription Credits</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: TEAL }}>{myCredits.transcriptionBalance ?? 0}</div>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* ── Account info (read-only) ── */}
         <section style={cardStyle}>
