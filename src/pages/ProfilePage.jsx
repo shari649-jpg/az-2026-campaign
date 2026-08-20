@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { EmailAuthProvider, linkWithCredential } from "firebase/auth";
 import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
+import AddonCreditsPurchase from "../components/AddonCreditsPurchase";
 
 const TEAL       = "var(--teal)";
 const GOLD       = "var(--gold)";
@@ -37,20 +38,30 @@ export default function ProfilePage() {
   // already-tracked gap).
   const isOrgOfOne = !!user && !!profile && profile.orgId === user.uid;
   const [myCredits, setMyCredits] = useState(null);
+  const myCreditsRef = useRef(null);
+  useEffect(() => { myCreditsRef.current = myCredits; }, [myCredits]);
+
+  // Shared by the mount-time fetch below AND AddonCreditsPurchase's
+  // post-purchase polling — returns true once it detects the balance
+  // actually changed, so polling can stop as soon as the webhook lands
+  // instead of always running the full ~30s.
+  async function refetchMyCredits() {
+    try {
+      const snap = await getDoc(doc(db, "orgs", user.uid));
+      const fresh = snap.exists() ? (snap.data().credits || { generationBalance: 0, transcriptionBalance: 0 }) : null;
+      const changed = !!fresh && !!myCreditsRef.current && fresh.generationBalance !== myCreditsRef.current.generationBalance;
+      setMyCredits(fresh);
+      return changed;
+    } catch (err) {
+      console.error("[ProfilePage] credits fetch failed:", err.message);
+      return false;
+    }
+  }
 
   useEffect(() => {
     if (!isOrgOfOne) { setMyCredits(null); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const snap = await getDoc(doc(db, "orgs", user.uid));
-        if (cancelled) return;
-        setMyCredits(snap.exists() ? (snap.data().credits || { generationBalance: 0, transcriptionBalance: 0 }) : null);
-      } catch (err) {
-        console.error("[ProfilePage] credits fetch failed:", err.message);
-      }
-    })();
-    return () => { cancelled = true; };
+    refetchMyCredits();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOrgOfOne, user?.uid]);
 
   // ── Editable profile fields (name / org / social handles) ──
@@ -165,7 +176,7 @@ export default function ProfilePage() {
         {isOrgOfOne && myCredits && (
           <section style={cardStyle}>
             <h2 style={sectionTitleStyle}>Your Credits</h2>
-            <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginBottom: 20 }}>
               <div>
                 <div style={{ ...labelStyle, marginBottom: 4 }}>Generation Credits</div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: TEAL }}>{myCredits.generationBalance ?? 0}</div>
@@ -174,6 +185,9 @@ export default function ProfilePage() {
                 <div style={{ ...labelStyle, marginBottom: 4 }}>Transcription Credits</div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: TEAL }}>{myCredits.transcriptionBalance ?? 0}</div>
               </div>
+            </div>
+            <div style={{ borderTop: "1px solid #e8e8e4", paddingTop: 16 }}>
+              <AddonCreditsPurchase returnPath="/profile" onRefreshBalance={refetchMyCredits} />
             </div>
           </section>
         )}
