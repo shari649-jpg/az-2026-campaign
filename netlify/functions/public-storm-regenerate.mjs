@@ -262,6 +262,19 @@ export default async function (req) {
       return new Response(JSON.stringify(generic({ error: "unavailable" })), { status: 200, headers: corsHeaders(req) });
     }
 
+    // Lock check (Aug 2026 fix) — previously missing entirely, meaning a
+    // platform staff explicitly locked (StormPostEditor.jsx's per-platform
+    // lock, "🔒 Locked by staff") could still show a public visitor an
+    // AI-regenerated alternate wording on their own screen. Never written
+    // back to the post — so this was never a change to what anyone else
+    // sees — but it still contradicted the point of locking a platform:
+    // staff picked that exact wording and a visitor got a different one
+    // anyway. Checked BEFORE the rate-limit increment and the Anthropic
+    // call below, not after — a locked platform should never spend either.
+    if (post.lockedFields?.[platformKey]) {
+      return new Response(JSON.stringify(generic({ error: "locked" })), { status: 200, headers: corsHeaders(req) });
+    }
+
     const ip = getClientIp(req);
     const limitResult = await checkAndIncrementLimits(db, ip, stormDoc.id);
     if (limitResult.blocked) {
