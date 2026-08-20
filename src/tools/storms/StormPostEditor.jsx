@@ -266,6 +266,25 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     setLocked(p => ({ ...p, [platformKey]: !p[platformKey] }));
   }
 
+  // Lock All / Unlock All (Aug 2026) — added after real staff use showed
+  // toggling six tiny per-platform links one at a time, especially to
+  // relock everything after a bulk check, was a genuine friction point.
+  // Only touches platforms that actually have text — an empty platform
+  // has no Lock/Unlock link rendered at all in the per-platform row
+  // either, so this matches that same scoping rather than locking
+  // something with nothing in it.
+  const lockableKeys = PLATFORMS.map(p => p.key).filter(k => texts[k]?.trim());
+  const allLocked = lockableKeys.length > 0 && lockableKeys.every(k => locked[k]);
+  function toggleLockAll() {
+    if (!canLock || lockableKeys.length === 0) return;
+    const next = !allLocked;
+    setLocked(prev => {
+      const updated = { ...prev };
+      lockableKeys.forEach(k => { updated[k] = next; });
+      return updated;
+    });
+  }
+
   async function handleSave() {
     setError("");
     const totalMediaCount = existingMedia.length + newFiles.length;
@@ -385,6 +404,22 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         </Field>
 
         <Field label="Platform Texts" hint="Fill in whichever platforms apply — you don't need all six. Generate drafts from the storm's title/summary, or write your own.">
+          {canLock && lockableKeys.length > 0 && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <button
+                type="button"
+                onClick={toggleLockAll}
+                title={allLocked ? "Unlock every platform with text" : "Lock every platform with text so members can't rephrase them"}
+                style={{
+                  background: "none", border: `1.5px solid ${allLocked ? TERRACOTTA : BORDER}`, borderRadius: 6,
+                  padding: "4px 10px", fontSize: 12, fontWeight: 700,
+                  color: allLocked ? TERRACOTTA : CHARCOAL, cursor: "pointer",
+                }}
+              >
+                {allLocked ? "🔓 Unlock All" : "🔒 Lock All"}
+              </button>
+            </div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {PLATFORMS.map(p => {
               const limit = CHAR_LIMITS[p.key];
