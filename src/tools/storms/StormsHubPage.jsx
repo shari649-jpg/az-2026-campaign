@@ -14,7 +14,7 @@
 // is the only place a plain Member can create or manage a storm, since
 // Members never see Manager View.
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import PostDisplayCard from "./PostDisplayCard";
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -76,13 +76,25 @@ function hasPendingStormPush() {
   }
 }
 
+// Single source for alarm-level color — was three near-identical inline
+// computations (AlarmBadge, UserStormCard's alarmColor, and now the rail
+// cards below) before this pass unified them. Safe as a flat map keyed
+// 1/2/3 exactly (not a >= comparison) since stormLibrary.js's own
+// createStorm/updateStorm validation clamps alarmLevel to [1,2,3] — never
+// anything else reaches these components.
+const ALARM_RAMP = {
+  3: { color: TERRACOTTA, bg: "rgba(193,103,58,0.12)" },
+  2: { color: "#c99a1f",  bg: "#fff8e0" },
+  1: { color: TEAL,       bg: "rgba(62,207,178,0.15)" },
+};
+
 function AlarmBadge({ level }) {
-  const color = level >= 3 ? TERRACOTTA : level === 2 ? "#c99a1f" : TEAL;
+  const ramp = ALARM_RAMP[level] || ALARM_RAMP[1];
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 800,
-      color, background: level >= 3 ? "rgba(193,103,58,0.12)" : level === 2 ? "#fff8e0" : "rgba(62,207,178,0.15)",
-      border: `1.5px solid ${color}`, borderRadius: 999, padding: "3px 10px",
+      color: ramp.color, background: ramp.bg,
+      border: `1.5px solid ${ramp.color}`, borderRadius: 999, padding: "3px 10px",
     }}>
       {"🔔".repeat(level)} {alarmLabel(level)}
     </span>
@@ -166,6 +178,184 @@ const menuItemStyle = {
   display: "block", width: "100%", textAlign: "left", background: "none", border: "none",
   padding: "10px 16px", fontSize: 13.5, fontWeight: 600, color: CHARCOAL, cursor: "pointer",
 };
+
+// ══════════════════════════════════════════════════════════════════════
+// Storm browse rails (Aug 2026 redesign) — replaces the old flat vertical
+// list (title + summary, click to expand posts inline) with horizontal
+// rails grouped by alarm level, each card leading with the storm's own
+// visual instead of a wall of text. Alarm level is the primary axis on
+// purpose — this is a rapid-response tool, and urgency is the one thing
+// someone opening the Hub actually needs to triage on first. Subject
+// type is a FILTER on top of the rails (see UserView), not a second
+// grouping axis — at typical storm volume, alarm × type would produce
+// mostly-empty rows instead of useful structure.
+// ══════════════════════════════════════════════════════════════════════
+
+const SUBJECT_TYPE_ICON = {
+  "Candidate": "🧑‍💼",
+  "Race/District": "🗳️",
+  "Issue/Topic": "📢",
+  "Coalition-wide": "🤝",
+};
+
+// Leads with storm.publicCardImage (set via StormPostsPanel.jsx's Public
+// Page Settings) when staff have set one; otherwise a flat tinted panel
+// keyed to the storm's subject type, tinted to match its alarm level so
+// even an image-less card still visually signals urgency at a glance.
+function StormThumb({ storm }) {
+  const ramp = ALARM_RAMP[storm.alarmLevel] || ALARM_RAMP[1];
+  const imageUrl = storm.publicCardImage?.url;
+  return (
+    <div style={{ height: 90, borderRadius: "10px 10px 0 0", overflow: "hidden", background: ramp.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      {imageUrl ? (
+        <img src={imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      ) : (
+        <span style={{ fontSize: 30 }}>{SUBJECT_TYPE_ICON[storm.subjectType] || "🌩️"}</span>
+      )}
+    </div>
+  );
+}
+
+// A pure browse card — tap opens the full detail modal, no inline
+// expand (inline expand has nowhere sane to grow into inside a
+// horizontal rail). `actions`, when passed (My Storms only), renders a
+// footer row below the card with its own click-stopping wrapper so
+// tapping Status/Manage doesn't also open the detail modal.
+function StormBrowseCard({ storm, onOpen, actions }) {
+  const ramp = ALARM_RAMP[storm.alarmLevel] || ALARM_RAMP[1];
+  return (
+    <div style={{ flex: "0 0 168px", borderRadius: 10, border: `1.5px solid ${BORDER}`, background: "#fff" }}>
+      <button onClick={() => onOpen(storm)} style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+        <StormThumb storm={storm} />
+        <div style={{ padding: "10px 12px 12px" }}>
+          <div style={{
+            fontSize: 15, fontWeight: 700, color: TEAL, fontFamily: "var(--font-display)",
+            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+            marginBottom: 6, lineHeight: 1.25, minHeight: 38,
+          }}>
+            {storm.title}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: ramp.color, background: ramp.bg, border: `1.5px solid ${ramp.color}`, borderRadius: 999, padding: "2px 7px" }}>
+              {"🔔".repeat(storm.alarmLevel || 1)}
+            </span>
+            <span style={{ fontSize: 11.5, color: "#888" }}>{storm.postCount ?? 0} post{storm.postCount === 1 ? "" : "s"}</span>
+          </div>
+          {storm.expiresAt && fmtDateShort(storm.expiresAt) && (
+            <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>Expires {fmtDateShort(storm.expiresAt)}</div>
+          )}
+        </div>
+      </button>
+      {actions && (
+        <div onClick={e => e.stopPropagation()} style={{ padding: "0 12px 12px", display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {actions}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Arrow-navigated rail, scrollbar hidden. A raw visible scrollbar was
+// flagged as specifically awkward on mobile — this keeps native
+// touch-swipe scrolling intact underneath, but browsing is driven by the
+// two arrow buttons, each fading out once there's nothing further in
+// that direction rather than staying clickable past the real content.
+function StormRail({ storms, onOpen, actionsFor }) {
+  const railRef = useRef(null);
+  const [atStart, setAtStart] = useState(true);
+  const [atEnd, setAtEnd] = useState(true);
+
+  function updateEdges() {
+    const el = railRef.current;
+    if (!el) return;
+    setAtStart(el.scrollLeft <= 4);
+    setAtEnd(el.scrollLeft >= el.scrollWidth - el.clientWidth - 4);
+  }
+  useEffect(() => { updateEdges(); }, [storms.length]);
+
+  function scrollByCard(dir) {
+    railRef.current?.scrollBy({ left: dir * 184, behavior: "smooth" });
+  }
+
+  if (storms.length === 0) return null;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <style>{`.storm-rail-scroll::-webkit-scrollbar { display: none; }`}</style>
+      <button onClick={() => scrollByCard(-1)} aria-label="Scroll left" style={{ ...railArrowStyle, visibility: atStart ? "hidden" : "visible" }}>‹</button>
+      <div ref={railRef} onScroll={updateEdges} className="storm-rail-scroll" style={{ display: "flex", gap: 12, overflowX: "auto", scrollbarWidth: "none", flex: 1, padding: "2px 0" }}>
+        {storms.map(storm => (
+          <StormBrowseCard key={storm.id} storm={storm} onOpen={onOpen} actions={actionsFor?.(storm)} />
+        ))}
+      </div>
+      <button onClick={() => scrollByCard(1)} aria-label="Scroll right" style={{ ...railArrowStyle, visibility: atEnd ? "hidden" : "visible" }}>›</button>
+    </div>
+  );
+}
+const railArrowStyle = {
+  flex: "0 0 auto", width: 30, height: 30, borderRadius: "50%",
+  border: `1.5px solid ${BORDER}`, background: "#fff", cursor: "pointer",
+  fontSize: 17, color: CHARCOAL, display: "flex", alignItems: "center", justifyContent: "center",
+};
+
+// One alarm level's rail, complete with its own header — auto-collapses
+// (renders nothing) when no storm in the given set is at this level, so
+// e.g. a quiet week with no 3-alarm storms doesn't leave an empty
+// "Urgent" section sitting there.
+function AlarmRailGroup({ level, storms, onOpen, actionsFor }) {
+  const filtered = storms.filter(s => (s.alarmLevel || 1) === level);
+  if (filtered.length === 0) return null;
+  const ramp = ALARM_RAMP[level];
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: ramp.color, marginBottom: 10 }}>
+        {"🔔".repeat(level)} {alarmLabel(level)}
+      </div>
+      <StormRail storms={filtered} onOpen={onOpen} actionsFor={actionsFor} />
+    </div>
+  );
+}
+
+// Full storm detail — tapping a card opens this instead of expanding
+// inline (Aug 2026 decision). Same content UserStormCard used to show
+// inline (description + PostDisplayCard list), just as an overlay now.
+function StormDetailModal({ storm, onClose }) {
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadPosts(storm.id).then(p => { if (!cancelled) { setPosts(p); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [storm.id]);
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "24px 16px", overflowY: "auto" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, maxWidth: 560, width: "100%", padding: "24px 24px 28px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
+          <h2 style={{ margin: 0, fontSize: 22, color: TEAL, fontFamily: "var(--font-display)" }}>{storm.title}</h2>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", fontSize: 24, color: "#999", cursor: "pointer", lineHeight: 1, flexShrink: 0, padding: 0 }}>×</button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          <AlarmBadge level={storm.alarmLevel || 1} />
+          <PostCountBadge storm={storm} />
+          {storm.expiresAt && fmtDateShort(storm.expiresAt) && <span style={{ fontSize: 12, color: "#999" }}>Expires {fmtDateShort(storm.expiresAt)}</span>}
+        </div>
+        {storm.summary && <p style={{ fontSize: 14.5, color: "#444", margin: "0 0 8px" }}>{storm.summary}</p>}
+        {storm.description && <p style={{ fontSize: 14, color: "#666", lineHeight: 1.5, margin: "0 0 18px" }}>{storm.description}</p>}
+        {loading ? (
+          <p style={{ color: "#888", fontSize: 14 }}>Loading posts…</p>
+        ) : posts.length === 0 ? (
+          <p style={{ color: "#999", fontSize: 14 }}>No posts in this storm yet.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {posts.map(post => <PostDisplayCard key={post.id} post={post} hashtag={storm.hashtag} storm={storm} />)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── Shared create/edit form, used by both Manager View and a Member's
 // "My Storms" section in User View. ──
@@ -374,7 +564,14 @@ function ManagerView({ role, uid }) {
     catch (e) { notify("Delete failed — please try again.", "error"); }
   }
 
-  const visibleStorms = storms.filter(s => filter === "all" ? true : s.status === filter);
+  // Archived hidden from "All" by default (Aug 2026) — staff explicitly
+  // asked not to have archived storms mixed into the default view. "All"
+  // now means "everything except Archived"; clicking the "Archived" pill
+  // itself still shows them — same pill row, no new control needed, just
+  // changed what the default pill means.
+  const visibleStorms = storms.filter(s =>
+    filter === "all" ? s.status !== STORM_STATUS.ARCHIVED : s.status === filter
+  );
 
   return (
     <>
@@ -483,11 +680,13 @@ function ManagerView({ role, uid }) {
 function UserView({ role, uid }) {
   const [allStorms, setAllStorms] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [openStormId, setOpenStormId] = useState(null);
+  const [detailStorm, setDetailStorm] = useState(null);
+  const [typeFilter, setTypeFilter] = useState("all");
   const [formStorm, setFormStorm] = useState(undefined);
   const [postsStorm, setPostsStorm] = useState(null);
   const [postsJustCreated, setPostsJustCreated] = useState(false);
   const [notif, setNotif] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -520,7 +719,17 @@ function UserView({ role, uid }) {
   // without this, a storm sitting past its expiresAt would still show as
   // Active to members for up to an hour until the next cron run catches it.
   const activeStorms = allStorms.filter(s => s.status === STORM_STATUS.ACTIVE && !isStormExpired(s.expiresAt));
-  const myStorms = uid ? allStorms.filter(s => s.createdBy?.uid === uid && s.status !== STORM_STATUS.ACTIVE) : [];
+  const myStormsAll = uid ? allStorms.filter(s => s.createdBy?.uid === uid && s.status !== STORM_STATUS.ACTIVE) : [];
+  const myArchivedCount = myStormsAll.filter(s => s.status === STORM_STATUS.ARCHIVED).length;
+  const myStorms = showArchived ? myStormsAll : myStormsAll.filter(s => s.status !== STORM_STATUS.ARCHIVED);
+
+  // Subject-type filter (Aug 2026 redesign) — sits above the alarm rails
+  // rather than being a second grouping axis alongside alarm level (see
+  // the rail components' own header comment for why). Only offers types
+  // actually present among active storms, so it's never a row of options
+  // that would just show "nothing here."
+  const presentTypes = [...new Set(activeStorms.map(s => s.subjectType).filter(Boolean))];
+  const filteredActiveStorms = typeFilter === "all" ? activeStorms : activeStorms.filter(s => s.subjectType === typeFilter);
 
   if (loading) return <p style={{ color: "#888", textAlign: "center", padding: "40px 0" }}>Loading storms…</p>;
 
@@ -540,7 +749,17 @@ function UserView({ role, uid }) {
 
       {/* My Storms — the only place a Member can create/manage their own drafts */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, color: TEAL, margin: 0 }}>My Storms</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, color: TEAL, margin: 0 }}>My Storms</h2>
+          {myArchivedCount > 0 && (
+            <button
+              onClick={() => setShowArchived(v => !v)}
+              style={{ background: "none", border: "none", color: "#888", fontSize: 12.5, fontWeight: 700, cursor: "pointer", textDecoration: "underline", padding: 0 }}
+            >
+              {showArchived ? "Hide archived" : `Show archived (${myArchivedCount})`}
+            </button>
+          )}
+        </div>
         <button onClick={() => setFormStorm(null)} style={{
           background: TEAL, color: "#fff", border: "none", borderRadius: 9, padding: "9px 16px",
           fontWeight: 800, fontSize: 13.5, cursor: "pointer",
@@ -550,35 +769,52 @@ function UserView({ role, uid }) {
       </div>
 
       {myStorms.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28 }}>
-          {myStorms.map(storm => (
-            <div key={storm.id} style={{ background: SURFACE_ALT, border: `1.5px solid ${BORDER}`, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 700, color: CHARCOAL, fontSize: 15 }}>{storm.title}</div>
-                {storm.summary && <div style={{ fontSize: 13, color: "#666" }}>{storm.summary}</div>}
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-                <PostCountBadge storm={storm} />
-                <StatusControl storm={storm} role={role} onChange={(status) => handleStatusChange(storm, status)} />
-                <ManageStormMenu onCard={() => setFormStorm(storm)} onPosts={() => { setPostsJustCreated(false); setPostsStorm(storm); }} />
-              </div>
-            </div>
+        <div style={{ marginBottom: 28 }}>
+          {[3, 2, 1].map(level => (
+            <AlarmRailGroup
+              key={level}
+              level={level}
+              storms={myStorms}
+              onOpen={setDetailStorm}
+              actionsFor={storm => (
+                <>
+                  <StatusControl storm={storm} role={role} onChange={(status) => handleStatusChange(storm, status)} />
+                  <ManageStormMenu onCard={() => setFormStorm(storm)} onPosts={() => { setPostsJustCreated(false); setPostsStorm(storm); }} />
+                </>
+              )}
+            />
           ))}
         </div>
       )}
 
       <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, color: TEAL, marginBottom: 12 }}>Active Storms</h2>
 
+      {presentTypes.length > 1 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
+          {["all", ...presentTypes].map(t => (
+            <button key={t} onClick={() => setTypeFilter(t)} style={{
+              background: typeFilter === t ? TEAL : "#fff", color: typeFilter === t ? "#fff" : CHARCOAL,
+              border: `1.5px solid ${typeFilter === t ? TEAL : BORDER}`, borderRadius: 999,
+              padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+            }}>
+              {t === "all" ? "All types" : t}
+            </button>
+          ))}
+        </div>
+      )}
+
       {activeStorms.length === 0 ? (
         <div style={{ textAlign: "center", padding: "48px 0", color: "#999" }}>
           <p style={{ fontSize: 16 }}>No active storms right now — check back soon.</p>
         </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {activeStorms.map(storm => (
-            <UserStormCard key={storm.id} storm={storm} isOpen={openStormId === storm.id} onToggle={() => setOpenStormId(openStormId === storm.id ? null : storm.id)} />
-          ))}
+      ) : filteredActiveStorms.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "48px 0", color: "#999" }}>
+          <p style={{ fontSize: 16 }}>No active storms in "{typeFilter}" right now.</p>
         </div>
+      ) : (
+        [3, 2, 1].map(level => (
+          <AlarmRailGroup key={level} level={level} storms={filteredActiveStorms} onOpen={setDetailStorm} />
+        ))
       )}
 
       {formStorm !== undefined && (
@@ -599,54 +835,8 @@ function UserView({ role, uid }) {
         />
       )}
       {postsStorm && <StormPostsPanel storm={postsStorm} justCreated={postsJustCreated} onClose={() => { setPostsStorm(null); setPostsJustCreated(false); }} />}
+      {detailStorm && <StormDetailModal storm={detailStorm} onClose={() => setDetailStorm(null)} />}
     </>
-  );
-}
-
-function UserStormCard({ storm, isOpen, onToggle }) {
-  const [posts, setPosts] = useState([]);
-  const [loadedOnce, setLoadedOnce] = useState(false);
-
-  useEffect(() => {
-    if (isOpen && !loadedOnce) {
-      loadPosts(storm.id).then(p => { setPosts(p); setLoadedOnce(true); });
-    }
-  }, [isOpen]);
-
-  const alarmColor = storm.alarmLevel >= 3 ? TERRACOTTA : storm.alarmLevel === 2 ? "#c99a1f" : TEAL;
-
-  return (
-    <div style={{ background: "#fff", border: `1.5px solid ${BORDER}`, borderRadius: 12, overflow: "hidden" }}>
-      <button onClick={onToggle} style={{ width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: "18px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
-            <h3 style={{ margin: 0, fontSize: 19, color: TEAL, fontFamily: "var(--font-display)" }}>{storm.title}</h3>
-            <span style={{ fontSize: 12, fontWeight: 800, color: alarmColor, background: storm.alarmLevel >= 3 ? "rgba(193,103,58,0.12)" : storm.alarmLevel === 2 ? "#fff8e0" : "rgba(62,207,178,0.15)", border: `1.5px solid ${alarmColor}`, borderRadius: 999, padding: "2px 9px" }}>
-              {"🔔".repeat(storm.alarmLevel || 1)} {alarmLabel(storm.alarmLevel)}
-            </span>
-            <PostCountBadge storm={storm} />
-          </div>
-          {storm.summary && <p style={{ margin: 0, fontSize: 14, color: "#555" }}>{storm.summary}</p>}
-          {storm.expiresAt && fmtDateShort(storm.expiresAt) && <p style={{ margin: "4px 0 0", fontSize: 12, color: "#999" }}>Expires {fmtDateShort(storm.expiresAt)}</p>}
-        </div>
-        <span style={{ fontSize: 20, color: "#aaa", flexShrink: 0 }}>{isOpen ? "▲" : "▼"}</span>
-      </button>
-
-      {isOpen && (
-        <div style={{ borderTop: `1px solid ${BORDER}`, padding: "18px 22px", background: SURFACE_ALT }}>
-          {storm.description && <p style={{ fontSize: 14, color: "#444", marginTop: 0, marginBottom: 16, lineHeight: 1.5 }}>{storm.description}</p>}
-          {!loadedOnce ? (
-            <p style={{ color: "#888", fontSize: 14 }}>Loading posts…</p>
-          ) : posts.length === 0 ? (
-            <p style={{ color: "#999", fontSize: 14 }}>No posts in this storm yet.</p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {posts.map(post => <PostDisplayCard key={post.id} post={post} hashtag={storm.hashtag} storm={storm} />)}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 
