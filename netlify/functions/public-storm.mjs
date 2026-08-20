@@ -24,8 +24,14 @@
 //
 // Returns only what the public page actually needs: the storm's title and
 // summary (never description, hashtag, subject, alarm level, dates, or
-// staff names), its card image, and each post's title/mediaType/media/texts
-// (never lockedFields or createdBy).
+// staff names), its card image, and each post's title/mediaType/media/texts.
+// lockedFields (Aug 2026) is now included too — a per-platform boolean
+// only, revealing nothing beyond "staff locked this platform's wording,"
+// which the public Regenerate button now needs client-side to hide/disable
+// itself proactively instead of only discovering a lock via a failed
+// click (see public-storm-regenerate.mjs's own lock check, added the same
+// session). createdBy stays excluded — staff names are the kind of detail
+// this deliberately never leaked and there's no new need for it.
 
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
@@ -115,6 +121,7 @@ export default async function (req) {
         mediaType: p.mediaType,
         media: p.media || [],
         texts: p.texts || {},
+        lockedFields: p.lockedFields || {},
         // Generation params — SECURITY FIX (this session): this used to
         // send the full genParams object (mode + voice + audience + tone).
         // The old comment here assumed these were "only ever short labels
