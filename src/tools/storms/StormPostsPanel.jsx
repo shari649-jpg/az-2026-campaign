@@ -226,8 +226,13 @@ const thumbStyle = {
 // ── Public Page Settings (item 4, July 2026) ─────────────────────────────
 // Manager/Admin only (gated by the caller, not this component itself —
 // see canReview(role) at the call site above). Only ever rendered while
-// the storm is Active. Handles the public/private toggle, the shareable
-// link, and picking or uploading the card image shown on the public page.
+// the storm is Active. Handles the public/private toggle and the
+// shareable link. Also hosts the storm's card image picker (Aug 2026 —
+// moved out from behind isPublic; used to be reachable only once a storm
+// went public, which blocked staff from giving a storm a decent browse
+// card without making it public first) — that part applies to every
+// Active storm, public or not, and doubles as the public page's image
+// automatically if this storm does go public.
 function PublicPageSettings({ storm, posts, role }) {
   const [isPublic, setIsPublic]   = useState(!!storm.isPublic);
   const [publicToken, setToken]   = useState(storm.publicToken || null);
@@ -319,48 +324,57 @@ function PublicPageSettings({ storm, posts, role }) {
         </div>
       )}
 
-      {isPublic && (
-        <div style={{ marginTop: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: CHARCOAL, marginBottom: 8 }}>Public card image</div>
+      {/* Storm card image (Aug 2026) — moved out from behind isPublic. This
+          used to be reachable only once a storm was flipped Public, which
+          meant staff couldn't set a representative image for a storm's
+          internal browse card without making it public first, just to get
+          a decent-looking card. Same field either way (publicCardImage) —
+          it's just no longer public-only: it's the storm's card image
+          everywhere it's shown, and doubles as the public page's image
+          automatically if/when this storm does go public. */}
+      <div style={{ marginTop: 14, paddingTop: isPublic ? 0 : 14, borderTop: isPublic ? "none" : `1px solid ${BORDER}` }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: CHARCOAL, marginBottom: 2 }}>Storm card image</div>
+        <p style={{ fontSize: 11.5, color: "#999", margin: "0 0 8px" }}>
+          Shown on this storm's browse card in the Hub, and on its public page if you make it public.
+        </p>
 
-          {cardImage ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <img src={cardImage.url} alt="" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6, border: `2px solid ${TEAL}` }} />
-              <span style={{ fontSize: 12, color: "#888" }}>Current selection{cardImage.source === "upload" ? " (uploaded)" : " (from a post)"}</span>
-            </div>
-          ) : (
-            <p style={{ fontSize: 12, color: "#aaa", marginTop: 0, marginBottom: 10 }}>
-              No image selected yet — the public page will show a default Arizona Coalition graphic until you pick or upload one.
-            </p>
-          )}
-
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {availableGraphics.map(m => (
-              <button
-                key={m.path}
-                onClick={() => handlePickExisting(m)}
-                disabled={saving}
-                title="Use this graphic as the public card image"
-                style={{
-                  padding: 0, width: 64, height: 64, borderRadius: 8, flexShrink: 0,
-                  border: `2px solid ${cardImage?.path === m.path ? TEAL : "transparent"}`,
-                  cursor: saving ? "default" : "pointer", background: "none", overflow: "hidden",
-                }}
-              >
-                <img src={m.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-              </button>
-            ))}
-            <label style={{
-              width: 64, height: 64, borderRadius: 8, border: `2px dashed ${BORDER}`, flexShrink: 0,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: uploading ? "default" : "pointer", fontSize: 22, color: "#999",
-            }} title={`Upload a custom image (max ${MAX_GRAPHIC_MB}MB)`}>
-              {uploading ? "…" : "+"}
-              <input type="file" accept="image/*" onChange={handleUpload} disabled={uploading} style={{ display: "none" }} />
-            </label>
+        {cardImage ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <img src={cardImage.url} alt="" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6, border: `2px solid ${TEAL}` }} />
+            <span style={{ fontSize: 12, color: "#888" }}>Current selection{cardImage.source === "upload" ? " (uploaded)" : " (from a post)"}</span>
           </div>
+        ) : (
+          <p style={{ fontSize: 12, color: "#aaa", marginTop: 0, marginBottom: 10 }}>
+            No image selected yet — the browse card will show a default icon until you pick or upload one.
+          </p>
+        )}
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {availableGraphics.map(m => (
+            <button
+              key={m.path}
+              onClick={() => handlePickExisting(m)}
+              disabled={saving}
+              title="Use this graphic as the storm card image"
+              style={{
+                padding: 0, width: 64, height: 64, borderRadius: 8, flexShrink: 0,
+                border: `2px solid ${cardImage?.path === m.path ? TEAL : "transparent"}`,
+                cursor: saving ? "default" : "pointer", background: "none", overflow: "hidden",
+              }}
+            >
+              <img src={m.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            </button>
+          ))}
+          <label style={{
+            width: 64, height: 64, borderRadius: 8, border: `2px dashed ${BORDER}`, flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: uploading ? "default" : "pointer", fontSize: 22, color: "#999",
+          }} title={`Upload a custom image (max ${MAX_GRAPHIC_MB}MB)`}>
+            {uploading ? "…" : "+"}
+            <input type="file" accept="image/*" onChange={handleUpload} disabled={uploading} style={{ display: "none" }} />
+          </label>
         </div>
-      )}
+      </div>
     </div>
   );
 }
