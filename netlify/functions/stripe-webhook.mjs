@@ -66,6 +66,10 @@ const CREDIT_PACKS = {
   starter:  { credits: 500,  amountCents: 2000  },
   standard: { credits: 2000, amountCents: 7000  },
   value:    { credits: 5000, amountCents: 15000 },
+  // "addon" (Aug 2026) — see create-checkout-session.mjs's header on why
+  // this is separate from the three above, and why it's the only pack
+  // where session.metadata.quantity can be >1.
+  addon:    { credits: 5000, amountCents: 15000 },
 };
 
 export default async function (req) {
@@ -112,13 +116,21 @@ export default async function (req) {
       }
 
       const pack = CREDIT_PACKS[packId];
+      // Quantity (Aug 2026, "addon" pack only) — defaults to 1 for the
+      // three original packs, which never send this field at all.
+      // Same not-attacker-controlled reasoning as credits/packId above:
+      // this was set by create-checkout-session.mjs, not the payer.
+      const quantity = Math.max(1, Number.parseInt(session.metadata.quantity, 10) || 1);
+      const totalCredits = pack.credits * quantity;
+      const totalAmountCents = pack.amountCents * quantity;
+
       // Defense-in-depth cross-check — see file header. Warn, don't block.
-      const metadataCredits = Number(session.metadata.credits);
-      if (metadataCredits !== pack.credits) {
-        console.warn(`[stripe-webhook] metadata.credits (${metadataCredits}) doesn't match CREDIT_PACKS["${packId}"].credits (${pack.credits}) for session ${session.id} — using the authoritative table value.`);
+      const metadataCredits = Number(session.metadata.credits) * quantity;
+      if (metadataCredits !== totalCredits) {
+        console.warn(`[stripe-webhook] metadata.credits×quantity (${metadataCredits}) doesn't match CREDIT_PACKS["${packId}"].credits×quantity (${totalCredits}) for session ${session.id} — using the authoritative table value.`);
       }
-      if (typeof session.amount_total === "number" && session.amount_total !== pack.amountCents) {
-        console.warn(`[stripe-webhook] session.amount_total (${session.amount_total}) doesn't match CREDIT_PACKS["${packId}"].amountCents (${pack.amountCents}) for session ${session.id}.`);
+      if (typeof session.amount_total === "number" && session.amount_total !== totalAmountCents) {
+        console.warn(`[stripe-webhook] session.amount_total (${session.amount_total}) doesn't match CREDIT_PACKS["${packId}"].amountCents×quantity (${totalAmountCents}) for session ${session.id}.`);
       }
 
       const orgRef = db.doc(`orgs/${orgId}`);
@@ -138,12 +150,12 @@ export default async function (req) {
         // stores { "credits.generationBalance": x } as a literal field
         // NAMED "credits.generationBalance", not a nested map, which was
         // invisible to every read site expecting a real nested object.
-        tx.set(orgRef, { credits: { generationBalance: admin.firestore.FieldValue.increment(pack.credits) } }, { merge: true });
+        tx.set(orgRef, { credits: { generationBalance: admin.firestore.FieldValue.increment(totalCredits) } }, { merge: true });
         tx.set(userRef, { requiresPurchase: false }, { merge: true });
         tx.set(grantRef, {
-          amount: pack.credits,
+          amount: totalCredits,
           creditType: "generation",
-          reason: `Credit pack purchase (${packId})`,
+          reason: quantity > 1 ? `Credit pack purchase (${packId} × ${quantity})` : `Credit pack purchase (${packId})`,
           source: "stripe_purchase",
           stripeSessionId: session.id,
           stripeEventId: event.id,
@@ -156,7 +168,7 @@ export default async function (req) {
         });
       });
 
-      console.log(`[stripe-webhook] credited ${pack.credits} generation credits to org ${orgId} (uid ${uid}, session ${session.id}).`);
+      console.log(`[stripe-webhook] credited ${totalCredits} generation credits to org ${orgId} (uid ${uid}, session ${session.id}, pack ${packId} × ${quantity}).`);
     } else {
       // Every other event type — acknowledged, no-op. Logged so it's
       // visible in Netlify's logs if something unexpected starts arriving
