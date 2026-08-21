@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import AuthActionPage from "./pages/AuthActionPage";
 import WaitlistPage from "./pages/WaitlistPage";
+import AboutPage from "./pages/AboutPage";
 import TermsPage from "./pages/legal/TermsPage";
 import PrivacyPage from "./pages/legal/PrivacyPage";
 import AIPolicyPage from "./pages/legal/AIPolicyPage";
@@ -45,6 +46,11 @@ export default function App() {
               icon) to point here — see AuthActionPage.jsx's header comment. */}
           <Route path="/auth-action" element={<AuthActionPage />} />
           <Route path="/waitlist" element={<WaitlistPage />} />
+          {/* Public "who we are" page — Aug 2026. /welcome is just an
+              alias to the same component so either link works; /about is
+              the canonical path used in the footer and elsewhere. */}
+          <Route path="/about"    element={<AboutPage />} />
+          <Route path="/welcome"  element={<AboutPage />} />
           {/* Legal pages — Aug 2026. TermsPage/PrivacyPage/AIPolicyPage
               already existed as standalone components (self-contained via
               LegalPageLayout, no AppShell dependency) but were never
