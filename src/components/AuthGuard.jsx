@@ -195,6 +195,16 @@ export default function AuthGuard({ children }) {
   if (loading) return null;
 
   if (!user) {
+    // Root ("/" — what arizonacoalition.net itself resolves to) is the one
+    // path where a logged-out visitor isn't assumed to be trying to sign
+    // in — they're just a stranger who typed the domain. Send them to the
+    // public About page instead of the login screen. Any other protected
+    // route (a bookmarked tool link, etc.) still assumes sign-in intent
+    // and redirects to /login as before, preserving `from` so the user
+    // lands back where they meant to go after logging in.
+    if (location.pathname === "/") {
+      return <Navigate to="/about" replace />;
+    }
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
