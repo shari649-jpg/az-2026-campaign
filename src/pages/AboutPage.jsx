@@ -57,7 +57,7 @@ export default function AboutPage() {
       {/* ── Header / hero ── */}
       <div style={{ background: `linear-gradient(160deg, ${PLUM} 0%, ${PLUM_DK} 100%)`, padding: "48px 20px 64px" }}>
         <div style={{ maxWidth: 760, margin: "0 auto", textAlign: "center" }}>
-          <img src="/azc-logo-teal.png" alt="Arizona Coalition" style={{ height: 60, marginBottom: 16 }} />
+          <img src="/azc-logo.png" alt="Arizona Coalition" style={{ height: 60, marginBottom: 16 }} />
           <h1 style={{
             fontFamily: "var(--font-display)", fontSize: "clamp(28px, 5vw, 44px)",
             color: "#fff", lineHeight: 1.2, marginBottom: 18,
@@ -68,14 +68,22 @@ export default function AboutPage() {
             Arizona Coalition is a completely volunteer, statewide organizing hub that uses social media
             and secure digital tools to turn civic education into civic action and electoral wins in Arizona.
           </p>
-          <div style={{ marginTop: 28 }}>
+          <div style={{ marginTop: 28, display: "flex", justifyContent: "center", gap: 14, flexWrap: "wrap" }}>
             <a href="#get-involved" style={{
               display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 26px",
-              background: GOLD, color: PLUM_DK, borderRadius: 8, fontSize: 15, fontWeight: 700,
+              background: SALMON, color: "#fff", borderRadius: 8, fontSize: 15, fontWeight: 700,
               fontFamily: "var(--font-body)", letterSpacing: "0.02em", textDecoration: "none",
             }}>
               Get Involved →
             </a>
+            <Link to="/login" style={{
+              display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 26px",
+              background: "rgba(255,255,255,0.12)", color: "#fff", border: "2px solid rgba(255,255,255,0.55)",
+              borderRadius: 8, fontSize: 15, fontWeight: 700, fontFamily: "var(--font-body)",
+              letterSpacing: "0.02em", textDecoration: "none",
+            }}>
+              Sign In
+            </Link>
           </div>
         </div>
       </div>
