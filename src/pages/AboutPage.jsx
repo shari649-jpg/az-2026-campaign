@@ -155,7 +155,7 @@ export default function AboutPage() {
           </p>
           <a href="mailto:info@arizonacoalition.net" style={{
             display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 26px",
-            background: GOLD, color: PLUM_DK, borderRadius: 8, fontSize: 15, fontWeight: 700,
+            background: SALMON, color: "#fff", borderRadius: 8, fontSize: 15, fontWeight: 700,
             fontFamily: "var(--font-body)", letterSpacing: "0.02em", textDecoration: "none", marginBottom: 18,
           }}>
             ✉ Email info@arizonacoalition.net
