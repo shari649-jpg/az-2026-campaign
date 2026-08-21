@@ -236,6 +236,8 @@ export default function ManualPage() {
         <Section id="message-basics">
           <P>Message Machine is the coalition's core writing tool. Give it an issue and it writes ready-to-post messages for all six of the coalition's platforms at once: Facebook, Instagram, X/Twitter, Threads, TikTok, and Bluesky.</P>
 
+          <VideoEmbed src="/videos/message-machine-guide.mp4" label="Watch: Message Machine basics" color={MM_TEAL} />
+
           <H3 color={MM_TEAL}>2.1 The Basic Fields</H3>
           <Ul items={[
             <><strong>Issue</strong> — describe what you want to talk about, in your own words. Be as specific as you can; a clear issue produces a sharper message.</>,
@@ -279,6 +281,8 @@ export default function ManualPage() {
         <Section id="rapid-response">
           <P>Rapid Response helps you react quickly to breaking news. Give it an article and it pulls out the key claims and quotes so you can decide how to respond — and, if needed, send that summary straight into Message Machine or Rebuttal.</P>
 
+          <VideoEmbed src="/videos/rapid-response-guide.mp4" label="Watch: using Rapid Response" color={RR_BROWN} />
+
           <H3 color={RR_BROWN}>3.1 Bringing In an Article</H3>
           <Ul items={[
             "Paste a link and click Fetch — Rapid Response retrieves the article and analyzes it for you.",
@@ -301,6 +305,8 @@ export default function ManualPage() {
         {/* ── 4. Rebuttal Generator ── */}
         <Section id="rebuttal">
           <P>Use the Rebuttal Generator when you need to push back directly on a lie or a misleading claim that's circulating.</P>
+
+          <VideoEmbed src="/videos/rebuttal-guide.mp4" label="Watch: generating a rebuttal" color={TERRA} />
 
           <H3 color={TERRA}>4.1 Writing Your Rebuttal</H3>
           <Ol items={[
