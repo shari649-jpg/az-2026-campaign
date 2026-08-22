@@ -19,7 +19,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
-import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, generationWarningPayload } from "./creditHelper.mjs";
+import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, generationWarningPayload, multiplierForOrigin } from "./creditHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
@@ -129,7 +129,7 @@ export default async function (req) {
     }
 
     // ── Claude call ─────────────────────────────────────────────────────────
-    const { max_tokens, messages, system } = body;
+    const { max_tokens, messages, system, origin } = body;
 
     // Server-side guardrail enforcement (Handoff #21, Group F). Never trust
     // the client to have included the factual-accuracy rule — it previously
@@ -178,12 +178,19 @@ export default async function (req) {
       // is deliberately NOT used here; awaited so a billing failure is
       // caught and logged inline, but debitGenerationCredits itself never
       // throws, so this can't turn a billing hiccup into a failed response.
+      // origin (Aug 22 2026) — set by message-machine.jsx when the current
+      // session originated from a Rapid Response push (persists through
+      // regen and edit-then-regen, cleared on Start New — see that file's
+      // own comment for the full lifecycle). multiplierForOrigin() maps
+      // it to the 3x premium rate; any call with no origin (the vast
+      // majority) gets the default 1x, completely unaffected.
       await debitGenerationCredits(app, {
         orgId: usage.orgId,
         uid,
         functionName: "generate-message",
         inputTokens: data.usage.input_tokens,
         outputTokens: data.usage.output_tokens,
+        multiplier: multiplierForOrigin(origin),
       });
     }
 
