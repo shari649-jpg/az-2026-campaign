@@ -631,6 +631,18 @@ export default function App() {
   const [draftModal, setDraftModal] = useState(false);
   const [pendingDraft, setPendingDraft] = useState(null);
   const [arrivalSource, setArrivalSource] = useState(null);
+  // Premium-pricing origin flag (Aug 22 2026) — distinct from arrivalSource
+  // above, which is purely a display label ("← Rapid Response" badge).
+  // This is the value actually sent to the backend on every generate/regen
+  // call in this session, so a mislabeled display string can never
+  // accidentally change what a customer is billed and vice versa.
+  // Lifecycle: set when a Rapid Response push lands (see the load effect
+  // below), persists through regen and edit-then-regen (same in-memory
+  // state, no reload in between), carried into the auto-saved draft so a
+  // Resume-Last-Session pickup doesn't silently lose the premium tag
+  // mid-campaign, and cleared by startNewCampaign() below. null = standard
+  // rate (the default for every session that isn't a Rapid Response push).
+  const [generationOrigin, setGenerationOrigin] = useState(null);
   const [campaigns, setCampaigns]   = useState([]);
   const [saveModal, setSaveModal]   = useState(false);
   const [campName, setCampName]     = useState("");
@@ -722,6 +734,11 @@ export default function App() {
         // p.county (pushed by RaceComparison.jsx / DistrictProfiles.jsx) is
         // deliberately not read here anymore — see the note above
         // formData's ruralStyle field. No per-county suggestion exists now.
+        // Premium-pricing origin (Aug 22 2026) — only set for a genuine
+        // Rapid Response push, never for the four Research-tool pages
+        // that share this same localStorage key (see detectArrivalSource
+        // above for why p.source, not a substring guess, is what decides this).
+        if (p.source === "rapid-response") setGenerationOrigin("rapid-response");
         localStorage.removeItem("rr_pending_article");
         try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
         return;
@@ -965,9 +982,17 @@ function detectArrivalSource() {
     if (localStorage.getItem("mm_load_campaign"))      return "Library";
     const rrRaw = localStorage.getItem("rr_pending_article");
     if (rrRaw) {
+      // UPDATED (Aug 22 2026) — reads the explicit `source` field
+      // rapid-response-reader.jsx now sets, instead of the old
+      // sourcePublication-substring guess. This same key is also written
+      // by four Research-tool pages (RaceComparison, CandidateQuery,
+      // DistrictProfiles, IssuesPage), none of which set `source`, so they
+      // correctly fall through to "Research" below without needing their
+      // own edit.
       try {
         const p = JSON.parse(rrRaw);
-        if ((p.sourcePublication || "").includes("Research")) return "Research";
+        if (p.source === "rapid-response") return "Rapid Response";
+        return "Research";
       } catch {}
       return "Rapid Response";
     }
@@ -1079,7 +1104,7 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         "Content-Type":"application/json",
         ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
       },
-      body: JSON.stringify({ max_tokens:maxTokens, messages:[{role:"user",content:prompt}] }),
+      body: JSON.stringify({ max_tokens:maxTokens, messages:[{role:"user",content:prompt}], origin: generationOrigin }),
     });
     if (res.status === 429) {
       const limitData = await res.json();
@@ -1253,7 +1278,7 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
           "Content-Type": "application/json",
           ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
         },
-        body: JSON.stringify({ groups }),
+        body: JSON.stringify({ groups, origin: generationOrigin }),
       });
       if (res.status === 429) {
         const limitData = await res.json();
@@ -1521,6 +1546,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
     setHashtags(null);
     setGenError(null);
     setArrivalSource(null);
+    setGenerationOrigin(null); // clears any Rapid Response premium tag — see its own declaration comment for the full lifecycle
     setFormKey(k => k + 1);
     setView("form");
   };
@@ -1531,10 +1557,10 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
     if (!hasContent) return;
     try {
       localStorage.setItem(MM_DRAFT_KEY, JSON.stringify({
-        formData, messages, view, savedAt: new Date().toISOString(),
+        formData, messages, view, generationOrigin, savedAt: new Date().toISOString(),
       }));
     } catch {}
-  }, [formData, messages, view]);
+  }, [formData, messages, view, generationOrigin]);
 
   const hasMessages = Object.keys(messages).length > 0;
 
@@ -1584,6 +1610,13 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                 onClick={() => {
                   setFormData(pendingDraft.formData || {});
                   setMessages(pendingDraft.messages || {});
+                  // Carries the premium-pricing origin forward with the
+                  // rest of the resumed draft (Aug 22 2026) — otherwise a
+                  // Rapid Response campaign that gets reloaded mid-flow
+                  // (browser refresh, closed tab) would silently drop back
+                  // to standard pricing on the very next regen, even
+                  // though it's still the same campaign.
+                  setGenerationOrigin(pendingDraft.generationOrigin || null);
                   if (Object.keys(pendingDraft.messages || {}).length > 0) setView("results");
                   setDraftModal(false); setPendingDraft(null);
                 }}
@@ -1594,6 +1627,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               <button
                 onClick={() => {
                   try { localStorage.removeItem(MM_DRAFT_KEY); } catch {}
+                  setGenerationOrigin(null); // defensive — live state is already blank here (see startNewCampaign's comment for the two-"Start New" distinction), but kept in sync on principle
                   setDraftModal(false); setPendingDraft(null);
                 }}
                 style={{ ...S.btnSecondary, fontSize:16, padding:"12px", width:"100%" }}
