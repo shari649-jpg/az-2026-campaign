@@ -185,6 +185,26 @@ export default async function (req) {
     // Checked once here rather than per-action, since all three actions
     // below (fetch_and_analyze, search, analyze_text) make exactly one
     // Claude call each and share the same credit pool.
+    //
+    // PREMIUM-PRICING NOTE (Aug 22 2026): all three debits below carry
+    // multiplier: 3, since these ARE the actions that are genuinely unique
+    // to Rapid Response (turning a URL/story into structured research in
+    // seconds — nothing else on the market does this, per the sales
+    // sheet's own comparison table). BUT — this does NOT cover the full
+    // "90 credits" campaign figure published on that sheet. That number
+    // describes the WHOLE workflow: analysis here, THEN a push into
+    // Message Machine for the actual 6-platform draft generation (3 regen
+    // rounds). That second half runs through generate-message.mjs /
+    // generate-message-background.mjs — the exact same code path as any
+    // ordinary Message Machine post, with no flag distinguishing
+    // "this generation originated from a Rapid Response push" from routine
+    // use. So today, only the analysis step is actually priced at
+    // premium; the drafting step that follows bills at the standard rate
+    // like any other Message Machine generation. Closing that gap for
+    // real would mean threading an `origin: "rapid-response"` flag from
+    // the frontend's push-to-Message-Machine action through to
+    // generate-message(-background).mjs's own debit call — a separate,
+    // real follow-up task, not done here.
     const balanceCheck = await checkGenerationBalance(app, usage.orgId, "rapid-response");
     if (balanceCheck.blocked) {
       return new Response(JSON.stringify(generationBlockedPayload(balanceCheck.balance)), { status: 402, headers: corsHeaders(req) });
@@ -235,6 +255,7 @@ export default async function (req) {
           functionName: "rapid-response:fetch_and_analyze",
           inputTokens: analysisData.usage.input_tokens,
           outputTokens: analysisData.usage.output_tokens,
+          multiplier: 3,
         });
       }
       if (balanceCheck.warning) analysisData.creditWarning = generationWarningPayload(balanceCheck.balance);
@@ -284,6 +305,7 @@ export default async function (req) {
           functionName: "rapid-response:search",
           inputTokens: searchData.usage.input_tokens,
           outputTokens: searchData.usage.output_tokens,
+          multiplier: 3,
         });
       }
       if (searchData.error) {
@@ -352,6 +374,7 @@ Format:
           functionName: "rapid-response:analyze_text",
           inputTokens: analysisData.usage.input_tokens,
           outputTokens: analysisData.usage.output_tokens,
+          multiplier: 3,
         });
       }
       if (balanceCheck.warning) analysisData.creditWarning = generationWarningPayload(balanceCheck.balance);
