@@ -129,6 +129,25 @@ export default function AdminPage() {
   // multiple cards can be open independently without re-fetching.
   const [historyOpenIds, setHistoryOpenIds] = useState(new Set());
   const [historyData, setHistoryData] = useState({}); // { [orgId]: { grants, jobs, loaded, loading } }
+  // ── Usage tab (August 22 2026) ────────────────────────────────────────
+  // Credit-transaction ledger report — reads orgs/{orgId}/creditTransactions,
+  // the per-call ledger creditHelper.mjs's debitGenerationCredits() now
+  // writes alongside every balance debit. Closes a real, confirmed gap:
+  // before this, a single running generationBalance number was the only
+  // thing that existed anywhere — nothing recorded which call spent what,
+  // when, or by whom, so neither a customer's "what did I generate on
+  // Tuesday" question nor an admin's "when is this account actually
+  // active" question could be answered from anywhere in the app.
+  // "" for usageOrgId/usageUid means "no filter" (all orgs / all users),
+  // not an invalid selection — kept as empty string rather than a special
+  // sentinel so the <select>'s own empty option works without extra logic.
+  const [usageOrgId, setUsageOrgId]         = useState("");
+  const [usageUid, setUsageUid]             = useState("");
+  const [usageStartDate, setUsageStartDate] = useState("");
+  const [usageEndDate, setUsageEndDate]     = useState("");
+  const [usageRows, setUsageRows]           = useState([]);
+  const [usageLoading, setUsageLoading]     = useState(false);
+  const [usageSearched, setUsageSearched]   = useState(false); // has a search ever been run this session
   // ── Candidates tab (August 2026) ─────────────────────────────────────
   // Bulk active/inactive toggle for candidates who've lost a primary —
   // pulled forward from the full future candidate CRUD panel because
@@ -180,6 +199,7 @@ export default function AdminPage() {
   useEffect(() => { if (isManager) { fetchUsers(); fetchWaitlist(); } }, [isManager]);
   useEffect(() => { if (activeTab === "settings" && !pubRegenLoaded) fetchPubRegenSetting(); }, [activeTab]);
   useEffect(() => { if (activeTab === "orgs" && !orgsLoaded) fetchOrgs(); }, [activeTab]);
+  useEffect(() => { if (activeTab === "usage" && !orgsLoaded && !orgsLoading) fetchOrgs(); }, [activeTab]);
   useEffect(() => { if (activeTab === "candidates" && !candidatesLoaded) fetchCandidates(); }, [activeTab]);
   useEffect(() => { if (activeTab === "candidates" && !orgsLoaded && !orgsLoading) fetchOrgs(); }, [activeTab]);
   useEffect(() => { if (activeTab === "waitlist" && !orgsLoaded && !orgsLoading) fetchOrgs(); }, [activeTab]);
@@ -506,6 +526,105 @@ export default function AdminPage() {
       notify("Couldn't load history for that org.", "err");
       setHistoryData(prev => ({ ...prev, [orgId]: { grants: [], jobs: [], loaded: false, loading: false } }));
     }
+  };
+
+  // Credit-transaction ledger report. Fetches per-org (one query per org in
+  // scope) and combines/filters client-side, rather than a single where()+
+  // orderBy() query — same "works immediately with zero Firebase Console
+  // setup, no composite index needed" convention toggleHistory's
+  // transcriptionJobs fetch above already uses, since a uid filter AND a
+  // date-range filter together would otherwise require one. Fine at this
+  // app's current scale; revisit (a real composite index, or a dedicated
+  // reporting function) if any org's creditTransactions collection grows
+  // large enough for this to feel slow.
+  const fetchUsageTransactions = async () => {
+    setUsageLoading(true);
+    setUsageSearched(true);
+    try {
+      const targetOrgIds = usageOrgId ? [usageOrgId] : orgs.map(o => o.id);
+      const snaps = await Promise.all(
+        targetOrgIds.map(orgId => getDocs(collection(db, "orgs", orgId, "creditTransactions")))
+      );
+      const orgNameById  = Object.fromEntries(orgs.map(o => [o.id, o.name || o.id]));
+      const userById      = Object.fromEntries(users.map(u => [u.id, u]));
+
+      let rows = [];
+      snaps.forEach((snap, i) => {
+        const orgId = targetOrgIds[i];
+        snap.docs.forEach(d => {
+          const t = d.data();
+          rows.push({
+            id: d.id,
+            orgId,
+            orgName: orgNameById[orgId] || orgId,
+            uid: t.uid || null,
+            // public-storm-regenerate debits with uid: null (anonymous
+            // visitor) — shown as "—" rather than blank, so it reads as a
+            // real, known case rather than missing data.
+            userEmail: t.uid ? (userById[t.uid]?.email || t.uid) : "—",
+            userName: t.uid ? (userById[t.uid]?.fullName || "") : "",
+            functionName: t.functionName || "unknown",
+            credits: t.credits || 0,
+            inputTokens: t.inputTokens || 0,
+            outputTokens: t.outputTokens || 0,
+            cacheCreationTokens: t.cacheCreationTokens || 0,
+            cacheReadTokens: t.cacheReadTokens || 0,
+            createdAt: t.createdAt,
+          });
+        });
+      });
+
+      if (usageUid) rows = rows.filter(r => r.uid === usageUid);
+
+      const toMs = (ts) => ts?.toDate ? ts.toDate().getTime() : (ts?.seconds ? ts.seconds * 1000 : 0);
+      if (usageStartDate) {
+        const start = new Date(usageStartDate + "T00:00:00").getTime();
+        rows = rows.filter(r => toMs(r.createdAt) >= start);
+      }
+      if (usageEndDate) {
+        const end = new Date(usageEndDate + "T23:59:59.999").getTime();
+        rows = rows.filter(r => toMs(r.createdAt) <= end);
+      }
+
+      rows.sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt)); // newest first
+      setUsageRows(rows);
+    } catch (err) {
+      notify("Couldn't load usage transactions — try again.", "err");
+      setUsageRows([]);
+    }
+    setUsageLoading(false);
+  };
+
+  // Same escape/download convention as exportUsersCSV above.
+  const exportUsageCSV = (rows) => {
+    const headers = ["Date", "Organization", "User Email", "User Name", "Tool", "Credits Used", "Input Tokens", "Output Tokens", "Cache Created", "Cache Read"];
+    const dataRows = rows.map(r => [
+      formatDateTime(r.createdAt),
+      r.orgName,
+      r.userEmail,
+      r.userName,
+      r.functionName,
+      r.credits,
+      r.inputTokens,
+      r.outputTokens,
+      r.cacheCreationTokens,
+      r.cacheReadTokens,
+    ]);
+    const esc = (v) => {
+      const s = String(v ?? "");
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = [headers, ...dataRows].map(r => r.map(esc).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    const date = new Date().toISOString().slice(0, 10);
+    const orgLabel = (usageOrgId ? (orgs.find(o => o.id === usageOrgId)?.name || usageOrgId) : "all-orgs")
+      .toString().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    a.href     = url;
+    a.download = `az-coalition-credit-usage-${orgLabel}-${date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   function formatMinutesSeconds(totalSeconds) {
@@ -992,6 +1111,23 @@ export default function AdminPage() {
     } catch { return ""; }
   }
 
+  // Same parsing as formatDate above, but keeps the time — needed for the
+  // Usage tab's report, since "which days AND TIMES is this account active"
+  // was one of the two questions the credit-transaction ledger exists to
+  // answer; a date-only stamp would silently drop half of that.
+  function formatDateTime(ts) {
+    try {
+      if (!ts) return "";
+      const d = ts?.toDate ? ts.toDate()
+        : ts instanceof Date ? ts
+        : typeof ts === "number" ? new Date(ts)
+        : ts?.seconds ? new Date(ts.seconds * 1000)
+        : new Date(ts);
+      if (isNaN(d.getTime())) return "";
+      return d.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+    } catch { return ""; }
+  }
+
   // ── Community Notes TSV parsing (mirrors server-side logic) ──────────────
   const REP_KEYWORDS = ["republican","gop","trump","maga","desantis","rubio","lake","masters","hamadeh","finchem","conservative","right-wing","right wing","america first","2nd amendment","second amendment","border wall","illegal alien","critical race","deep state","election fraud","stolen election","patriot","woke","socialist","defund police","antifa","hunter biden","liberal","leftist"];
   const DEM_KEYWORDS = ["democrat","democratic","biden","harris","obama","pelosi","schumer","gallego","stanton","progressive","left-wing","left wing","abortion ban","roe","medicaid","social security cut","obamacare","aca","minimum wage","lgbtq ban","book ban","voter suppression","gerrymandering","insurrection","january 6","disinformation","dark money"];
@@ -1387,6 +1523,7 @@ export default function AdminPage() {
           { id: "headshots", label: "Candidate Headshots" },
           { id: "settings", label: "Settings" },
           { id: "orgs", label: "Orgs" },
+          { id: "usage", label: "Usage" },
           { id: "candidates", label: "Candidates" },
           ].map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSearch(""); }}
@@ -1413,10 +1550,23 @@ export default function AdminPage() {
               ⬇ Export CSV
             </button>
           )}
+          {activeTab === "usage" && usageRows.length > 0 && (
+            <button
+              onClick={() => exportUsageCSV(usageRows)}
+              title="Download the current filtered results as a CSV file"
+              style={{
+                marginBottom: 4, padding: "7px 14px", fontSize: 12, fontWeight: 700,
+                fontFamily: "inherit", background: "none", border: `1.5px solid ${TEAL}`,
+                borderRadius: 7, color: TEAL, cursor: "pointer", whiteSpace: "nowrap",
+              }}
+            >
+              ⬇ Export CSV
+            </button>
+          )}
         </div>
 
         {/* Search */}
-        {activeTab !== "headshots" && activeTab !== "orgs" && activeTab !== "candidates" && (
+        {activeTab !== "headshots" && activeTab !== "orgs" && activeTab !== "candidates" && activeTab !== "usage" && (
           <input
             type="search"
             placeholder={activeTab === "users" ? "Search by name, email, or role…" : "Search by name, email, or organization…"}
@@ -2261,6 +2411,126 @@ export default function AdminPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* ── USAGE TAB (August 22 2026) ── */}
+        {/* Credit-transaction ledger report — reads
+            orgs/{orgId}/creditTransactions (see fetchUsageTransactions
+            above for why this fetches per-org rather than one combined
+            query). Filterable by org, user, and date range; downloadable
+            as CSV. This is a read-only report — no write actions live
+            here, so it's visible to any Manager/Administrator who can
+            reach the Admin panel at all, same visibility as the rest of
+            this tab set; nothing here needs an isAdmin-only gate the way
+            Grant credits / addon toggling do on the Orgs tab. */}
+        {activeTab === "usage" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <div style={{ background: BG, border: "2px solid #eee", borderRadius: 12, padding: "20px 24px" }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "#999", margin: "0 0 6px" }}>
+                Credit usage report
+              </h3>
+              <p style={{ fontSize: 13, color: "#999", margin: "0 0 16px" }}>
+                Every AI-generation credit debit, logged per call — which org, which user, which tool, how many credits, and when. Filter below, then search.
+              </p>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#999", marginBottom: 4 }}>Organization</label>
+                  <select
+                    value={usageOrgId}
+                    onChange={e => { setUsageOrgId(e.target.value); setUsageUid(""); }}
+                    style={{ padding: "9px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", background: BG, color: CHARCOAL, minWidth: 180 }}
+                  >
+                    <option value="">All organizations</option>
+                    {orgs.map(o => <option key={o.id} value={o.id}>{o.name || o.id}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#999", marginBottom: 4 }}>User</label>
+                  <select
+                    value={usageUid}
+                    onChange={e => setUsageUid(e.target.value)}
+                    style={{ padding: "9px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", background: BG, color: CHARCOAL, minWidth: 200 }}
+                  >
+                    <option value="">All users</option>
+                    {users
+                      .filter(u => !usageOrgId || u.orgId === usageOrgId)
+                      .sort((a, b) => (a.fullName || a.email || "").localeCompare(b.fullName || b.email || ""))
+                      .map(u => <option key={u.id} value={u.id}>{u.fullName || u.email}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#999", marginBottom: 4 }}>From</label>
+                  <input
+                    type="date"
+                    value={usageStartDate}
+                    onChange={e => setUsageStartDate(e.target.value)}
+                    style={{ padding: "8px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", background: BG, color: CHARCOAL }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#999", marginBottom: 4 }}>To</label>
+                  <input
+                    type="date"
+                    value={usageEndDate}
+                    onChange={e => setUsageEndDate(e.target.value)}
+                    style={{ padding: "8px 12px", fontSize: 14, border: "2px solid #ccc", borderRadius: 8, fontFamily: "inherit", background: BG, color: CHARCOAL }}
+                  />
+                </div>
+                <button
+                  onClick={fetchUsageTransactions}
+                  disabled={usageLoading || orgsLoading}
+                  style={{
+                    background: (usageLoading || orgsLoading) ? "#ccc" : TEAL, color: "#fff",
+                    border: "none", borderRadius: 8, padding: "10px 20px",
+                    fontSize: 14, fontWeight: 700, fontFamily: "inherit",
+                    cursor: (usageLoading || orgsLoading) ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                  }}
+                >
+                  {usageLoading ? "Searching…" : orgsLoading ? "Loading orgs…" : "Search"}
+                </button>
+              </div>
+            </div>
+
+            {usageSearched && (
+              usageLoading ? (
+                <p style={{ color: "#999", fontSize: 14 }}>Loading…</p>
+              ) : usageRows.length === 0 ? (
+                <p style={{ color: "#999", fontSize: 14 }}>No credit transactions match these filters.</p>
+              ) : (
+                <div style={{ background: BG, border: "2px solid #eee", borderRadius: 12, overflow: "hidden" }}>
+                  <div style={{ padding: "14px 20px", borderBottom: "1px solid #eee" }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#999" }}>
+                      {usageRows.length} transaction{usageRows.length === 1 ? "" : "s"} · {usageRows.reduce((sum, r) => sum + r.credits, 0)} total credits
+                    </span>
+                  </div>
+                  <div style={{ maxHeight: 520, overflowY: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ background: "#f9f9f9" }}>
+                          <th style={{ position: "sticky", top: 0, background: "#f9f9f9", textAlign: "left", padding: "8px 16px", color: "#999", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Date</th>
+                          <th style={{ position: "sticky", top: 0, background: "#f9f9f9", textAlign: "left", padding: "8px 16px", color: "#999", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Org</th>
+                          <th style={{ position: "sticky", top: 0, background: "#f9f9f9", textAlign: "left", padding: "8px 16px", color: "#999", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>User</th>
+                          <th style={{ position: "sticky", top: 0, background: "#f9f9f9", textAlign: "left", padding: "8px 16px", color: "#999", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Tool</th>
+                          <th style={{ position: "sticky", top: 0, background: "#f9f9f9", textAlign: "right", padding: "8px 16px", color: "#999", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Credits</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {usageRows.map(r => (
+                          <tr key={`${r.orgId}-${r.id}`} style={{ borderTop: "1px solid #f0f0f0" }}>
+                            <td style={{ padding: "8px 16px", color: CHARCOAL, whiteSpace: "nowrap" }}>{formatDateTime(r.createdAt)}</td>
+                            <td style={{ padding: "8px 16px", color: CHARCOAL }}>{r.orgName}</td>
+                            <td style={{ padding: "8px 16px", color: CHARCOAL }}>{r.userName || r.userEmail}</td>
+                            <td style={{ padding: "8px 16px", color: CHARCOAL, fontFamily: "monospace", fontSize: 12 }}>{r.functionName}</td>
+                            <td style={{ padding: "8px 16px", color: TEAL, fontWeight: 700, textAlign: "right" }}>{r.credits}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            )}
           </div>
         )}
 
