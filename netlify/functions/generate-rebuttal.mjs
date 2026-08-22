@@ -137,12 +137,19 @@ export default async function (req) {
       // Generation-credit debiting (Aug 2026 TODO item 7). Note this
       // function is called twice per full rebuttal generation (see file
       // header) — each call debits its own real usage independently.
+      // multiplier: 3 (Aug 22 2026 sales-sheet decision) — Rebuttal is a
+      // premium capability, priced 3x its real token cost because it's a
+      // genuine differentiator (no competitor offers a rebuttal/
+      // misinformation engine — see the sales sheet's own comparison
+      // table). This is the only debit site for Rebuttal, so the full
+      // premium is captured cleanly here.
       await debitGenerationCredits(app, {
         orgId: usage.orgId,
         uid,
         functionName: "generate-rebuttal",
         inputTokens: data.usage.input_tokens,
         outputTokens: data.usage.output_tokens,
+        multiplier: 3,
       });
     }
 
