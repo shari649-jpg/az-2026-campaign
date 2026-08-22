@@ -175,6 +175,19 @@ export async function debitGenerationCredits(app, { orgId, uid, functionName, in
   const credits = creditsForTokens(inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens);
   const db = admin.firestore(app);
   const orgRef = db.doc(`orgs/${orgId}`);
+  // New (Aug 22 2026): every debit also writes an immutable per-call ledger
+  // entry to orgs/{orgId}/creditTransactions/{autoId}, in the SAME
+  // transaction as the balance decrement — mirrors the atomic
+  // balance-plus-audit-record pattern grant-credits.mjs already uses for
+  // creditGrants. Closes a real, confirmed gap: before this, the only
+  // thing that existed was a single running generationBalance number —
+  // nothing recorded WHICH call spent WHAT, WHEN, or by WHOM, so neither a
+  // customer asking "what did I generate on Tuesday" nor an admin asking
+  // "when is this account actually active" could be answered from
+  // anywhere in the app. functionName (already passed by every caller,
+  // e.g. "generate-message", "rapid-response:analyze_text") doubles as the
+  // tool label here — no call site needs to change.
+  const txnRef = orgRef.collection("creditTransactions").doc();
   try {
     // Nested-object write required for a real Firestore merge into
     // credits.generationBalance — see grant-credits.mjs / check-transcription.mjs's
@@ -182,6 +195,16 @@ export async function debitGenerationCredits(app, { orgId, uid, functionName, in
     // create a literal "credits.generationBalance"-named field instead.
     await db.runTransaction(async (tx) => {
       tx.set(orgRef, { credits: { generationBalance: admin.firestore.FieldValue.increment(-credits) } }, { merge: true });
+      tx.set(txnRef, {
+        credits,
+        functionName,
+        uid: uid || null,
+        inputTokens: inputTokens || 0,
+        outputTokens: outputTokens || 0,
+        cacheCreationTokens: cacheCreationTokens || 0,
+        cacheReadTokens: cacheReadTokens || 0,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
     });
     const cacheNote = (cacheCreationTokens || cacheReadTokens) ? `, cache: ${cacheCreationTokens || 0} written + ${cacheReadTokens || 0} read` : "";
     console.log(`[creditHelper] ${functionName}: debited ${credits} credit(s) from org=${orgId} uid=${uid || "none"} (${inputTokens || 0}+${outputTokens || 0} tokens${cacheNote})`);
