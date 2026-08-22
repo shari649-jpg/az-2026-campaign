@@ -58,7 +58,7 @@ const TOKENS_PER_CREDIT = 1000;
 // through. Distinct from the hard block, which only fires at ≤0.
 const GENERATION_WARNING_THRESHOLD = 500;
 
-export function creditsForTokens(inputTokens, outputTokens, cacheCreationTokens = 0, cacheReadTokens = 0) {
+export function creditsForTokens(inputTokens, outputTokens, cacheCreationTokens = 0, cacheReadTokens = 0, multiplier = 1) {
   // UPDATED (Aug 2026, prompt caching): cacheCreationTokens/cacheReadTokens
   // are new parameters, weighted by their real price relative to base
   // input price, confirmed via Anthropic's published pricing: a 5-minute
@@ -75,8 +75,19 @@ export function creditsForTokens(inputTokens, outputTokens, cacheCreationTokens 
     + (outputTokens || 0)
     + (cacheCreationTokens || 0) * 1.25
     + (cacheReadTokens || 0) * 0.1;
-  if (weighted <= 0) return 1; // never bill zero for a real call
-  return Math.ceil(weighted / TOKENS_PER_CREDIT);
+  const base = weighted <= 0 ? 1 : Math.ceil(weighted / TOKENS_PER_CREDIT); // never bill zero for a real call
+  // UPDATED (Aug 22 2026, sales-sheet decision): premium-capability
+  // multiplier, applied AFTER the token-cost ceiling, not before —
+  // deliberately, so it lands on the same whole numbers the sales sheet
+  // publishes (≈7 credits x 3 = ≈21 for Rebuttal, 30 x 3 = 90 for a full
+  // Rapid Response campaign), rather than a slightly different number
+  // from multiplying pre-ceiling token counts. This is a VALUE premium,
+  // not a cost pass-through — Rebuttal and Rapid Response are priced
+  // higher than their real token cost on purpose, because nothing else on
+  // the market offers either (see the sales sheet's own "How We Compare"
+  // table), not because they're more expensive to run. Defaults to 1
+  // (no premium) so every other caller is completely unaffected.
+  return Math.ceil(base * multiplier);
 }
 
 /**
@@ -165,14 +176,15 @@ export function generationWarningPayload(balance) {
  * @param {number} params.outputTokens
  * @param {number} [params.cacheCreationTokens] - Aug 2026, prompt caching. Tokens written to a new cache entry this call (Claude's usage.cache_creation_input_tokens). Omit/0 for a non-caching caller.
  * @param {number} [params.cacheReadTokens] - Aug 2026, prompt caching. Tokens read from an existing cache entry this call (Claude's usage.cache_read_input_tokens). Omit/0 for a non-caching caller.
+ * @param {number} [params.multiplier] - Aug 22 2026, premium-capability pricing. 3 for generate-rebuttal and rapid-response's analysis actions (Rebuttal/Rapid Response — see creditsForTokens' own comment for why). Omit/1 for every standard-rate caller.
  * @returns {Promise<{debited: boolean, credits?: number, reason?: string}>}
  */
-export async function debitGenerationCredits(app, { orgId, uid, functionName, inputTokens, outputTokens, cacheCreationTokens = 0, cacheReadTokens = 0 }) {
+export async function debitGenerationCredits(app, { orgId, uid, functionName, inputTokens, outputTokens, cacheCreationTokens = 0, cacheReadTokens = 0, multiplier = 1 }) {
   if (!orgId) {
     console.warn(`[creditHelper] ${functionName}: uid=${uid || "none"} has no orgId — generation not debited (pre-org-migration or individual account).`);
     return { debited: false, reason: "no_org" };
   }
-  const credits = creditsForTokens(inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens);
+  const credits = creditsForTokens(inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, multiplier);
   const db = admin.firestore(app);
   const orgRef = db.doc(`orgs/${orgId}`);
   // New (Aug 22 2026): every debit also writes an immutable per-call ledger
@@ -197,6 +209,7 @@ export async function debitGenerationCredits(app, { orgId, uid, functionName, in
       tx.set(orgRef, { credits: { generationBalance: admin.firestore.FieldValue.increment(-credits) } }, { merge: true });
       tx.set(txnRef, {
         credits,
+        multiplier,
         functionName,
         uid: uid || null,
         inputTokens: inputTokens || 0,
@@ -207,7 +220,8 @@ export async function debitGenerationCredits(app, { orgId, uid, functionName, in
       });
     });
     const cacheNote = (cacheCreationTokens || cacheReadTokens) ? `, cache: ${cacheCreationTokens || 0} written + ${cacheReadTokens || 0} read` : "";
-    console.log(`[creditHelper] ${functionName}: debited ${credits} credit(s) from org=${orgId} uid=${uid || "none"} (${inputTokens || 0}+${outputTokens || 0} tokens${cacheNote})`);
+    const multiplierNote = multiplier !== 1 ? `, ${multiplier}x premium applied` : "";
+    console.log(`[creditHelper] ${functionName}: debited ${credits} credit(s) from org=${orgId} uid=${uid || "none"} (${inputTokens || 0}+${outputTokens || 0} tokens${cacheNote}${multiplierNote})`);
     return { debited: true, credits };
   } catch (err) {
     console.error(`[creditHelper] ${functionName}: debit FAILED for org=${orgId} uid=${uid || "none"} —`, err.message);
