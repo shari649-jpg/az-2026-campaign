@@ -148,7 +148,13 @@ export default async function (req) {
     // split from buildPromptParts() (Aug 2026, prompt caching), not a
     // single flat prompt string anymore. This function doesn't build or
     // alter prompt content, only validates shape and batches submission.
-    const { groups } = body;
+    // origin (Aug 22 2026, optional) — e.g. "rapid-response", set by
+    // message-machine.jsx when the current session started from a Rapid
+    // Response push. Persisted onto the job doc below (not just this
+    // request) because generateAll's actual debit happens later, inside
+    // generate-message-background.mjs — a separate invocation that only
+    // has the job doc to read from, not this request body.
+    const { groups, origin } = body;
     if (!Array.isArray(groups) || groups.length === 0) {
       return new Response(JSON.stringify({ error: "Missing groups." }), { status: 400, headers: corsHeaders(req) });
     }
@@ -178,6 +184,7 @@ export default async function (req) {
       orgId: precheck.orgId,
       status: "pending",
       groups: groups.map(g => ({ platformIds: g.platformIds, staticSystem: g.staticSystem, dynamicPrompt: g.dynamicPrompt, maxTokens: g.maxTokens || 1000 })),
+      origin: typeof origin === "string" ? origin : null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
