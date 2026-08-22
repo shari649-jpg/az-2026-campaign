@@ -58,7 +58,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
-import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload } from "./creditHelper.mjs";
+import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, multiplierForOrigin } from "./creditHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
@@ -145,7 +145,7 @@ export default async function (req) {
       return;
     }
     const job = jobSnap.data();
-    const { uid, orgId, groups } = job;
+    const { uid, orgId, groups, origin } = job;
 
     // Groups run in PARALLEL (Promise.all), not sequentially — this
     // matters and is worth being explicit about: PLATFORM_GROUPS exists
@@ -187,6 +187,11 @@ export default async function (req) {
 
       if (claudeResult.data.usage) {
         const u = claudeResult.data.usage;
+        // origin (Aug 22 2026) — read from the job doc (see
+        // start-message-generation.mjs's comment for why it's persisted
+        // there rather than passed directly to this invocation).
+        // multiplierForOrigin() maps it to the 3x Rapid Response premium;
+        // the vast majority of jobs have no origin and get the default 1x.
         await debitGenerationCredits(app, {
           orgId, uid,
           functionName: "generate-message-background",
@@ -194,6 +199,7 @@ export default async function (req) {
           outputTokens: u.output_tokens,
           cacheCreationTokens: u.cache_creation_input_tokens,
           cacheReadTokens: u.cache_read_input_tokens,
+          multiplier: multiplierForOrigin(origin),
         });
       }
 
