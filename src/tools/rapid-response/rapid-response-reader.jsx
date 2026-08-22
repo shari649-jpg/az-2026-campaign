@@ -735,6 +735,14 @@ export default function RapidResponseReader() {
       issueText: `${article.title}\n\n${article.summary}\n\nKey Points:\n${(article.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join("\n")}${article.url ? `\n\nSource: ${article.url}` : ""}`,
       focalPoint: "",
       pushedAt: new Date().toISOString(),
+      // Explicit source tag (Aug 22 2026) — replaces the old
+      // sourcePublication-substring guess message-machine.jsx used to make
+      // (fragile, and this shared "rr_pending_article" key is also used by
+      // the four Research-tool pages, which must NOT get this tag). This
+      // is what message-machine.jsx reads to set its Rapid Response
+      // premium-pricing origin flag — a real billing decision, not just a
+      // UI label, so it needs a real field instead of a heuristic.
+      source: "rapid-response",
     };
     try {
       localStorage.setItem("rr_pending_article", JSON.stringify(payload));
