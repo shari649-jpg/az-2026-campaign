@@ -58,6 +58,22 @@ const TOKENS_PER_CREDIT = 1000;
 // through. Distinct from the hard block, which only fires at ≤0.
 const GENERATION_WARNING_THRESHOLD = 500;
 
+// Generic origin → premium-multiplier lookup (Aug 22 2026). "Origin" means
+// which flow the user was in when they triggered THIS generation — e.g. a
+// user who pushed a story from Rapid Response into Message Machine and
+// then hit Generate is still inside a "rapid-response" origin, even though
+// the actual Claude call goes through generate-message(-background).mjs,
+// the exact same code every other Message Machine generation uses.
+// Deliberately a plain object, not hardcoded inline at each call site, so
+// adding the NEXT premium-priced origin later is a one-line addition here
+// instead of another round of wiring through every caller.
+export const ORIGIN_MULTIPLIERS = {
+  "rapid-response": 3, // sales-sheet decision, Aug 22 2026 — see creditsForTokens' own comment
+};
+export function multiplierForOrigin(origin) {
+  return ORIGIN_MULTIPLIERS[origin] || 1;
+}
+
 export function creditsForTokens(inputTokens, outputTokens, cacheCreationTokens = 0, cacheReadTokens = 0, multiplier = 1) {
   // UPDATED (Aug 2026, prompt caching): cacheCreationTokens/cacheReadTokens
   // are new parameters, weighted by their real price relative to base
