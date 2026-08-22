@@ -19,6 +19,23 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
+    // ── NEW — org-admin role (August 2026, TODO #1) ───────────────────────
+    // Independent boolean flag on users/{uid}, deliberately never tied to
+    // `role` — an org admin is never a Manager and never gains any of
+    // Manager's coalition-wide capabilities (candidates, storms,
+    // announcements, etc.). Scope is strictly: manage membership of their
+    // OWN org's plain members (add via invite, remove via disable — never
+    // real deletion, never another org admin/Manager/Administrator's
+    // account). Enforced below on users/{uid}'s update rule; the
+    // corresponding Netlify functions (manage-user.mjs, send-invite.mjs)
+    // enforce the identical boundary server-side for the actions that go
+    // through the Admin SDK and bypass these rules entirely — same
+    // two-independent-enforcement-points reasoning as grant-credits.mjs.
+    function isOrgAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgAdmin == true;
+    }
     // ── NEW — org identity (August 2026) ─────────────────────────────────
     // Matches AuthContext.jsx's future orgId reads: checked via a
     // Firestore doc lookup, the exact same pattern as isAdmin()/isManager()
@@ -72,10 +89,26 @@ service cloud.firestore {
     // here: a user assigning themselves into a different org would give
     // them that org's addons/credits/data access for free. Org assignment
     // now only ever happens via scripts/migrate-users-to-orgs.mjs (Admin
-    // SDK, bypasses these rules) or a future admin-only action — never a
-    // self-service profile edit.
+    // SDK, bypasses these rules), a direct Firestore edit, or the
+    // Admin-panel orgId editor added below — never a self-service profile
+    // edit.
+    //
+    // dailyLimitStanding added (August 2026, alongside the Admin-panel
+    // orgId editor) — a PERSISTENT addition to a user's role-based daily
+    // call limit, distinct from dailyLimitOverride/dailyLimitOverrideDate
+    // above (which is deliberately same-day-only and already protected).
+    // Same reasoning as every other field in this list: a user granting
+    // themselves a permanently higher limit by writing directly to their
+    // own doc would bypass rateLimitHelper.mjs's whole point. Only an
+    // Administrator may set it, via the Admin-panel edit-user form.
+    // orgAdmin added (August 2026, alongside the org-admin role) — same
+    // reasoning as role/orgId: a user granting themselves this flag would
+    // let them manage other members of their org without ever being made
+    // an actual Administrator. Only a global Administrator may set it (see
+    // the update rule below — the new org-admin branch is explicitly
+    // barred from touching this field, same as role/orgId/dailyLimit*).
     function ownerProtectedFieldsUnchanged() {
-      let protectedFields = ['role', 'orgId', 'dailyCalls', 'dailyCallsDate', 'dailyLimitOverride', 'dailyLimitOverrideDate'];
+      let protectedFields = ['role', 'orgId', 'orgAdmin', 'dailyCalls', 'dailyCallsDate', 'dailyLimitOverride', 'dailyLimitOverrideDate', 'dailyLimitStanding'];
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(protectedFields);
     }
     // Requires the create to reference a real waitlist doc, in status
@@ -97,8 +130,22 @@ service cloud.firestore {
     // OWN rate-limit fields; only an admin can do that, and only on
     // someone else's doc.
     match /users/{uid} {
-      allow get:    if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow list:   if isAdmin();
+      // org-admin addition (August 2026): can read a specific member of
+      // their OWN org (their "My Org" panel needs this), never a member of
+      // a different org. isSameOrg-style comparison against the TARGET
+      // doc's orgId, not the caller's — mirrors the pattern used everywhere
+      // else in this file that scopes a Manager/org-admin action to "their
+      // own org's stuff."
+      allow get:    if isSignedIn() && (request.auth.uid == uid || isAdmin() || (isOrgAdmin() && resource.data.orgId == myOrgId()));
+      // org-admin addition: list is allowed, but ONLY actually returns
+      // results for an org admin when the client's query itself is scoped
+      // to their own org (e.g. where("orgId","==",myOrgId())) — Firestore
+      // evaluates this same per-document condition against every doc a
+      // list query could return, so an unscoped query from an org admin
+      // fails closed rather than silently returning nothing. The
+      // AdminPage.jsx "My Org" panel always queries this way; see that
+      // component for the actual query.
+      allow list:   if isAdmin() || (isOrgAdmin() && resource.data.orgId == myOrgId());
       // SECURITY FIX: previously this only required
       // `request.auth.uid == uid && role == "user"` — i.e. ANY successfully
       // authenticated Firebase user could write themselves a legitimate-
@@ -131,11 +178,36 @@ service cloud.firestore {
                     && referencesValidInvite();
       allow update: if isSignedIn() && (
                       // Owner may update their own profile fields, but never
-                      // `role`, `orgId`, or the rate-limit bookkeeping fields.
+                      // `role`, `orgId`, `orgAdmin`, or the rate-limit
+                      // bookkeeping fields.
                       (request.auth.uid == uid && ownerProtectedFieldsUnchanged())
                       ||
                       // Admin may update anyone else's doc (role changes, edits)
                       (isAdmin() && request.auth.uid != uid)
+                      ||
+                      // org-admin addition (August 2026, TODO #1): may
+                      // update a member of their OWN org, but never
+                      // themselves via this branch (the owner branch above
+                      // already covers their own doc, and still can't touch
+                      // their own protected fields), never a DIFFERENT
+                      // org's member, and never role/orgId/orgAdmin/
+                      // dailyLimit* on anyone — ownerProtectedFieldsUnchanged()
+                      // is reused here for exactly that field list, so
+                      // there's one definition of "the fields nobody but a
+                      // real Administrator may touch," not two. Additionally
+                      // restricted to plain members: the TARGET must not
+                      // already be a Manager/Administrator or another org
+                      // admin — an org admin manages their org's rank-and-
+                      // file, never staff or a peer org admin, closing off
+                      // any lateral-privilege path between org admins.
+                      (
+                        isOrgAdmin()
+                        && request.auth.uid != uid
+                        && resource.data.orgId == myOrgId()
+                        && resource.data.role == "user"
+                        && resource.data.orgAdmin != true
+                        && ownerProtectedFieldsUnchanged()
+                      )
                     );
       allow delete: if false; // deletions only happen via manage-user.mjs (Admin SDK, bypasses rules)
     }
@@ -448,6 +520,24 @@ service cloud.firestore {
       allow read: if isSameOrg(orgId) || isAdmin();
       allow write: if false;
     }
+    // ── orgs/{orgId}/creditTransactions/{txnId} ──────────────────────────
+    // Added alongside creditHelper.mjs's per-call ledger (August 22 2026).
+    // One immutable doc per generation debit — credits, functionName
+    // (which tool), uid, real token counts, timestamp — written inside the
+    // same transaction as the generationBalance decrement, exclusively via
+    // debitGenerationCredits()'s Admin SDK call, which bypasses these rules
+    // entirely. Same access shape as creditGrants right above: any member
+    // of the org can read their own org's usage history (this is what
+    // finally lets a customer's credit-history question or a "when is
+    // this account active" question actually get answered from the app
+    // instead of nowhere), or a global Administrator. `allow write: if
+    // false` isn't a gap — there is no legitimate direct-client path to
+    // create, edit, or delete a ledger entry; it would defeat the point of
+    // an audit trail.
+    match /orgs/{orgId}/creditTransactions/{txnId} {
+      allow read: if isSameOrg(orgId) || isAdmin();
+      allow write: if false;
+    }
     // ── transcriptionJobs/{jobId} ────────────────────────────────────────
     // Added alongside the transcription credit-metering wiring (August
     // 2026, closes out A.6). One doc per AssemblyAI job, written by
@@ -493,6 +583,21 @@ service cloud.firestore {
     // useful per-org read case the way a credit grant does.
     match /processedStripeEvents/{eventId} {
       allow read: if isAdmin();
+      allow write: if false;
+    }
+    // ── generationJobs/{jobId} ────────────────────────────────────────────
+    // Added alongside the Background Functions rearchitecture of Message
+    // Machine's generateAll (August 2026, TODO #7 — the 26-second Netlify
+    // timeout's real fix). start-message-generation.mjs creates the job
+    // (Admin SDK), generate-message-background.mjs completes it (Admin SDK,
+    // up to 15 minutes) — the client never writes here, only reads its own
+    // job's status via a live listener while it's "pending", same
+    // read-only-from-client shape as transcriptionJobs/{jobId}. Read scoped
+    // to the job's own creator — a generation job can contain unpublished
+    // draft campaign content, so this is narrower than transcriptionJobs's
+    // org-wide read (which only ever holds a duration/billing record).
+    match /generationJobs/{jobId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow write: if false;
     }
     // ══════════════════════════════════════════════════════════════════
