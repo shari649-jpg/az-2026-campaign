@@ -9,7 +9,13 @@ import { useNavigate } from "react-router-dom";
 // `accentColor` prop some pages used to pass is gone; the eyebrow is
 // always gold now, same as Media's icon square, so every tool page reads
 // as one consistent family rather than each having its own accent color.
-export default function ToolPage({ eyebrow, title, desc, chainTo, children }) {
+// premium (Aug 25 2026): a quiet, non-interruptive call-out for Rebuttal
+// and Rapid Response — the two tools priced at the 3x value premium (see
+// creditHelper.mjs's ORIGIN_MULTIPLIERS). Explicit decision: no in-app
+// warning or confirmation before generating (would get annoying fast on
+// tools people use repeatedly) — this is just a small, always-visible
+// label next to the title so it's discoverable without being in the way.
+export default function ToolPage({ eyebrow, title, desc, chainTo, premium, children }) {
   const navigate = useNavigate();
 
   return (
@@ -32,15 +38,32 @@ export default function ToolPage({ eyebrow, title, desc, chainTo, children }) {
               {eyebrow}
             </div>
           )}
-          <h1 style={{
-            fontFamily: "var(--font-display)",
-            fontSize: "clamp(24px, 4vw, 34px)",
-            color: "#fff",
-            lineHeight: 1.15,
-            marginBottom: desc ? 8 : 0,
-          }}>
-            {title}
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: desc ? 8 : 0 }}>
+            <h1 style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "clamp(24px, 4vw, 34px)",
+              color: "#fff",
+              lineHeight: 1.15,
+            }}>
+              {title}
+            </h1>
+            {premium && (
+              <span title="Priced at a premium rate — see the sales sheet for details" style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "var(--gold)",
+                background: "rgba(255,255,255,0.12)",
+                border: "1.5px solid rgba(245,200,66,0.55)",
+                borderRadius: 20,
+                padding: "3px 10px",
+                whiteSpace: "nowrap",
+              }}>
+                ✨ Premium
+              </span>
+            )}
+          </div>
           {desc && (
             <p style={{ fontSize: 15, color: "rgba(255,255,255,0.75)", lineHeight: 1.6, maxWidth: 580 }}>
               {desc}
