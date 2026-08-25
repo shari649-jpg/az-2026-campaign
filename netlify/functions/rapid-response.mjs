@@ -107,8 +107,14 @@ function extractReadableText(html) {
     .trim();
 }
 
-const ANALYSIS_PROMPT = (text) => `You are a political research analyst. Analyze this article and extract structured information.
-
+const ANALYSIS_PROMPT = (text, meta = null) => `You are a political research analyst briefing campaign staff who need to write real social media posts and rapid-response messaging from this article within the next few minutes. Vague or generic output isn't usable — every field below needs to carry actual, specific information from the article, not a restatement of another field.
+${meta ? `
+Known publication info (use if provided, otherwise extract from text):
+Title: ${meta.title || "extract from text"}
+Publication: ${meta.pub || "extract from text"}
+Date: ${meta.date || "extract from text"}
+Reporter: ${meta.reporter || "extract from text"}
+` : ""}
 Article text:
 ${text.substring(0, 8000)}
 
@@ -119,12 +125,16 @@ Format:
   "publication": "outlet name",
   "date": "publication date",
   "reporter": "reporter name or names",
-  "summary": "2-3 sentence summary of the article",
-  "keyPoints": ["point 1", "point 2", "point 3", "point 4", "point 5"],
+  "summary": "2-3 sentence narrative overview of what the article is about and why it matters right now",
+  "keyPoints": ["specific fact 1", "specific fact 2", "specific fact 3", "specific fact 4", "specific fact 5"],
   "people": [{"name": "Full Name", "role": "title or role"}],
   "quotes": [{"text": "exact quote text without attribution", "speaker": "name"}],
   "issueArea": "one of: education/vouchers, utility rates, housing, water, elections, healthcare, economy/jobs, immigration, other"
-}`;
+}
+
+Field-specific rules:
+- keyPoints: each one must be a standalone, concrete fact — a real number, dollar amount, date, named policy, vote count, or specific claim pulled from the article. Do NOT write generic restatements of the summary ("the article discusses X") — a staffer should be able to read keyPoints alone, without the summary, and still know exactly what happened.
+- If the article doesn't contain enough material for 5 keyPoints, return fewer rather than padding with filler.`;
 
 // Search tab (Handoff #16 punch list): a web_search-backed picklist so staff
 // without a URL in hand yet can still find something to analyze, without
@@ -241,7 +251,7 @@ export default async function (req) {
       const analysisRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: 2000, messages: [{ role: "user", content: ANALYSIS_PROMPT(pageText) }] }),
+        body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: 2200, messages: [{ role: "user", content: ANALYSIS_PROMPT(pageText) }] }),
       });
 
       const analysisData = await analysisRes.json();
@@ -332,35 +342,12 @@ export default async function (req) {
     // ── analyze_text ────────────────────────────────────────────────────────
     if (action === "analyze_text") {
       const meta = manualMeta || {};
-      const prompt = `You are a political research analyst. Analyze this article and extract structured information.
-
-Known publication info (use if provided, otherwise extract from text):
-Title: ${meta.title || "extract from text"}
-Publication: ${meta.pub || "extract from text"}
-Date: ${meta.date || "extract from text"}
-Reporter: ${meta.reporter || "extract from text"}
-
-Article text:
-${text.substring(0, 8000)}
-
-RESPOND ONLY WITH VALID JSON. No markdown, no backticks, no explanation.
-Format:
-{
-  "title": "article headline",
-  "publication": "outlet name",
-  "date": "publication date",
-  "reporter": "reporter name or names",
-  "summary": "2-3 sentence summary of the article",
-  "keyPoints": ["point 1", "point 2", "point 3", "point 4", "point 5"],
-  "people": [{"name": "Full Name", "role": "title or role"}],
-  "quotes": [{"text": "exact quote text without attribution", "speaker": "name"}],
-  "issueArea": "one of: education/vouchers, utility rates, housing, water, elections, healthcare, economy/jobs, immigration, other"
-}`;
+      const prompt = ANALYSIS_PROMPT(text, meta);
 
       const analysisRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: 2000, messages: [{ role: "user", content: prompt }] }),
+        body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: 2200, messages: [{ role: "user", content: prompt }] }),
       });
 
       const analysisData = await analysisRes.json();
