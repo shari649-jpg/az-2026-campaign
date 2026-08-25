@@ -1096,7 +1096,15 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     }
   };
 
-  const callAPI = async (prompt, maxTokens=1000) => {
+  // premiumEligible=false (used by generateHashtags below) deliberately
+  // omits `origin` from the request body regardless of the live
+  // generationOrigin state, so generate-message.mjs's
+  // multiplierForOrigin(origin) resolves to 1x. Decision, Aug 25 2026:
+  // hashtag generation should never carry the Rapid Response 3x premium,
+  // even though it shares this same callAPI function with real message
+  // regeneration — see the standing to-do list item this closes (Handoff
+  // #41 §3, "new minor open questions", item 1).
+  const callAPI = async (prompt, maxTokens=1000, { premiumEligible=true } = {}) => {
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
     const res = await fetch("/.netlify/functions/generate-message", {
       method:"POST",
@@ -1104,7 +1112,7 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         "Content-Type":"application/json",
         ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
       },
-      body: JSON.stringify({ max_tokens:maxTokens, messages:[{role:"user",content:prompt}], origin: generationOrigin }),
+      body: JSON.stringify({ max_tokens:maxTokens, messages:[{role:"user",content:prompt}], origin: premiumEligible ? generationOrigin : null }),
     });
     if (res.status === 429) {
       const limitData = await res.json();
@@ -1439,7 +1447,7 @@ Suggest relevant hashtags organized by category.
 RESPOND ONLY WITH VALID JSON. No markdown. No backticks. No explanation.
 Format: {"campaign":["#tag"],"issue":["#tag"],"audience":["#tag"],"trending":["#tag"],"arizona":["#tag"]}
 Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" only if content is Arizona-specific.`;
-      const r = await callAPI(prompt, 500);
+      const r = await callAPI(prompt, 500, { premiumEligible: false });
       setHashtags(r);
     } catch { notify("Could not generate hashtags. Please try again.","err"); }
     setHashLoading(false);
