@@ -1541,7 +1541,6 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
     setMsgMode("");
     setMsgFrame("");
     setFromResearch(false);
-    setCountySuggestion("");
     setMessages({});
     setHashtags(null);
     setGenError(null);
@@ -1549,6 +1548,8 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
     setGenerationOrigin(null); // clears any Rapid Response premium tag — see its own declaration comment for the full lifecycle
     setFormKey(k => k + 1);
     setView("form");
+    notify("Started a new campaign.");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   // Auto-save draft whenever formData or messages change
