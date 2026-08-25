@@ -732,7 +732,7 @@ export default function RapidResponseReader() {
       sourcePublication: article.publication,
       sourceDate: article.date,
       sourceUrl: article.url || null,
-      issueText: `${article.title}\n\n${article.summary}\n\nKey Points:\n${(article.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join("\n")}${article.url ? `\n\nSource: ${article.url}` : ""}`,
+      issueText: `${article.title}\n\n${article.summary}\n\nKey Points:\n${(article.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join("\n")}${(article.quotes || []).length ? `\n\nQuotes:\n${article.quotes.map(q => `"${q.text || q}"${q.speaker ? ` — ${q.speaker}` : ""}`).join("\n")}` : ""}${article.url ? `\n\nSource: ${article.url}` : ""}`,
       focalPoint: "",
       pushedAt: new Date().toISOString(),
       // Explicit source tag (Aug 22 2026) — replaces the old
@@ -795,9 +795,11 @@ export default function RapidResponseReader() {
         {article && (
           <button onClick={reset} style={S.btnSmall}>+ New Article</button>
         )}
-        <button onClick={() => setView("search")} style={tabStyle(view === "search")}>
-          🔎 Search
-        </button>
+        {(article || view === "search") && (
+          <button onClick={() => setView("search")} style={tabStyle(view === "search")}>
+            🔎 Search
+          </button>
+        )}
       </div>
 
       {/* TOAST */}
@@ -826,12 +828,12 @@ export default function RapidResponseReader() {
                     Analyze an Article
                   </h2>
                   <p style={{ fontSize: 18, color: B.textMid, lineHeight: 1.6 }}>
-                    Paste a URL to extract the summary, key points, people, and quotes — then push directly to Message Machine.
+                    Three ways to start: paste a link, paste the article text directly, or search the web to find one — then push the results straight to Message Machine.
                   </p>
                 </div>
 
-                <div style={{ ...S.card, marginBottom: 20 }}>
-                  <label htmlFor="url-input" style={S.label}>Article URL</label>
+                <div style={{ ...S.card, marginBottom: 16 }}>
+                  <label htmlFor="url-input" style={S.label}>Option 1 — Paste an Article URL</label>
                   <div style={{ display: "flex", gap: 10 }}>
                     <input
                       id="url-input"
@@ -863,14 +865,24 @@ export default function RapidResponseReader() {
                   </p>
                 </div>
 
-                <div style={{ textAlign: "center", color: B.textMute, fontSize: 14, marginBottom: 20 }}>— or —</div>
+                <div style={{ textAlign: "center", color: B.textMute, fontSize: 14, marginBottom: 16 }}>— or —</div>
 
-                <button
-                  onClick={() => setShowManual(true)}
-                  style={{ ...S.btnSecondary, width: "100%", justifyContent: "center", padding: "14px" }}
-                >
-                  ✏️ Paste article text manually
-                </button>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => setShowManual(true)}
+                    style={{ ...S.btnSecondary, flex: "1 1 240px", justifyContent: "center", padding: "16px 14px", flexDirection: "column", gap: 4, lineHeight: 1.4 }}
+                  >
+                    <span>✏️ Option 2 — Paste Article Text</span>
+                    <span style={{ fontSize: 12, fontWeight: 400, color: B.textMute }}>Have the text but not a working link? Paste it in directly.</span>
+                  </button>
+                  <button
+                    onClick={() => setView("search")}
+                    style={{ ...S.btnSecondary, flex: "1 1 240px", justifyContent: "center", padding: "16px 14px", flexDirection: "column", gap: 4, lineHeight: 1.4 }}
+                  >
+                    <span>🔎 Option 3 — Search the Web</span>
+                    <span style={{ fontSize: 12, fontWeight: 400, color: B.textMute }}>Don't have a link yet? Search for recent coverage, then pick a result.</span>
+                  </button>
+                </div>
               </>
             )}
 
