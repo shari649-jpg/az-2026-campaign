@@ -8,6 +8,7 @@ export default function RebuttalPage() {
       title="Rebuttal Campaign Generator"
       desc="Turn a false narrative into a full multi-activist, multi-platform rebuttal campaign with anchor phrase, lenses, and ready-to-post content."
       chainTo={{ label: "Generate proactive messaging? Try the Message Machine", path: "/messaging" }}
+      premium
     >
       <RebuttalGenerator />
     </ToolPage>
