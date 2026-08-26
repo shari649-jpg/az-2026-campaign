@@ -18,7 +18,7 @@ const MODULES = [
   {
     label: "Message Machine", path: "/messaging", icon: "⚙️",
     bg: "#E0FAF5", bord: "#9DD8CC", titc: MM_TEAL,
-    desc: "Generates drafts for all 6 platforms at once (Facebook, Instagram, Threads, BlueSky, Twitter/X, TikTok). Expand, shorten, or rephrase per platform. Pro Mode for advanced fields.",
+    desc: "Generates drafts for all 6 platforms at once (Facebook, Instagram, Threads, BlueSky, Twitter/X, TikTok). Expand, shorten, or rephrase per platform. Pro Mode for advanced fields to select audience, voice, tone, etc.",
   },
   {
     label: "Rapid Response", path: "/rapid-response", icon: "⚡",
@@ -31,14 +31,14 @@ const MODULES = [
     desc: "Built to respond to a specific activist or opposing profile. Builds an anchor phrase + rebuttal angles, then 6-platform posts.",
   },
   {
-    label: "Research", path: "/research", icon: "🔍",
+    label: "Research (Arizona plus ~60 national/state candidate data deemed flippable)", path: "/research", icon: "🔍",
     bg: "#E0F2EC", bord: "#A8D9C8", titc: TEAL,
     desc: "Search facts, compare races, and pull district-level detail. Select multiple facts to carry into a draft.",
   },
   {
     label: "Media & Graphics Studio", path: "/media", icon: "🎨",
     bg: "#DFF7F1", bord: "#A8E0D2", titc: MEDIA_TEAL,
-    desc: "Browse approved images/video, or build branded graphics (3 templates, single or 4-slide carousel). Found in the More ▾ menu.",
+    desc: "Browse approved images/video, or build branded graphics (5 templates, single or 4-slide carousel). Found in the More ▾ menu.",
   },
   {
     label: "Shared Library", path: "/library", icon: "📚",
@@ -48,7 +48,7 @@ const MODULES = [
   {
     label: "Storm Chasers Hub", path: "/storms", icon: "🌩️",
     bg: "#fdf3c0", bord: "#e8d488", titc: GOLD_DEEP,
-    desc: "Coordinate a full multi-platform push. Members create & manage their own posts; Managers/Admins review, publish, and lock text.",
+    desc: "Coordinate a full multi-platform toolkit across your entire org. Members create & manage their own posts; Managers/Admins review, publish, archive and lock text (when desired).",
   },
 ];
 
@@ -59,11 +59,11 @@ const ROLES = [
   },
   {
     role: "Manager", color: GOLD_DEEP, bg: "#fdf3c0", bord: "#e8d488",
-    desc: "Everything a Member can do, plus reviewing/publishing Storms, locking platform text, Prompt Sandbox, and the Admin panel.",
+    desc: "Everything a Member can do, plus reviewing/publishing Storms, locking platform text, and the Admin panel.",
   },
   {
     role: "Administrator", color: TERRA, bg: "#FFF0E8", bord: "#F0C4A8",
-    desc: "Everything a Manager can do, plus user role changes and account deletion.",
+    desc: "Everything a Manager can do, plus user role changes and account deletion. Access to the sandbox for video transcription and post creation.",
   },
 ];
 
@@ -117,7 +117,7 @@ export default function QuickStartPage() {
     <ToolPage
       eyebrow="Help"
       title="Comms Hub Quick Reference"
-      desc="Keep this handy — a map of every tool, how they connect, and the two rules that matter most. For the full walkthrough, see the User Manual."
+      desc="Keep this handy — a two-page map of every tool, how they connect, and the two rules that matter most. For the full walkthrough, see the User Manual."
       accentColor={TEAL}
     >
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "36px 24px 64px" }}>
