@@ -971,6 +971,12 @@ export default function RapidResponseReader() {
         {/* ══════ SEARCH VIEW ══════ */}
         {view === "search" && (
           <div style={{ maxWidth: 740, margin: "0 auto" }}>
+            <button
+              onClick={() => setView("reader")}
+              style={{ ...S.btnSmall, marginBottom: 20 }}
+            >
+              ← Back
+            </button>
             <div style={{ marginBottom: 32 }}>
               <h2 style={{ fontSize: 34, fontWeight: 700, fontFamily: "'DM Serif Display', Georgia, serif", color: B.teal, marginBottom: 10 }}>
                 Search for an Article
