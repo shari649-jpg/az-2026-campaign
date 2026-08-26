@@ -13,7 +13,7 @@
 // response shape.
 
 import { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import PostDisplayCard from "../tools/storms/PostDisplayCard";
 
 const TEAL      = "var(--teal)";
@@ -104,14 +104,18 @@ export default function PublicStormPage() {
 }
 
 function LogoBlock() {
+  // Linked to the coalition's own homepage (Aug 26 2026) — this page is
+  // fully public with no shared nav/header (see file header comment), so
+  // without this the logo was a dead end: a visitor landing here from a
+  // shared link had no way to reach the rest of the site.
   return (
-    <div style={{ textAlign: "center", marginBottom: 28 }}>
-      <img src="/azc-logo-teal.png" alt="Arizona Coalition" style={{ height: 64, marginBottom: 12 }} />
+    <Link to="/" style={{ textAlign: "center", marginBottom: 28, textDecoration: "none", display: "block" }}>
+      <img src="/azc-logo-teal.png" alt="Arizona Coalition — go to homepage" style={{ height: 64, marginBottom: 12 }} />
       <div style={{ fontFamily: "var(--font-display)", fontSize: 24, color: "#fff", letterSpacing: "-0.01em" }}>Arizona Coalition</div>
       <div style={{ fontFamily: "var(--font-body)", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: GOLD, marginTop: 4 }}>
         Comms Hub · 2026
       </div>
-    </div>
+    </Link>
   );
 }
 
