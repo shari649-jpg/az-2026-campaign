@@ -1336,7 +1336,7 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         const unsub = onSnapshot(jobRef, snap => {
           if (!snap.exists()) return; // shouldn't happen, ignore a stray empty read
           const job = snap.data();
-          if (job.status === "pending") return;
+          if (job.status === "pending" || job.status === "processing") return;
 
           clearTimeout(activeJobRef.current.timeoutId);
           unsub();
