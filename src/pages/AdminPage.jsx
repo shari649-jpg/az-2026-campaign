@@ -63,6 +63,16 @@ export default function AdminPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // Manager-scope flags (Aug 26 2026). isManagerScope is true only for a
+  // real Manager who ISN'T also a real Administrator — an Administrator
+  // who happens to also hold the "manager" role (AuthContext's isManager
+  // returns true for both) always gets the full, unrestricted UI, never
+  // the restricted one. myOrgId is this account's own org, used to scope
+  // every Manager-mode query/action below to just that org — never a
+  // global view the way isAdmin's is.
+  const isManagerScope = isManager && !isAdmin;
+  const myOrgId = currentProfile?.orgId || null;
+
   const [activeTab, setActiveTab]   = useState("users"); // "users" | "waitlist"
   const [users, setUsers]           = useState([]);
   const [waitlist, setWaitlist]     = useState([]);
@@ -197,6 +207,13 @@ export default function AdminPage() {
   // AuthContext wiring without a second gate to keep in sync.
   useEffect(() => { if (!isManager && !isOrgAdmin) navigate("/"); }, [isManager, isOrgAdmin]);
   useEffect(() => { if (isManager) { fetchUsers(); fetchWaitlist(); } }, [isManager]);
+  // Manager scope (Aug 26 2026): Settings and Orgs are filtered out of the
+  // visible tab list, but that alone doesn't stop a stale link or a
+  // hand-typed ?tab=settings from landing a Manager on one of those tabs'
+  // content directly — the tabs array is just what renders as buttons,
+  // activeTab itself isn't otherwise constrained. This bounces them back
+  // to Users rather than showing a tab with no visible way to leave it.
+  useEffect(() => { if (isManagerScope && (activeTab === "settings" || activeTab === "orgs")) setActiveTab("users"); }, [isManagerScope, activeTab]);
   useEffect(() => { if (activeTab === "settings" && !pubRegenLoaded) fetchPubRegenSetting(); }, [activeTab]);
   useEffect(() => { if (activeTab === "orgs" && !orgsLoaded) fetchOrgs(); }, [activeTab]);
   useEffect(() => { if (activeTab === "usage" && !orgsLoaded && !orgsLoading) fetchOrgs(); }, [activeTab]);
@@ -637,7 +654,14 @@ export default function AdminPage() {
   const fetchUsers = async () => {
     setLoadingUsers(true);
     try {
-      const snap = await getDocs(collection(db, "users"));
+      // Manager scope (Aug 26 2026): query scoped to their own org — an
+      // unscoped collection() query from a Manager would now return only
+      // their own org's docs anyway per firestore.rules' per-document list
+      // filtering, but querying pre-scoped avoids paying for a full
+      // collection read that gets filtered down after the fact.
+      const snap = isManagerScope && myOrgId
+        ? await getDocs(query(collection(db, "users"), where("orgId", "==", myOrgId)))
+        : await getDocs(collection(db, "users"));
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       const order = { administrator: 0, manager: 1, user: 2 };
       list.sort((a, b) => {
@@ -653,11 +677,24 @@ export default function AdminPage() {
   const fetchWaitlist = async () => {
     setLoadingWaitlist(true);
     try {
+      // Manager scope (Aug 26 2026): scoped the same way as fetchUsers
+      // above. Entries without an orgId (individual-track signups, or
+      // pending entries from before an org was assigned) won't show for a
+      // Manager — see firestore.rules' waitlist comment for why that's
+      // deliberate, not a gap.
       let snap;
-      try {
-        snap = await getDocs(query(collection(db, "waitlist"), orderBy("submittedAt", "desc")));
-      } catch {
-        snap = await getDocs(collection(db, "waitlist"));
+      if (isManagerScope && myOrgId) {
+        try {
+          snap = await getDocs(query(collection(db, "waitlist"), where("orgId", "==", myOrgId), orderBy("submittedAt", "desc")));
+        } catch {
+          snap = await getDocs(query(collection(db, "waitlist"), where("orgId", "==", myOrgId)));
+        }
+      } else {
+        try {
+          snap = await getDocs(query(collection(db, "waitlist"), orderBy("submittedAt", "desc")));
+        } catch {
+          snap = await getDocs(collection(db, "waitlist"));
+        }
       }
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       list.sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
@@ -1461,17 +1498,29 @@ export default function AdminPage() {
     setCnUploading(false);
   }
 
-  if (!isManager && !isOrgAdmin) return null;
+  if (!isAdmin && !isManager && !isOrgAdmin) return null;
 
   // org-admin addition (August 2026): early return before any of the
   // Manager/Administrator tabbed UI below — an org admin gets a
   // self-contained, deliberately much smaller panel (own-org members,
   // invite, disable/enable) rather than a cut-down version of this giant
   // component. Keeps the org-admin surface easy to reason about/audit on
-  // its own, and means nothing below this line needs an isOrgAdmin check
-  // scattered through it — everything below is still exactly what it was,
-  // reachable only by a real Manager or Administrator.
-  if (isOrgAdmin && !isManager) return <OrgAdminPanel />;
+  // its own.
+  //
+  // Priority (Aug 26 2026 fix — this is the exact bug Handoff #38
+  // root-caused and left as a to-do): Administrator > Manager > pure org
+  // admin. Before this fix, the condition was `isOrgAdmin && !isManager`,
+  // so an account that was BOTH org admin AND Manager fell through this
+  // check entirely and landed on the full tabbed UI below — which then
+  // tried unscoped fetchUsers()/fetchWaitlist() calls that firestore.rules
+  // rejects for anyone who isn't a real Administrator, failing silently.
+  // Now: a real Manager (isManagerScope, defined above as isManager &&
+  // !isAdmin) always gets the scoped tabbed UI below regardless of
+  // isOrgAdmin — Manager's scope is a superset of what OrgAdminPanel
+  // offers, so there's no real capability lost for that combination. Pure
+  // org admins (isOrgAdmin, not also Manager or Administrator) still get
+  // the small standalone panel exactly as before.
+  if (isOrgAdmin && !isManager && !isAdmin) return <OrgAdminPanel />;
 
   return (
     <div style={{ minHeight: "100vh", background: "#f8f8f6", fontFamily: "'Atkinson Hyperlegible', Georgia, serif", color: CHARCOAL }}>
@@ -1525,7 +1574,15 @@ export default function AdminPage() {
           { id: "orgs", label: "Orgs" },
           { id: "usage", label: "Usage" },
           { id: "candidates", label: "Candidates" },
-          ].map(tab => (
+          // Manager scope (Aug 26 2026): Settings and Orgs excluded —
+          // explicit, direct instruction: "they can't change people to/from
+          // admin. they can't add usage credits. not settings." Orgs is
+          // where org-wide AI-generation credits get granted; Settings is
+          // global app configuration. Everything else (Users, Waitlist,
+          // Community Notes, Headshots, Usage, Candidates) confirmed
+          // include for Managers.
+          ].filter(tab => !isManagerScope || !["settings", "orgs"].includes(tab.id))
+          .map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSearch(""); }}
               style={{
                 padding: "10px 20px", fontSize: 15, fontWeight: 700, fontFamily: "inherit",
@@ -1876,7 +1933,7 @@ export default function AdminPage() {
                                 style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: TEAL, padding: "2px 4px", textDecoration: "underline" }}>
                                 Details
                               </button>
-                              {!isMe && (
+                              {!isMe && !(isManagerScope && u.role === "administrator") && (
                                 <button onClick={() => startEdit(u)} title="Edit name / social"
                                   style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#aaa", padding: 2 }}>
                                   ✏️
@@ -1909,16 +1966,33 @@ export default function AdminPage() {
                         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, flexWrap: "wrap" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#888" }}>Role</div>
-                            <select
-                              value={u.role || "user"}
-                              onChange={e => handleRoleChange(u.id, e.target.value)}
-                              disabled={saving === u.id || isMe}
-                              style={{ padding: "8px 12px", fontSize: 14, fontWeight: 700, fontFamily: "inherit", border: `2px solid ${rc.border}`, borderRadius: 8, background: rc.bg, color: rc.color, cursor: (saving === u.id || isMe) ? "not-allowed" : "pointer", minWidth: 150, appearance: "auto" }}
-                            >
-                              {ROLE_OPTIONS.map(r => (
-                                <option key={r} value={r}>{r === "administrator" ? "Administrator" : r === "manager" ? "Manager" : "Member"}</option>
-                              ))}
-                            </select>
+                            {/* Manager scope (Aug 26 2026): an Administrator's
+                                row is fully locked — no dropdown at all, just
+                                a static label — since a Manager can't touch
+                                it (firestore.rules' managerRoleChangeValid()
+                                enforces this server-side too, this is just
+                                matching UX to what would actually be allowed
+                                rather than letting someone pick an option
+                                that's guaranteed to fail). For anyone else,
+                                the dropdown offers only user/manager, never
+                                administrator — nothing here lets a Manager
+                                promote anyone to Administrator. */}
+                            {isManagerScope && u.role === "administrator" ? (
+                              <div style={{ padding: "8px 12px", fontSize: 14, fontWeight: 700, border: `2px solid ${rc.border}`, borderRadius: 8, background: rc.bg, color: rc.color, minWidth: 150, textAlign: "center" }}>
+                                Administrator
+                              </div>
+                            ) : (
+                              <select
+                                value={u.role || "user"}
+                                onChange={e => handleRoleChange(u.id, e.target.value)}
+                                disabled={saving === u.id || isMe}
+                                style={{ padding: "8px 12px", fontSize: 14, fontWeight: 700, fontFamily: "inherit", border: `2px solid ${rc.border}`, borderRadius: 8, background: rc.bg, color: rc.color, cursor: (saving === u.id || isMe) ? "not-allowed" : "pointer", minWidth: 150, appearance: "auto" }}
+                              >
+                                {(isManagerScope ? ROLE_OPTIONS.filter(r => r !== "administrator") : ROLE_OPTIONS).map(r => (
+                                  <option key={r} value={r}>{r === "administrator" ? "Administrator" : r === "manager" ? "Manager" : "Member"}</option>
+                                ))}
+                              </select>
+                            )}
                             {saving === u.id && <span style={{ fontSize: 12, color: "#888" }}>Saving…</span>}
                           </div>
 
@@ -1943,7 +2017,17 @@ export default function AdminPage() {
                             );
                           })()}
 
-                          {isAtDailyLimit(u) && (
+                          {/* Manager scope (Aug 26 2026): hidden entirely —
+                              firestore.rules' managerRoleChangeValid() only
+                              permits the `role` field to change, nothing
+                              else, so showing this control to a Manager
+                              would just offer a button that's guaranteed to
+                              fail server-side. Not one of the three things
+                              explicitly named as off-limits, but bundled
+                              under the same "no extra AI-call budget"
+                              boundary as the Orgs-tab credit grant — kept
+                              out for the same reason until asked for. */}
+                          {isAtDailyLimit(u) && !isManagerScope && (
                             <div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--terracotta-light)", border: `1.5px solid ${TERRACOTTA}`, borderRadius: 8, padding: "6px 10px" }}>
                               <span style={{ fontSize: 11.5, fontWeight: 700, color: TERRACOTTA, whiteSpace: "nowrap" }}>🚦 At limit today</span>
                               {[10, 25].map(amount => (
