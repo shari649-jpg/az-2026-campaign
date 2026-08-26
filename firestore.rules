@@ -122,6 +122,38 @@ service cloud.firestore {
         && wl.data.status == "invited"
         && wl.data.email == request.resource.data.email;
     }
+    // Manager role-change scope (Aug 26 2026) — deliberately narrow: a
+    // Manager may change another user's role only between "user" and
+    // "manager", only within their own org, and never touches an existing
+    // Administrator's doc at all (can't demote one) nor promotes anyone TO
+    // Administrator. Real per-org confirmation the person gave directly:
+    // "they can't change people to/from admin. they can't add usage
+    // credits. not settings." This function enforces the first of those
+    // three server-side; the other two are enforced by simply never
+    // granting Manager any rule elsewhere that would let them touch
+    // orgs/{orgId}.credits or the settings doc.
+    function managerRoleChangeValid() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+        && resource.data.role != "administrator"
+        && request.resource.data.role in ["user", "manager"];
+    }
+    // Manager profile-edit scope (Aug 26 2026) — a SEPARATE allowance from
+    // managerRoleChangeValid() above, matching AdminPage.jsx's existing
+    // (and pre-existing, not new) Edit-name/social modal: saveEdit()
+    // always writes fullName/socialAccounts/primarySocial/
+    // secondarySocial/researchOrgIds regardless of role, and only
+    // conditionally adds orgId/dailyLimitStanding/dailyLimitOverride*/
+    // orgAdmin when `isAdmin` — those four inputs are already individually
+    // `disabled={!isAdmin}` in the form itself (confirmed by direct code
+    // read before writing this). This function completes that
+    // already-half-built intent server-side rather than introducing a new
+    // one: a Manager could always reach this modal for a non-admin target
+    // once the routing/nav gaps elsewhere are fixed, and the ordinary
+    // fields were never meant to be Administrator-only.
+    function managerProfileEditValid() {
+      let allowedFields = ['fullName', 'socialAccounts', 'primarySocial', 'secondarySocial', 'researchOrgIds'];
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
+    }
     // ── users/{uid} ──────────────────────────────────────────────────────
     // Each person can read/create their own profile (registration, Google
     // sign-in first-time doc creation, AuthContext's own-profile read).
@@ -145,7 +177,17 @@ service cloud.firestore {
       // fails closed rather than silently returning nothing. The
       // AdminPage.jsx "My Org" panel always queries this way; see that
       // component for the actual query.
-      allow list:   if isAdmin() || (isOrgAdmin() && resource.data.orgId == myOrgId());
+      // Manager addition (Aug 26 2026) — a plain Manager (role=="manager",
+      // not also Administrator) previously satisfied NEITHER isAdmin() NOR
+      // the org-admin clause here, so AdminPage.jsx's fetchUsers() —
+      // completely unscoped — failed outright for every Manager, even
+      // though the nav/UI (and this app's own Quick Reference doc) implied
+      // Managers get real Admin panel access. Confirmed live via a real
+      // Manager test account (Aug 26 2026): zero access, no Admin link
+      // shown at all. Scoped to the Manager's own org — same isSameOrg()
+      // boundary Manager already has everywhere else in this file (Storms
+      // review, announcements) — not global the way isAdmin() is.
+      allow list:   if isAdmin() || (isOrgAdmin() && resource.data.orgId == myOrgId()) || (isManager() && resource.data.orgId == myOrgId());
       // SECURITY FIX: previously this only required
       // `request.auth.uid == uid && role == "user"` — i.e. ANY successfully
       // authenticated Firebase user could write themselves a legitimate-
@@ -208,6 +250,34 @@ service cloud.firestore {
                         && resource.data.orgAdmin != true
                         && ownerProtectedFieldsUnchanged()
                       )
+                      ||
+                      // Manager addition (Aug 26 2026) — see
+                      // managerRoleChangeValid()'s own comment for the
+                      // exact scope. Same own-org boundary as the
+                      // org-admin branch above (isSameOrg via myOrgId()),
+                      // same "never touch your own doc through this
+                      // branch" restriction.
+                      (
+                        isManager()
+                        && request.auth.uid != uid
+                        && resource.data.orgId == myOrgId()
+                        && managerRoleChangeValid()
+                      )
+                      ||
+                      // Manager profile-edit branch — see
+                      // managerProfileEditValid()'s own comment. Same
+                      // own-org boundary, and same "never an
+                      // Administrator's doc" restriction as the role-change
+                      // branch above, for consistency (an Administrator's
+                      // row is fully locked in the UI, not just the role
+                      // control on it).
+                      (
+                        isManager()
+                        && request.auth.uid != uid
+                        && resource.data.orgId == myOrgId()
+                        && resource.data.role != "administrator"
+                        && managerProfileEditValid()
+                      )
                     );
       allow delete: if false; // deletions only happen via manage-user.mjs (Admin SDK, bypasses rules)
     }
@@ -228,8 +298,16 @@ service cloud.firestore {
     // the UI, and this rule now enforces that server-side too.
     // Fixed July 2026 security pass.
     match /waitlist/{id} {
-      allow get:    if isAdmin();
-      allow list:   if isAdmin();
+      // Manager addition (Aug 26 2026) — scoped to entries already tagged
+      // with their own org. Waitlist entries only get an orgId field for
+      // "org" account-type invites (send-invite.mjs) — an "individual"
+      // track signup, or a pending doc from before an org was assigned,
+      // has no orgId at all and so won't match this clause for anyone but
+      // an Administrator. That's a deliberate fail-closed choice, not an
+      // oversight: an org-less entry isn't really "this Manager's org's"
+      // business yet.
+      allow get:    if isAdmin() || (isManager() && resource.data.orgId == myOrgId());
+      allow list:   if isAdmin() || (isManager() && resource.data.orgId == myOrgId());
       allow create: if request.resource.data.status == "pending"; // public signup always starts as pending
       // Tightened alongside the users/{uid} fix above: only the person
       // whose OWN verified email matches this waitlist entry can flip it
@@ -238,6 +316,7 @@ service cloud.firestore {
       // access) is a needless griefing surface now that this doc's status
       // is load-bearing for account creation.
       allow update: if isAdmin() ||
+                      (isManager() && resource.data.orgId == myOrgId()) ||
                       // RegisterPage.jsx / LoginPage.jsx marking an invited entry "registered" after successful signup
                       (isSignedIn() &&
                         resource.data.status == "invited" &&
