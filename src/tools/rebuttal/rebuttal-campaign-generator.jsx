@@ -716,6 +716,9 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
           <p style={{ fontSize: 13, color: "#8a6800", marginBottom: 12, lineHeight: 1.5, fontStyle: "italic" }}>
             Type or paste the exact false claim, misleading statement, or disinformation narrative here — this is what the entire campaign is built to counter.
           </p>
+          <p style={{ fontSize: 12.5, color: "#8a6800", marginBottom: 12, lineHeight: 1.5 }}>
+            If a rebuttal doesn't come out the way you expected, check that what you typed was the lie, not the truth — that's a common mistake. Typing the corrective statement (e.g. "immigrants are not aliens") makes the campaign argue against that statement, not for it. Type the false claim itself (e.g. "it's fine to call immigrants 'aliens'").
+          </p>
           <textarea
             id="narrative-input"
             style={{ ...S.textarea, borderColor: "#F5C842", background: "#fff" }}
