@@ -113,6 +113,18 @@ export default function StormPostsPanel({ storm, justCreated, onClose }) {
     }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{ background: "#fff", borderRadius: 14, padding: 28, maxWidth: 680, width: "100%" }}>
 
+        {/* Explicit labeled back button (Aug 26 2026) — the ✕ below is easy
+            to miss on mobile (small, low-contrast, top-right corner) and
+            doesn't read as "back to the list" the way a labeled button does.
+            Same onClose handler as the ✕ and the backdrop click — just a
+            clearer, more discoverable way to trigger it. */}
+        <button onClick={onClose} style={{
+          background: "none", border: "none", color: TEAL, fontWeight: 700, fontSize: 14,
+          cursor: "pointer", padding: 0, marginBottom: 14, display: "flex", alignItems: "center", gap: 4,
+        }}>
+          ← Back to Storms
+        </button>
+
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 21, color: TEAL, fontFamily: "var(--font-display)" }}>{storm.title}</h2>
