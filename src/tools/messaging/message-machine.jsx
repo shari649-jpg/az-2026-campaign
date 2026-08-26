@@ -519,9 +519,19 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
   const phrasingFlags = detectBannedStructures(message || "");
 
   const handleQuick = (opt) => {
-    const next = localOpt === opt ? "" : opt;
-    setLocalOpt(next);
-    onRegen(p.id, next, message);
+    // Was previously a toggle (localOpt === opt ? "" : opt) — pressing the
+    // same quick-action button twice in a row would silently clear the
+    // option and call onRegen with an empty regenOpt, which buildRegenPrompt
+    // has no case for and falls through to its REPHRASE branch. Confirmed
+    // via screen recording (Aug 26 2026): pressing Shorten a second time
+    // produced a longer result than the first Shorten pass — because it
+    // was actually running a rephrase ("keep the same length"), not a
+    // second shorten. localOpt was never read anywhere else in this file
+    // (no highlighting/active-state use), so there was no reason to keep
+    // the toggle-off behavior. Now every press always runs the action the
+    // button says, so pressing Shorten repeatedly keeps shortening.
+    setLocalOpt(opt);
+    onRegen(p.id, opt, message);
   };
 
   return (
@@ -1025,8 +1035,18 @@ function detectArrivalSource() {
     const perspObj = SPEAKER_PERSPECTIVES.find(p => p.id === formData.perspective);
     const perspLine = perspObj ? `Grammatical person: ${perspObj.label} — ${perspObj.desc}` : "";
 
+    const targetLen = Math.round(currentLen * 0.75);
     const instruction = regenOpt === "shorten"
-      ? `SHORTEN this message. It is currently ${currentLen} characters. You MUST produce a version that is meaningfully shorter — at least 20% fewer characters. Keep the core message and call to action but cut filler, reduce examples, and tighten every sentence. Do not add new content.`
+      // Strengthened (Aug 26 2026): the platform voice guide above this
+      // instruction in the prompt tells Facebook specifically to write a
+      // "full story... 3-4 paragraphs" — a structural instruction that
+      // competes with shortening. A vague "at least 20% shorter" target
+      // measured 15% in practice (video-confirmed). Now gives a concrete
+      // character target and explicitly tells the model the length cut
+      // overrides the platform voice guide's structural fullness for this
+      // pass — it should still keep the platform's TONE, just not the
+      // "full story" length expectation.
+      ? `SHORTEN this message. It is currently ${currentLen} characters. Cut it down to roughly ${targetLen} characters or fewer — that's a hard target, not a suggestion. Keep the core message and call to action but cut filler, drop or compress examples, and tighten every sentence. Do not add new content. This length cut takes priority over the platform voice guide's usual structure/length above (e.g. Facebook's "full story, 3-4 paragraphs" expectation) — keep that platform's tone and voice, but not its usual length.`
       : regenOpt === "expand"
       ? `EXPAND this message with more detail, context, and persuasive depth. Keep the same tone and platform style. Do not change the core message.`
       : `REPHRASE this message. Keep the same length, meaning, and platform style but use different wording, sentence structure, and framing.`;
@@ -1383,7 +1403,25 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     setPlatLoad(p=>({...p,[platformId]:true}));
     setGenError(null);
     try {
-      const maxTok = regenOpt === "expand" ? 1600 : 1000;
+      // Was a fixed 1600 for expand regardless of currentText's length —
+      // real risk on multi-round Expand (Aug 26 2026 finding): each press
+      // starts from an already-longer message and needs to output an even
+      // longer one, while the ceiling never moved. On a platform with a
+      // large maxChars (Facebook, 63,206) there's nothing else stopping
+      // growth, so a few rounds of Expand would eventually exceed 1600
+      // output tokens and hit the pre-existing "response cut off"
+      // (stop_reason === "max_tokens") truncation error below — a real
+      // failure mode, not a hypothetical one, given parseGeneratedPayload
+      // already had dedicated handling for exactly this case. Now scales
+      // with currentText's own length: assume ~3.5 chars/token, budget for
+      // up to ~50% growth over the current length, plus headroom for the
+      // JSON wrapper, floored at the old 1600 and capped at 4096 (well
+      // under any modern model's real output ceiling — not trying to find
+      // the exact limit here, just giving enough room that this specific
+      // failure mode stops recurring in normal use).
+      const maxTok = regenOpt === "expand"
+        ? Math.min(4096, Math.max(1600, Math.ceil((currentText.length / 3.5) * 1.5) + 200))
+        : 1000;
       // Use the current message text as the base — so Shorten/Expand/Rephrase
       // work from what's actually on screen, not a fresh generation
       const prompt = currentText
