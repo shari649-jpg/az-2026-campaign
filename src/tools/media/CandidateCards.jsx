@@ -34,7 +34,6 @@ const DESERT_PLACEHOLDER_URL = "/desert-placeholder.jpg";
 const TEMPLATES = [
   { id: "split",     label: "Split" },
   { id: "fullbleed", label: "Full Bleed" },
-  { id: "banner",    label: "Banner" },
 ];
 
 function contrastText(hex) {
@@ -94,6 +93,41 @@ function drawPill(ctx, { text, x, y, bg, color, fontSize, size }) {
   ctx.textAlign = "left";
   ctx.fillText(label, x + padX, y + h / 2 + fontSize * 0.04);
   return h;
+}
+
+// Priority tags — up to 3 short callouts across the bottom of the card, just above the
+// compliance footer. Was Banner-template-only; ported here (Aug 26 2026) so the feature
+// doesn't just disappear along with Banner — both remaining templates now support it.
+// `minY` (Aug 26 2026 fix) — the main content's y-cursor after everything else is drawn.
+// Priority tags default to a fixed near-bottom position, but that position doesn't know
+// about the main content's own flow — a long name + full tagline + a "Vote" pill can all
+// stack up and reach further down than the tags' default spot, which would otherwise
+// silently overlap. Passing minY lets this function push the tags below whatever's already
+// there instead of assuming there's always room.
+function drawPriorityTags(ctx, { tags = [], size, pad, minY = 0 }) {
+  const filledTags = tags.filter(t => t && t.trim());
+  if (filledTags.length === 0) return;
+  const boxH = size * 0.06;
+  const defaultLy = size - size * FOOTER_PCT - boxH - size * 0.03;
+  const ly = Math.max(defaultLy, minY + size * 0.02);
+  const gap = size * 0.02;
+  const boxW = (size - pad * 2 - gap * (filledTags.length - 1)) / filledTags.length;
+  const tagFontSize = Math.round(size * 0.016);
+  filledTags.forEach((tag, i) => {
+    const bx = pad + i * (boxW + gap);
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    roundRectPath(ctx, bx, ly, boxW, boxH, size * 0.006);
+    ctx.fill();
+    ctx.fillStyle = ACCENT;
+    ctx.fillRect(bx, ly, boxW, size * 0.004);
+    ctx.font = `700 ${tagFontSize}px Arial, sans-serif`;
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(tag.trim().toUpperCase(), bx + boxW / 2, ly + boxH / 2, boxW - 8);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  });
 }
 
 function drawCompianceFooter(ctx, size, light) {
@@ -169,65 +203,75 @@ function drawCandidateCard(ctx, opts) {
     ctx.fillRect(photoW - size * 0.006, 0, size * 0.008, size);
 
     let x = panelX + pad * 0.9;
-    let y = size * 0.24 + offsetY;
+    let y = size * 0.17 + offsetY;
     const maxW = panelW - pad * 1.4;
 
     ctx.font = `800 ${Math.round(size * 0.022)}px Arial, sans-serif`;
     ctx.fillStyle = "rgba(255,255,255,0.7)";
     ctx.fillText("ARIZONA", x + offsetX, y);
-    y += size * 0.04;
+    y += size * 0.045;
 
     if (party_label) {
-      y += drawPill(ctx, { text: party_label, x: x + offsetX, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.02), size }) + size * 0.02;
+      y += drawPill(ctx, { text: party_label, x: x + offsetX, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.02), size }) + size * 0.025;
     }
 
-    const nameSize = Math.round(size * 0.052 * nameFontScale);
+    // Bold "VOTE" headline (Aug 26 2026) — the punchy, standalone call-to-action word the
+    // reference designs all lead with, distinct from the candidate's own name below it.
+    const voteSize = Math.round(size * 0.05);
+    ctx.font = `900 ${voteSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
+    ctx.fillStyle = ACCENT;
+    ctx.fillText("VOTE", x + offsetX, y + voteSize);
+    y += voteSize * 1.15;
+
+    const nameSize = Math.round(size * 0.066 * nameFontScale);
     ctx.font = `900 ${nameSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
     ctx.fillStyle = "#ffffff";
     const nameLines = wrapText(ctx, name || "Candidate name", maxW);
-    nameLines.forEach(line => { ctx.fillText(line, x + offsetX, y + nameSize); y += nameSize * 1.12; });
-    y += size * 0.015;
+    nameLines.forEach(line => { ctx.fillText(line, x + offsetX, y + nameSize); y += nameSize * 1.1; });
+    y += size * 0.018;
 
     ctx.fillStyle = ACCENT;
-    ctx.fillRect(x + offsetX, y, size * 0.04, size * 0.004);
-    y += size * 0.025;
+    ctx.fillRect(x + offsetX, y, size * 0.045, size * 0.005);
+    y += size * 0.03;
 
-    ctx.font = `700 ${Math.round(size * 0.024)}px Arial, sans-serif`;
+    ctx.font = `700 ${Math.round(size * 0.028)}px Arial, sans-serif`;
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.fillText(office || "Office", x + offsetX, y + size * 0.02);
-    y += size * 0.032;
+    y += size * 0.038;
     if (showDistrict && district) {
-      ctx.font = `400 ${Math.round(size * 0.02)}px Arial, sans-serif`;
+      ctx.font = `400 ${Math.round(size * 0.023)}px Arial, sans-serif`;
       ctx.fillStyle = "rgba(255,255,255,0.8)";
-      ctx.fillText(district, x + offsetX, y + size * 0.016);
-      y += size * 0.03;
+      ctx.fillText(district, x + offsetX, y + size * 0.018);
+      y += size * 0.034;
     }
 
     if (tagline) {
       y += size * 0.02;
-      const taglineSize = Math.round(size * 0.021 * taglineFontScale);
+      const taglineSize = Math.round(size * 0.024 * taglineFontScale);
       ctx.font = `italic 400 ${taglineSize}px Georgia, serif`;
       ctx.fillStyle = "rgba(255,255,255,0.88)";
       const tLines = wrapText(ctx, `"${tagline}"`, maxW);
       tLines.forEach(line => { y += taglineSize * 1.2; ctx.fillText(line, x + offsetX, y); });
     }
 
-    y += size * 0.03;
-    drawPill(ctx, { text: "Vote \u00b7 Nov 3", x: x + offsetX, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.02), size });
+    y += size * 0.035;
+    const votePillH = drawPill(ctx, { text: "Vote \u00b7 Nov 3", x: x + offsetX, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.024), size });
+
+    drawPriorityTags(ctx, { tags, size, pad, minY: y + votePillH });
 
   } else if (template === "fullbleed") {
     if (hasRealPhoto) drawImageCover(ctx, img, 0, 0, size, size, photoPosY);
     else drawPlaceholder(ctx, img, 0, 0, size, size, showPlaceholderLabel, size);
 
-    const grad = ctx.createLinearGradient(0, size * 0.35, 0, size);
+    const grad = ctx.createLinearGradient(0, size * 0.32, 0, size);
     grad.addColorStop(0, "rgba(18,94,120,0)");
-    grad.addColorStop(0.65, "rgba(18,94,120,0.55)");
-    grad.addColorStop(1, "rgba(15,68,88,0.92)");
+    grad.addColorStop(0.6, "rgba(18,94,120,0.6)");
+    grad.addColorStop(1, "rgba(15,68,88,0.94)");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, size, size);
 
     let x = pad + offsetX;
-    let y = size * 0.62 + offsetY;
+    let y = size * 0.46 + offsetY;
     const maxW = size - pad * 2;
 
     ctx.font = `800 ${Math.round(size * 0.022)}px Arial, sans-serif`;
@@ -239,25 +283,32 @@ function drawCandidateCard(ctx, opts) {
       y += drawPill(ctx, { text: party_label, x, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.02), size }) + size * 0.02;
     }
 
-    const nameSize = Math.round(size * 0.062 * nameFontScale);
+    // Bold "VOTE" headline — same treatment as Split, see comment there.
+    const voteSize = Math.round(size * 0.048);
+    ctx.font = `900 ${voteSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
+    ctx.fillStyle = ACCENT;
+    ctx.fillText("VOTE", x, y + voteSize);
+    y += voteSize * 1.1;
+
+    const nameSize = Math.round(size * 0.068 * nameFontScale);
     ctx.font = `900 ${nameSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
     ctx.fillStyle = "#ffffff";
     const nameLines = wrapText(ctx, name || "Candidate name", maxW);
-    nameLines.forEach(line => { ctx.fillText(line, x, y + nameSize); y += nameSize * 1.1; });
-    y += size * 0.015;
+    nameLines.forEach(line => { ctx.fillText(line, x, y + nameSize); y += nameSize * 1.05; });
+    y += size * 0.014;
 
     ctx.fillStyle = ACCENT;
-    ctx.fillRect(x, y, size * 0.045, size * 0.005);
-    y += size * 0.03;
+    ctx.fillRect(x, y, size * 0.05, size * 0.006);
+    y += size * 0.028;
 
-    ctx.font = `700 ${Math.round(size * 0.026)}px Arial, sans-serif`;
+    ctx.font = `700 ${Math.round(size * 0.027)}px Arial, sans-serif`;
     ctx.fillStyle = "#ffffff";
     const officeLine = showDistrict && district ? `${office || "Office"} \u00b7 ${district}` : (office || "Office");
-    ctx.fillText(officeLine, x, y + size * 0.02);
-    y += size * 0.04;
+    ctx.fillText(officeLine, x, y + size * 0.018);
+    y += size * 0.036;
 
     if (tagline) {
-      const taglineSize = Math.round(size * 0.022 * taglineFontScale);
+      const taglineSize = Math.round(size * 0.024 * taglineFontScale);
       ctx.font = `italic 400 ${taglineSize}px Georgia, serif`;
       ctx.fillStyle = "rgba(255,255,255,0.9)";
       const tLines = wrapText(ctx, tagline, maxW);
@@ -266,97 +317,13 @@ function drawCandidateCard(ctx, opts) {
     }
 
     y += size * 0.015;
-    drawPill(ctx, { text: "Vote \u00b7 Nov 3", x, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.022), size });
+    const votePillH2 = drawPill(ctx, { text: "Vote \u00b7 Nov 3", x, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.026), size });
 
-  } else if (template === "banner") {
-    const photoTop = size * 0.06;
-    const photoH = size * 0.42;
-    const photoX = size * 0.1;
-    const photoW = size * 0.8;
+    drawPriorityTags(ctx, { tags, size, pad, minY: y + votePillH2 });
 
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, size, size);
-
-    ctx.save();
-    roundRectPath(ctx, photoX, photoTop, photoW, photoH, size * 0.006);
-    ctx.clip();
-    if (hasRealPhoto) drawImageCover(ctx, img, photoX, photoTop, photoW, photoH, photoPosY);
-    else drawPlaceholder(ctx, img, photoX, photoTop, photoW, photoH, showPlaceholderLabel, size);
-    ctx.restore();
-
-    const panelTop = photoTop + photoH + size * 0.02;
-    const panelH = size * 0.24;
-    const grad = ctx.createLinearGradient(0, panelTop, size, panelTop + panelH);
-    grad.addColorStop(0, CARD.dusk);
-    grad.addColorStop(1, CARD.duskDeep);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, panelTop, size, panelH);
-
-    let x = pad + offsetX;
-    let y = panelTop + size * 0.045 + offsetY;
-
-    ctx.font = `800 ${Math.round(size * 0.018)}px Arial, sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.fillText("ARIZONA", x, y);
-    if (party_label) {
-      ctx.font = `900 ${Math.round(size * 0.016)}px Arial, sans-serif`;
-      const label = party_label.toUpperCase();
-      const w = ctx.measureText(label).width + size * 0.02;
-      drawPill(ctx, { text: party_label, x: size - pad - w, y: y - size * 0.02, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.016), size });
-    }
-    y += size * 0.045;
-
-    const nameSize = Math.round(size * 0.045 * nameFontScale);
-    ctx.font = `900 ${nameSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(name || "Candidate name", x, y + nameSize * 0.8);
-    y += nameSize * 1.05;
-
-    ctx.font = `700 ${Math.round(size * 0.022)}px Arial, sans-serif`;
-    ctx.fillStyle = ACCENT;
-    const officeLine = showDistrict && district ? `${office || "Office"} \u00b7 ${district}` : (office || "Office");
-    ctx.fillText(officeLine, x, y + size * 0.018);
-
-    const lowerTop = panelTop + panelH;
-    const lowerH = size - lowerTop - size * FOOTER_PCT;
-    ctx.fillStyle = CARD.ink;
-    ctx.fillRect(0, lowerTop, size, lowerH);
-
-    let ly = lowerTop + size * 0.04;
-    if (tagline) {
-      const taglineSize = Math.round(size * 0.022 * taglineFontScale);
-      ctx.font = `italic 400 ${taglineSize}px Georgia, serif`;
-      ctx.fillStyle = "rgba(255,255,255,0.9)";
-      const tLines = wrapText(ctx, tagline, size - pad * 2);
-      tLines.forEach(line => { ctx.fillText(line, pad, ly); ly += taglineSize * 1.25; });
-      ly += size * 0.015;
-    }
-
-    const filledTags = tags.filter(t => t && t.trim());
-    if (filledTags.length > 0) {
-      const gap = size * 0.02;
-      const boxW = (size - pad * 2 - gap * (filledTags.length - 1)) / filledTags.length;
-      const boxH = size * 0.06;
-      const tagFontSize = Math.round(size * 0.016);
-      filledTags.forEach((tag, i) => {
-        const bx = pad + i * (boxW + gap);
-        ctx.fillStyle = "rgba(255,255,255,0.08)";
-        roundRectPath(ctx, bx, ly, boxW, boxH, size * 0.006);
-        ctx.fill();
-        ctx.fillStyle = ACCENT;
-        ctx.fillRect(bx, ly, boxW, size * 0.004);
-        ctx.font = `700 ${tagFontSize}px Arial, sans-serif`;
-        ctx.fillStyle = "#ffffff";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(tag.trim().toUpperCase(), bx + boxW / 2, ly + boxH / 2, boxW - 8);
-        ctx.textAlign = "left";
-        ctx.textBaseline = "alphabetic";
-      });
-    }
   }
 
-  drawCompianceFooter(ctx, size, template === "banner");
+  drawCompianceFooter(ctx, size, false);
 }
 
 function wrapText(ctx, text, maxWidth) {
@@ -720,22 +687,20 @@ export default function CandidateCards() {
               <label style={{ fontSize: 11, color: B.textMute }}>Tagline</label>
               <input value={tagline} onChange={e => setTagline(e.target.value)} placeholder="Relief for working families." style={inputStyle} />
             </div>
-            {template === "banner" && (
-              <div style={{ marginTop: 10 }}>
-                <label style={{ fontSize: 11, color: B.textMute }}>Priority tags (shown across the bottom, up to 3)</label>
-                <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                  {tags.map((tag, i) => (
-                    <input
-                      key={i}
-                      value={tag}
-                      onChange={e => setTags(prev => prev.map((t, j) => (j === i ? e.target.value : t)))}
-                      placeholder={["Housing", "Groceries", "Child Care"][i]}
-                      style={{ ...inputStyle, fontSize: 13 }}
-                    />
-                  ))}
-                </div>
+            <div style={{ marginTop: 10 }}>
+              <label style={{ fontSize: 11, color: B.textMute }}>Priority tags (shown across the bottom, up to 3)</label>
+              <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                {tags.map((tag, i) => (
+                  <input
+                    key={i}
+                    value={tag}
+                    onChange={e => setTags(prev => prev.map((t, j) => (j === i ? e.target.value : t)))}
+                    placeholder={["Housing", "Groceries", "Child Care"][i]}
+                    style={{ ...inputStyle, fontSize: 13 }}
+                  />
+                ))}
               </div>
-            )}
+            </div>
           </div>
 
           <div style={sectionStyle}>
