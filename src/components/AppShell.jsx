@@ -452,12 +452,15 @@ export default function AppShell() {
                         🧪 Prompt Sandbox
                       </NavLink>
                     )}
-                    {/* Admin link — also shown to a plain org admin (August
-                        2026, TODO #1), who lands on the same /admin route
-                        but AdminPage.jsx routes them to the much smaller
-                        OrgAdminPanel instead of the full tabbed UI. Label
-                        reflects which one they'll actually see. */}
-                    {(isAdmin || isOrgAdmin) && (
+                    {/* Admin link — shown to a real Administrator, a plain
+                        org admin (August 2026, TODO #1), or a Manager
+                        (Aug 26 2026 — see AdminPage.jsx for the scoped
+                        Manager view this now routes to). Label reflects
+                        which one they'll actually see; priority when
+                        someone is more than one of these at once is
+                        Administrator > Manager > org admin, matching
+                        AdminPage.jsx's own routing order. */}
+                    {(isAdmin || isManager || isOrgAdmin) && (
                       <NavLink
                         to="/admin"
                         onClick={() => setUserMenuOpen(false)}
@@ -465,7 +468,7 @@ export default function AppShell() {
                         onMouseEnter={e => e.currentTarget.style.background = "var(--teal-light)"}
                         onMouseLeave={e => e.currentTarget.style.background = "none"}
                       >
-                        {isAdmin ? "⚙️ Admin" : "👥 My Org"}
+                        {isAdmin ? "⚙️ Admin" : isManager ? "🗂️ Team Admin" : "👥 My Org"}
                       </NavLink>
                     )}
                     {/* Profile link */}
@@ -630,14 +633,14 @@ export default function AppShell() {
             🧪 Prompt Sandbox
           </NavLink>
         )}
-        {/* Mobile admin link — also org admins, see desktop comment above */}
-        {(isAdmin || isOrgAdmin) && (
+        {/* Mobile admin link — also Managers and org admins, see desktop comment above */}
+        {(isAdmin || isManager || isOrgAdmin) && (
           <NavLink
             to="/admin"
             onClick={() => setMenuOpen(false)}
             className={({ isActive }) => "mobile-nav-link" + (isActive ? " active" : "")}
           >
-            {isAdmin ? "⚙️ Admin" : "👥 My Org"}
+            {isAdmin ? "⚙️ Admin" : isManager ? "🗂️ Team Admin" : "👥 My Org"}
           </NavLink>
         )}
         {/* Mobile profile link */}
