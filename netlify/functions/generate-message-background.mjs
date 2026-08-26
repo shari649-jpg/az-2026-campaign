@@ -138,13 +138,47 @@ export default async function (req) {
 
   const jobRef = db.doc(`generationJobs/${jobId}`);
 
+  // Idempotency guard (Aug 26 2026 — closes the standing to-do item first
+  // flagged in Handoff #39 §9). Before this, nothing stopped a second
+  // invocation of this function with the same jobId — a Netlify retry or
+  // a client bug — from running every group's Claude call and credit
+  // debit a second time for one job. Higher stakes than when first
+  // flagged, since a double-debited job can now also carry the 3x Rapid
+  // Response premium multiplier (§3, Handoff #41) — a bigger dollar
+  // amount at risk than before.
+  //
+  // Firestore transactions are atomic against concurrent reads on the
+  // same document, so two near-simultaneous invocations racing to read
+  // "pending" can't both win: whichever transaction commits first flips
+  // status to "processing"; the other invocation's transaction re-reads
+  // the doc, sees "processing" (not "pending"), and bails before any
+  // Claude call or credit debit happens. A genuinely-not-found job also
+  // bails cleanly rather than throwing.
+  let claim;
   try {
-    const jobSnap = await jobRef.get();
-    if (!jobSnap.exists) {
-      console.error(`[generate-message-background] job ${jobId} not found`);
-      return;
-    }
-    const job = jobSnap.data();
+    claim = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(jobRef);
+      if (!snap.exists) return { ok: false, reason: "not_found" };
+      const status = snap.data().status;
+      if (status !== "pending") return { ok: false, reason: status };
+      tx.set(jobRef, {
+        status: "processing",
+        claimedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return { ok: true, job: snap.data() };
+    });
+  } catch (err) {
+    console.error(`[generate-message-background] claim transaction failed for job=${jobId}:`, err.message);
+    return;
+  }
+
+  if (!claim.ok) {
+    console.warn(`[generate-message-background] job=${jobId} skipped — status was "${claim.reason}", not "pending" (this is exactly the duplicate-invocation case the claim transaction exists to catch, not necessarily an error)`);
+    return;
+  }
+
+  try {
+    const job = claim.job;
     const { uid, orgId, groups, origin } = job;
 
     // Groups run in PARALLEL (Promise.all), not sequentially — this
