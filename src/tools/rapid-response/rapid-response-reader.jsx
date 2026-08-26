@@ -795,7 +795,7 @@ export default function RapidResponseReader() {
         {article && (
           <button onClick={reset} style={S.btnSmall}>+ New Article</button>
         )}
-        {(article || view === "search") && (
+        {article && (
           <button onClick={() => setView("search")} style={tabStyle(view === "search")}>
             🔎 Search
           </button>
