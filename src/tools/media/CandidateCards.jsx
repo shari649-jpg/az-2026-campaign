@@ -203,21 +203,23 @@ function drawCandidateCard(ctx, opts) {
     ctx.fillRect(photoW - size * 0.006, 0, size * 0.008, size);
 
     let x = panelX + pad * 0.9;
-    let y = size * 0.17 + offsetY;
+    let y = size * 0.15 + offsetY;
     const maxW = panelW - pad * 1.4;
 
-    ctx.font = `800 ${Math.round(size * 0.022)}px Arial, sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.font = `800 ${Math.round(size * 0.034)}px Arial, sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.fillText("ARIZONA", x + offsetX, y);
-    y += size * 0.045;
+    y += size * 0.05;
 
     if (party_label) {
-      y += drawPill(ctx, { text: party_label, x: x + offsetX, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.02), size }) + size * 0.025;
+      y += drawPill(ctx, { text: party_label, x: x + offsetX, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.024), size }) + size * 0.025;
     }
 
     // Bold "VOTE" headline (Aug 26 2026) — the punchy, standalone call-to-action word the
     // reference designs all lead with, distinct from the candidate's own name below it.
-    const voteSize = Math.round(size * 0.05);
+    // Bumped again same day after real rendered feedback: ARIZONA/district/VOTE/date were
+    // all too small next to the name to read at a glance, especially at phone thumbnail size.
+    const voteSize = Math.round(size * 0.064);
     ctx.font = `900 ${voteSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
     ctx.fillStyle = ACCENT;
     ctx.fillText("VOTE", x + offsetX, y + voteSize);
@@ -234,15 +236,15 @@ function drawCandidateCard(ctx, opts) {
     ctx.fillRect(x + offsetX, y, size * 0.045, size * 0.005);
     y += size * 0.03;
 
-    ctx.font = `700 ${Math.round(size * 0.028)}px Arial, sans-serif`;
+    ctx.font = `700 ${Math.round(size * 0.03)}px Arial, sans-serif`;
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.fillText(office || "Office", x + offsetX, y + size * 0.02);
-    y += size * 0.038;
+    y += size * 0.04;
     if (showDistrict && district) {
-      ctx.font = `400 ${Math.round(size * 0.023)}px Arial, sans-serif`;
-      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      ctx.font = `700 ${Math.round(size * 0.03)}px Arial, sans-serif`;
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
       ctx.fillText(district, x + offsetX, y + size * 0.018);
-      y += size * 0.034;
+      y += size * 0.038;
     }
 
     if (tagline) {
@@ -255,7 +257,7 @@ function drawCandidateCard(ctx, opts) {
     }
 
     y += size * 0.035;
-    const votePillH = drawPill(ctx, { text: "Vote \u00b7 Nov 3", x: x + offsetX, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.024), size });
+    const votePillH = drawPill(ctx, { text: "Vote \u00b7 Nov 3", x: x + offsetX, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.032), size });
 
     drawPriorityTags(ctx, { tags, size, pad, minY: y + votePillH });
 
@@ -271,26 +273,27 @@ function drawCandidateCard(ctx, opts) {
     ctx.fillRect(0, 0, size, size);
 
     let x = pad + offsetX;
-    let y = size * 0.46 + offsetY;
+    let y = size * 0.4 + offsetY;
     const maxW = size - pad * 2;
 
-    ctx.font = `800 ${Math.round(size * 0.022)}px Arial, sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = `800 ${Math.round(size * 0.032)}px Arial, sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.fillText("ARIZONA", x, y);
-    y += size * 0.04;
+    y += size * 0.046;
 
     if (party_label) {
-      y += drawPill(ctx, { text: party_label, x, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.02), size }) + size * 0.02;
+      y += drawPill(ctx, { text: party_label, x, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.024), size }) + size * 0.02;
     }
 
-    // Bold "VOTE" headline — same treatment as Split, see comment there.
-    const voteSize = Math.round(size * 0.048);
+    // Bold "VOTE" headline — same treatment as Split, see comment there. Bumped same day as
+    // Split after real rendered feedback (ARIZONA/district/VOTE/date all too small to read).
+    const voteSize = Math.round(size * 0.058);
     ctx.font = `900 ${voteSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
     ctx.fillStyle = ACCENT;
     ctx.fillText("VOTE", x, y + voteSize);
     y += voteSize * 1.1;
 
-    const nameSize = Math.round(size * 0.068 * nameFontScale);
+    const nameSize = Math.round(size * 0.066 * nameFontScale);
     ctx.font = `900 ${nameSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
     ctx.fillStyle = "#ffffff";
     const nameLines = wrapText(ctx, name || "Candidate name", maxW);
@@ -299,25 +302,25 @@ function drawCandidateCard(ctx, opts) {
 
     ctx.fillStyle = ACCENT;
     ctx.fillRect(x, y, size * 0.05, size * 0.006);
-    y += size * 0.028;
+    y += size * 0.026;
 
-    ctx.font = `700 ${Math.round(size * 0.027)}px Arial, sans-serif`;
+    ctx.font = `700 ${Math.round(size * 0.032)}px Arial, sans-serif`;
     ctx.fillStyle = "#ffffff";
     const officeLine = showDistrict && district ? `${office || "Office"} \u00b7 ${district}` : (office || "Office");
-    ctx.fillText(officeLine, x, y + size * 0.018);
-    y += size * 0.036;
+    ctx.fillText(officeLine, x, y + size * 0.02);
+    y += size * 0.04;
 
     if (tagline) {
-      const taglineSize = Math.round(size * 0.024 * taglineFontScale);
+      const taglineSize = Math.round(size * 0.022 * taglineFontScale);
       ctx.font = `italic 400 ${taglineSize}px Georgia, serif`;
       ctx.fillStyle = "rgba(255,255,255,0.9)";
       const tLines = wrapText(ctx, tagline, maxW);
       tLines.forEach(line => { y += taglineSize * 1.2; ctx.fillText(line, x, y); });
-      y += size * 0.02;
+      y += size * 0.018;
     }
 
-    y += size * 0.015;
-    const votePillH2 = drawPill(ctx, { text: "Vote \u00b7 Nov 3", x, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.026), size });
+    y += size * 0.013;
+    const votePillH2 = drawPill(ctx, { text: "Vote \u00b7 Nov 3", x, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.032), size });
 
     drawPriorityTags(ctx, { tags, size, pad, minY: y + votePillH2 });
 
