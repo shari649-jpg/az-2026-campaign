@@ -185,81 +185,86 @@ function drawCandidateCard(ctx, opts) {
   const pad = size * 0.08;
 
   if (template === "split") {
-    const photoW = size * 0.44;
-    if (hasRealPhoto) drawImageCover(ctx, img, 0, 0, photoW, size, photoPosY);
-    else drawPlaceholder(ctx, img, 0, 0, photoW, size, showPlaceholderLabel, size);
+    // Rebuilt (Aug 27 2026) from a left-photo/right-text two-column layout into a
+    // stacked one, per direct mockup: the old layout forced the photo into a tall,
+    // narrow 44%-width-by-full-height box, which doesn't match a natural head-and-
+    // shoulders crop and stretched/distorted real headshots. Photo now sits in a
+    // shorter, full-width band at the top; everything else stacks full-width below
+    // it so ARIZONA, the VOTE date banner, and the candidate's name can all be
+    // dramatically larger — the explicit ask was "really BIG words, can't see this
+    // on mobile."
+    const photoH = size * 0.33;
+    if (hasRealPhoto) drawImageCover(ctx, img, 0, 0, size, photoH, photoPosY);
+    else drawPlaceholder(ctx, img, 0, 0, size, photoH, showPlaceholderLabel, size);
 
-    // Panel background (gradient)
-    const panelX = photoW;
-    const panelW = size - photoW;
-    const grad = ctx.createLinearGradient(panelX, 0, size, size);
+    // Panel background (gradient), full-width band below the photo
+    const panelY = photoH;
+    const panelH = size - photoH;
+    const grad = ctx.createLinearGradient(0, panelY, size, size);
     grad.addColorStop(0, CARD.dusk);
     grad.addColorStop(1, CARD.duskDeep);
     ctx.fillStyle = grad;
-    ctx.fillRect(panelX, 0, panelW, size);
+    ctx.fillRect(0, panelY, size, panelH);
 
-    // Accent divider stripe
+    // Accent divider stripe between photo and panel
     ctx.fillStyle = ACCENT;
-    ctx.fillRect(photoW - size * 0.006, 0, size * 0.008, size);
+    ctx.fillRect(0, photoH - size * 0.004, size, size * 0.008);
 
-    let x = panelX + pad * 0.9;
-    let y = size * 0.15 + offsetY;
-    const maxW = panelW - pad * 1.4;
+    let x = pad + offsetX;
+    let y = panelY + size * 0.04 + offsetY;
+    const maxW = size - pad * 2;
 
-    ctx.font = `800 ${Math.round(size * 0.034)}px Arial, sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.fillText("ARIZONA", x + offsetX, y);
-    y += size * 0.05;
+    // ARIZONA — the single biggest lightweight-emphasis element other than the name,
+    // now spanning nearly the full card width per the mockup instead of a small caption.
+    ctx.font = `800 ${Math.round(size * 0.09)}px Arial, sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.fillText("ARIZONA", x, y + size * 0.07);
+    y += size * 0.105;
 
     if (party_label) {
-      y += drawPill(ctx, { text: party_label, x: x + offsetX, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.024), size }) + size * 0.025;
+      y += drawPill(ctx, { text: party_label, x, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.026), size }) + size * 0.015;
     }
 
-    // Bold "VOTE" headline (Aug 26 2026) — the punchy, standalone call-to-action word the
-    // reference designs all lead with, distinct from the candidate's own name below it.
-    // Bumped again same day after real rendered feedback: ARIZONA/district/VOTE/date were
-    // all too small next to the name to read at a glance, especially at phone thumbnail size.
-    const voteSize = Math.round(size * 0.064);
-    ctx.font = `900 ${voteSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
-    ctx.fillStyle = ACCENT;
-    ctx.fillText("VOTE", x + offsetX, y + voteSize);
-    y += voteSize * 1.15;
-
-    const nameSize = Math.round(size * 0.066 * nameFontScale);
-    ctx.font = `900 ${nameSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
-    ctx.fillStyle = "#ffffff";
-    const nameLines = wrapText(ctx, name || "Candidate name", maxW);
-    nameLines.forEach(line => { ctx.fillText(line, x + offsetX, y + nameSize); y += nameSize * 1.1; });
-    y += size * 0.018;
-
-    ctx.fillStyle = ACCENT;
-    ctx.fillRect(x + offsetX, y, size * 0.045, size * 0.005);
-    y += size * 0.03;
-
-    ctx.font = `700 ${Math.round(size * 0.03)}px Arial, sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.95)";
-    ctx.fillText(office || "Office", x + offsetX, y + size * 0.02);
-    y += size * 0.04;
-    if (showDistrict && district) {
-      ctx.font = `700 ${Math.round(size * 0.03)}px Arial, sans-serif`;
-      ctx.fillStyle = "rgba(255,255,255,0.9)";
-      ctx.fillText(district, x + offsetX, y + size * 0.018);
+    if (office || (showDistrict && district)) {
+      ctx.font = `700 ${Math.round(size * 0.028)}px Arial, sans-serif`;
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      const officeLine = showDistrict && district ? `${office || "Office"} \u00b7 ${district}` : (office || "Office");
+      ctx.fillText(officeLine, x, y + size * 0.02);
       y += size * 0.038;
     }
 
+    // "VOTE · NOV 3" as a full-width bold banner, not a small pill — matches the
+    // mockup's big highlighter-stroke emphasis on the date.
+    const voteBannerH = size * 0.1;
+    ctx.fillStyle = ACCENT;
+    ctx.fillRect(pad, y, size - pad * 2, voteBannerH);
+    ctx.font = `900 ${Math.round(size * 0.052)}px 'Atkinson Hyperlegible', Arial, sans-serif`;
+    ctx.fillStyle = contrastText(ACCENT);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("VOTE \u00b7 NOV 3", size / 2, y + voteBannerH / 2 + size * 0.003);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    y += voteBannerH + size * 0.022;
+
     if (tagline) {
-      y += size * 0.02;
       const taglineSize = Math.round(size * 0.024 * taglineFontScale);
       ctx.font = `italic 400 ${taglineSize}px Georgia, serif`;
       ctx.fillStyle = "rgba(255,255,255,0.88)";
       const tLines = wrapText(ctx, `"${tagline}"`, maxW);
-      tLines.forEach(line => { y += taglineSize * 1.2; ctx.fillText(line, x + offsetX, y); });
+      tLines.forEach(line => { y += taglineSize * 1.2; ctx.fillText(line, x, y); });
+      y += size * 0.018;
     }
 
-    y += size * 0.035;
-    const votePillH = drawPill(ctx, { text: "Vote \u00b7 Nov 3", x: x + offsetX, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.032), size });
+    // Candidate name — the largest, most dominant text on the card, spanning full
+    // width across the bottom of the panel per the mockup.
+    const nameSize = Math.round(size * 0.088 * nameFontScale);
+    ctx.font = `900 ${nameSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
+    ctx.fillStyle = "#ffffff";
+    const nameLines = wrapText(ctx, name || "Candidate name", maxW);
+    nameLines.forEach(line => { ctx.fillText(line, x, y + nameSize); y += nameSize * 1.05; });
 
-    drawPriorityTags(ctx, { tags, size, pad, minY: y + votePillH });
+    drawPriorityTags(ctx, { tags, size, pad, minY: y + size * 0.02 });
 
   } else if (template === "fullbleed") {
     if (hasRealPhoto) drawImageCover(ctx, img, 0, 0, size, size, photoPosY);
