@@ -26,6 +26,25 @@ const CARD = {
 };
 const ACCENT = CARD.brightGold;
 
+// Party-based color schemes (Aug 27 2026) — explicit ask: "navy blue for Democrats
+// coloring." Only Democrat was specified, so Republican/Independent/no-party all fall
+// back to the existing teal scheme rather than guessing colors that weren't asked for —
+// flagged in the handoff notes for a real decision later if wanted.
+const SCHEMES = {
+  democrat: { c1: "#14213D", c2: "#0B1526" },
+  default:  { c1: CARD.dusk, c2: CARD.duskDeep },
+};
+function getScheme(party) {
+  return (party || "").trim().toUpperCase() === "D" ? SCHEMES.democrat : SCHEMES.default;
+}
+function hexToRgba(hex, alpha) {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 const CANVAS_SIZE = 1080;
 const FOOTER_PCT = 0.07; // reserved height at the bottom for the compliance footer bar
 const MIN_PHOTO_DIMENSION = 1000; // px — safe floor so uploaded headshots don't look blurry
@@ -89,6 +108,36 @@ function fitFontSize(ctx, text, fontTemplate, maxWidth, minSize, maxSize) {
   return size;
 }
 
+// Draws "Party · Office · District" as one line, each segment independently sized
+// (Aug 27 2026 — explicit ask: Democrat as plain text inline with office/district,
+// not a pill; office and district each get their own size slider). Segments that
+// don't apply (no party selected, district hidden) are skipped without leaving a
+// stray separator. Returns the line's height so callers can advance their y-cursor.
+function drawPartyOfficeDistrictLine(ctx, { party_label, office, district, showDistrict, x, y, officeSize, districtSize, color = "#ffffff" }) {
+  const segments = [];
+  if (party_label) segments.push({ text: party_label, size: officeSize });
+  if (office) segments.push({ text: office, size: officeSize });
+  if (showDistrict && district) segments.push({ text: district, size: districtSize });
+  if (segments.length === 0) return 0;
+
+  let cx = x;
+  const maxSize = Math.max(...segments.map(s => s.size));
+  segments.forEach((seg, i) => {
+    ctx.font = `700 ${seg.size}px Arial, sans-serif`;
+    ctx.fillStyle = i === 0 ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.85)";
+    ctx.fillText(seg.text, cx, y + maxSize * 0.85);
+    cx += ctx.measureText(seg.text).width;
+    if (i < segments.length - 1) {
+      ctx.font = `400 ${maxSize}px Arial, sans-serif`;
+      ctx.fillStyle = "rgba(255,255,255,0.6)";
+      const sep = "  \u00b7  ";
+      ctx.fillText(sep, cx, y + maxSize * 0.85);
+      cx += ctx.measureText(sep).width;
+    }
+  });
+  return maxSize * 1.3;
+}
+
 function roundRectPath(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, r);
@@ -119,7 +168,7 @@ function drawPill(ctx, { text, x, y, bg, color, fontSize, size }) {
 // stack up and reach further down than the tags' default spot, which would otherwise
 // silently overlap. Passing minY lets this function push the tags below whatever's already
 // there instead of assuming there's always room.
-function drawPriorityTags(ctx, { tags = [], size, pad, minY = 0 }) {
+function drawPriorityTags(ctx, { tags = [], size, pad, minY = 0, tagsFontScale = 1 }) {
   const filledTags = tags.filter(t => t && t.trim());
   if (filledTags.length === 0) return;
   const boxH = size * 0.06;
@@ -127,7 +176,7 @@ function drawPriorityTags(ctx, { tags = [], size, pad, minY = 0 }) {
   const ly = Math.max(defaultLy, minY + size * 0.02);
   const gap = size * 0.02;
   const boxW = (size - pad * 2 - gap * (filledTags.length - 1)) / filledTags.length;
-  const tagFontSize = Math.round(size * 0.016);
+  const tagFontSize = Math.round(size * 0.016 * tagsFontScale);
   filledTags.forEach((tag, i) => {
     const bx = pad + i * (boxW + gap);
     ctx.fillStyle = "rgba(255,255,255,0.12)";
@@ -188,12 +237,15 @@ function drawCandidateCard(ctx, opts) {
   const {
     template, img, hasRealPhoto, name, office, district, showDistrict,
     party, tagline, tags = [], nameFontScale = 1, taglineFontScale = 1,
+    officeFontScale = 1, districtFontScale = 1, tagsFontScale = 1,
     offsetX = 0, offsetY = 0, photoPosY = 50, showPlaceholderLabel = true,
     size = CANVAS_SIZE,
   } = opts;
 
+  const scheme = getScheme(party);
+
   ctx.clearRect(0, 0, size, size);
-  ctx.fillStyle = CARD.dusk;
+  ctx.fillStyle = scheme.c1;
   ctx.fillRect(0, 0, size, size);
 
   const party_label = partyLabel(party);
@@ -217,8 +269,8 @@ function drawCandidateCard(ctx, opts) {
     // Base gradient across the whole card first — the photo box below overwrites
     // its own corner; the rest of the card shows this gradient straight through.
     const baseGrad = ctx.createLinearGradient(0, 0, size, size);
-    baseGrad.addColorStop(0, CARD.dusk);
-    baseGrad.addColorStop(1, CARD.duskDeep);
+    baseGrad.addColorStop(0, scheme.c1);
+    baseGrad.addColorStop(1, scheme.c2);
     ctx.fillStyle = baseGrad;
     ctx.fillRect(0, 0, size, size);
 
@@ -231,14 +283,18 @@ function drawCandidateCard(ctx, opts) {
     ctx.fillRect(photoW - size * 0.004, 0, size * 0.008, cornerH);
     ctx.fillRect(0, cornerH - size * 0.004, size, size * 0.008);
 
-    // ARIZONA + office/district, vertically centered in the space across from the
-    // photo. ARIZONA's size is measured to fill that width, not hardcoded.
+    // ARIZONA + "Party · Office · District", vertically centered in the space
+    // across from the photo. ARIZONA's size is measured to fill that width, not
+    // hardcoded. Party is now plain text on the same line as office/district
+    // (Aug 27 2026) — no longer its own pill.
     const rcX = photoW + size * 0.05;
     const rcMaxW = size - photoW - size * 0.1;
     const azSize = fitFontSize(ctx, "ARIZONA", "800 SIZEpx Arial, sans-serif", rcMaxW, size * 0.05, size * 0.15);
-    const officeSize = Math.round(size * 0.03);
-    const hasOfficeLine = !!(office || (showDistrict && district));
-    const blockH = azSize * 1.05 + (hasOfficeLine ? size * 0.025 + officeSize * 1.3 : 0);
+    const officeSize = Math.round(size * 0.03 * officeFontScale);
+    const districtSize = Math.round(size * 0.03 * districtFontScale);
+    const hasOfficeLine = !!(party_label || office || (showDistrict && district));
+    const lineH = Math.max(officeSize, districtSize) * 1.3;
+    const blockH = azSize * 1.05 + (hasOfficeLine ? size * 0.025 + lineH : 0);
     let blockY = (cornerH - blockH) / 2;
 
     ctx.font = `800 ${azSize}px Arial, sans-serif`;
@@ -247,17 +303,10 @@ function drawCandidateCard(ctx, opts) {
     blockY += azSize * 1.05 + size * 0.025;
 
     if (hasOfficeLine) {
-      ctx.font = `700 ${officeSize}px Arial, sans-serif`;
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
-      const officeLine = showDistrict && district ? `${office || "Office"} \u00b7 ${district}` : (office || "Office");
-      ctx.fillText(officeLine, rcX + offsetX, blockY + officeSize * 0.85);
-    }
-
-    if (party_label) {
-      // Party pill tucked just below the photo (Aug 27 2026) — the corner layout
-      // no longer has a natural spot for it beside ARIZONA without crowding that
-      // measured-to-fit text, so it sits under the photo instead.
-      drawPill(ctx, { text: party_label, x: size * 0.02, y: cornerH - size * 0.075, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.024), size });
+      drawPartyOfficeDistrictLine(ctx, {
+        party_label, office, district, showDistrict,
+        x: rcX + offsetX, y: blockY, officeSize, districtSize,
+      });
     }
 
     let x = pad + offsetX;
@@ -294,56 +343,67 @@ function drawCandidateCard(ctx, opts) {
       y += size * 0.015;
     }
 
-    drawPriorityTags(ctx, { tags, size, pad, minY: y + size * 0.02 });
+    drawPriorityTags(ctx, { tags, size, pad, minY: y + size * 0.02, tagsFontScale });
 
   } else if (template === "fullbleed") {
-    if (hasRealPhoto) drawImageCover(ctx, img, 0, 0, size, size, photoPosY);
-    else drawPlaceholder(ctx, img, 0, 0, size, size, showPlaceholderLabel, size);
+    // Rebuilt (Aug 27 2026) — ARIZONA moved out of the small top-left caption spot
+    // into its own full-width band across the very top of the card, and the photo
+    // shifts down to start below that band, per direct instruction. Same
+    // Party/Office/District composite line and scheme-based coloring as Split.
+    const azSize = Math.round(size * 0.115);
+    const bandH = azSize * 1.7;
 
-    const grad = ctx.createLinearGradient(0, size * 0.32, 0, size);
-    grad.addColorStop(0, "rgba(18,94,120,0)");
-    grad.addColorStop(0.6, "rgba(18,94,120,0.6)");
-    grad.addColorStop(1, "rgba(15,68,88,0.94)");
+    ctx.fillStyle = scheme.c1;
+    ctx.fillRect(0, 0, size, bandH);
+    ctx.font = `800 ${azSize}px Arial, sans-serif`;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("ARIZONA", pad, bandH * 0.68);
+
+    const photoY = bandH;
+    const photoH = size - bandH;
+    if (hasRealPhoto) drawImageCover(ctx, img, 0, photoY, size, photoH, photoPosY);
+    else drawPlaceholder(ctx, img, 0, photoY, size, photoH, showPlaceholderLabel, size);
+
+    const grad = ctx.createLinearGradient(0, size * 0.5, 0, size);
+    grad.addColorStop(0, hexToRgba(scheme.c1, 0));
+    grad.addColorStop(0.55, hexToRgba(scheme.c1, 0.65));
+    grad.addColorStop(1, hexToRgba(scheme.c2, 0.95));
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, size, size);
+    ctx.fillRect(0, photoY, size, size - photoY);
 
     let x = pad + offsetX;
-    let y = size * 0.4 + offsetY;
+    let y = size * 0.56 + offsetY;
     const maxW = size - pad * 2;
 
-    ctx.font = `800 ${Math.round(size * 0.032)}px Arial, sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.fillText("ARIZONA", x, y);
-    y += size * 0.046;
-
-    if (party_label) {
-      y += drawPill(ctx, { text: party_label, x, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.024), size }) + size * 0.02;
+    const officeSize = Math.round(size * 0.03 * officeFontScale);
+    const districtSize = Math.round(size * 0.03 * districtFontScale);
+    if (party_label || office || (showDistrict && district)) {
+      y += drawPartyOfficeDistrictLine(ctx, {
+        party_label, office, district, showDistrict,
+        x, y, officeSize, districtSize,
+      }) + size * 0.02;
     }
 
-    // Bold "VOTE" headline — same treatment as Split, see comment there. Bumped same day as
-    // Split after real rendered feedback (ARIZONA/district/VOTE/date all too small to read).
-    const voteSize = Math.round(size * 0.058);
-    ctx.font = `900 ${voteSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
+    // "VOTE · NOV 3" full-width banner — unified with Split's treatment (Aug 27 2026)
+    // rather than the old separate "VOTE" headline + small date pill.
+    const voteBannerH = size * 0.1;
     ctx.fillStyle = ACCENT;
-    ctx.fillText("VOTE", x, y + voteSize);
-    y += voteSize * 1.1;
+    ctx.fillRect(pad, y, size - pad * 2, voteBannerH);
+    ctx.font = `900 ${Math.round(size * 0.052)}px 'Atkinson Hyperlegible', Arial, sans-serif`;
+    ctx.fillStyle = contrastText(ACCENT);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("VOTE \u00b7 NOV 3", size / 2, y + voteBannerH / 2 + size * 0.003);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    y += voteBannerH + size * 0.02;
 
     const nameSize = Math.round(size * 0.066 * nameFontScale);
     ctx.font = `900 ${nameSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
     ctx.fillStyle = "#ffffff";
     const nameLines = wrapText(ctx, name || "Candidate name", maxW);
     nameLines.forEach(line => { ctx.fillText(line, x, y + nameSize); y += nameSize * 1.05; });
-    y += size * 0.014;
-
-    ctx.fillStyle = ACCENT;
-    ctx.fillRect(x, y, size * 0.05, size * 0.006);
-    y += size * 0.026;
-
-    ctx.font = `700 ${Math.round(size * 0.032)}px Arial, sans-serif`;
-    ctx.fillStyle = "#ffffff";
-    const officeLine = showDistrict && district ? `${office || "Office"} \u00b7 ${district}` : (office || "Office");
-    ctx.fillText(officeLine, x, y + size * 0.02);
-    y += size * 0.04;
+    y += size * 0.01;
 
     if (tagline) {
       const taglineSize = Math.round(size * 0.022 * taglineFontScale);
@@ -351,13 +411,10 @@ function drawCandidateCard(ctx, opts) {
       ctx.fillStyle = "rgba(255,255,255,0.9)";
       const tLines = wrapText(ctx, tagline, maxW);
       tLines.forEach(line => { y += taglineSize * 1.2; ctx.fillText(line, x, y); });
-      y += size * 0.018;
+      y += size * 0.014;
     }
 
-    y += size * 0.013;
-    const votePillH2 = drawPill(ctx, { text: "Vote \u00b7 Nov 3", x, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.032), size });
-
-    drawPriorityTags(ctx, { tags, size, pad, minY: y + votePillH2 });
+    drawPriorityTags(ctx, { tags, size, pad, minY: y + size * 0.02, tagsFontScale });
 
   }
 
@@ -428,6 +485,9 @@ export default function CandidateCards() {
   const [template, setTemplate] = useState("split");
   const [nameFontScale, setNameFontScale] = useState(1);
   const [taglineFontScale, setTaglineFontScale] = useState(1);
+  const [officeFontScale, setOfficeFontScale] = useState(1);
+  const [districtFontScale, setDistrictFontScale] = useState(1);
+  const [tagsFontScale, setTagsFontScale] = useState(1);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
   const [photoPosY, setPhotoPosY] = useState(18);
@@ -538,11 +598,11 @@ export default function CandidateCards() {
 
   const buildDrawOpts = useCallback((size, forceHideLabel) => ({
     template, img: resolvedImg, hasRealPhoto, name, office, district, showDistrict, party, tagline, tags,
-    nameFontScale, taglineFontScale, offsetX, offsetY, photoPosY,
+    nameFontScale, taglineFontScale, officeFontScale, districtFontScale, tagsFontScale, offsetX, offsetY, photoPosY,
     showPlaceholderLabel: forceHideLabel ? false : !previewMode,
     size,
   }), [template, resolvedImg, hasRealPhoto, name, office, district, showDistrict, party, tagline, tags,
-       nameFontScale, taglineFontScale, offsetX, offsetY, photoPosY, previewMode]);
+       nameFontScale, taglineFontScale, officeFontScale, districtFontScale, tagsFontScale, offsetX, offsetY, photoPosY, previewMode]);
 
   const draw = useCallback((ctx) => {
     drawCandidateCard(ctx, buildDrawOpts(CANVAS_SIZE, false));
@@ -746,6 +806,9 @@ export default function CandidateCards() {
             <SliderRow label="Photo vertical crop" value={photoPosY} min={0} max={100} onChange={setPhotoPosY} unit="%" B={B} />
             <SliderRow label="Name size" value={Math.round(nameFontScale * 100)} min={60} max={140} onChange={v => setNameFontScale(v / 100)} unit="%" B={B} />
             <SliderRow label="Tagline size" value={Math.round(taglineFontScale * 100)} min={60} max={140} onChange={v => setTaglineFontScale(v / 100)} unit="%" B={B} />
+            <SliderRow label="Office size" value={Math.round(officeFontScale * 100)} min={60} max={140} onChange={v => setOfficeFontScale(v / 100)} unit="%" B={B} />
+            <SliderRow label="District size" value={Math.round(districtFontScale * 100)} min={60} max={140} onChange={v => setDistrictFontScale(v / 100)} unit="%" B={B} />
+            <SliderRow label="Issues size" value={Math.round(tagsFontScale * 100)} min={60} max={140} onChange={v => setTagsFontScale(v / 100)} unit="%" B={B} />
             <SliderRow label="Nudge horizontal" value={offsetX} min={-60} max={60} onChange={setOffsetX} unit="px" B={B} />
             <SliderRow label="Nudge vertical" value={offsetY} min={-60} max={60} onChange={setOffsetY} unit="px" B={B} />
             {(offsetX !== 0 || offsetY !== 0) && (
