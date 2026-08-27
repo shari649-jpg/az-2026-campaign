@@ -128,7 +128,18 @@ function currentUserStamp() {
 }
 
 // ── Storm container: create / read / update / delete ──────────────────────
-export async function createStorm(data, role) {
+// orgId (Aug 27 2026 fix) — createStorm() never wrote this field at all,
+// which meant public-storm-regenerate.mjs's storm.orgId read was always
+// null, silently skipping credit debiting for every public storm ever
+// created (fail-open by design — confirmed via a real, reproduced test:
+// two regens on a live public storm produced no ledger entry and no
+// balance change). Caught early — no public storm existed yet except
+// az-coalition's own test storm, so no backfill of existing docs was
+// needed, only this fix going forward. orgId is passed in from the caller
+// (the creating user's own profile.orgId) rather than looked up here, to
+// avoid an extra Firestore read for something the caller already has via
+// AuthContext.
+export async function createStorm(data, role, orgId = null) {
   const createdBy = currentUserStamp();
   const initialStatus =
     (role === "administrator" || role === "manager") && data.status
@@ -146,6 +157,7 @@ export async function createStorm(data, role) {
     startAt: data.startAt || null,
     expiresAt: data.expiresAt || null,
     status: initialStatus,
+    orgId: orgId || null,
     createdBy,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
