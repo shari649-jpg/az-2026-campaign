@@ -360,6 +360,7 @@ function StormDetailModal({ storm, onClose }) {
 // ── Shared create/edit form, used by both Manager View and a Member's
 // "My Storms" section in User View. ──
 function StormFormModal({ storm, role, onClose, onSaved }) {
+  const { profile } = useAuth();
   const isEdit = !!storm;
   const [form, setForm] = useState(storm ? {
     title: storm.title || "", summary: storm.summary || "", description: storm.description || "",
@@ -381,7 +382,7 @@ function StormFormModal({ storm, role, onClose, onSaved }) {
     try {
       let newId = null;
       if (isEdit) await updateStorm(storm.id, form);
-      else newId = await createStorm(form, role);
+      else newId = await createStorm(form, role, profile?.orgId);
       onSaved(newId);
     } catch (e) {
       setError("Save failed — please try again.");
