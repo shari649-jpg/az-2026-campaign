@@ -186,39 +186,36 @@ function drawPill(ctx, { text, x, y, bg, color, fontSize, size }) {
   return h;
 }
 
-// Priority tags — up to 3 short callouts across the bottom of the card, just above the
-// compliance footer. Was Banner-template-only; ported here (Aug 26 2026) so the feature
-// doesn't just disappear along with Banner — both remaining templates now support it.
-// `minY` (Aug 26 2026 fix) — the main content's y-cursor after everything else is drawn.
-// Priority tags default to a fixed near-bottom position, but that position doesn't know
-// about the main content's own flow — a long name + full tagline + a "Vote" pill can all
-// stack up and reach further down than the tags' default spot, which would otherwise
-// silently overlap. Passing minY lets this function push the tags below whatever's already
-// there instead of assuming there's always room.
-function drawPriorityTags(ctx, { tags = [], size, pad, minY = 0, tagsFontScale = 1 }) {
+// Priority tags — up to 3 short callouts. Was Banner-template-only; ported here
+// (Aug 26 2026) so the feature doesn't disappear along with Banner. Simplified
+// (Aug 27 2026) to take an explicit `y` instead of guessing between a fixed
+// default position and the caller's content — that guessing logic was the actual
+// cause of a real, confirmed bug: tags rendering on top of the footer bar when
+// the content above them ran longer than the fixed default assumed. Callers now
+// compute where content actually ends and pass that in directly.
+function drawPriorityTags(ctx, { tags = [], size, pad, y, tagsFontScale = 1 }) {
   const filledTags = tags.filter(t => t && t.trim());
-  if (filledTags.length === 0) return;
+  if (filledTags.length === 0) return 0;
   const boxH = size * 0.06;
-  const defaultLy = size - size * FOOTER_PCT - boxH - size * 0.03;
-  const ly = Math.max(defaultLy, minY + size * 0.02);
   const gap = size * 0.02;
   const boxW = (size - pad * 2 - gap * (filledTags.length - 1)) / filledTags.length;
   const tagFontSize = Math.round(size * 0.016 * tagsFontScale);
   filledTags.forEach((tag, i) => {
     const bx = pad + i * (boxW + gap);
     ctx.fillStyle = "rgba(255,255,255,0.12)";
-    roundRectPath(ctx, bx, ly, boxW, boxH, size * 0.006);
+    roundRectPath(ctx, bx, y, boxW, boxH, size * 0.006);
     ctx.fill();
     ctx.fillStyle = ACCENT;
-    ctx.fillRect(bx, ly, boxW, size * 0.004);
+    ctx.fillRect(bx, y, boxW, size * 0.004);
     ctx.font = `700 ${tagFontSize}px Arial, sans-serif`;
     ctx.fillStyle = "#ffffff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(tag.trim().toUpperCase(), bx + boxW / 2, ly + boxH / 2, boxW - 8);
+    ctx.fillText(tag.trim().toUpperCase(), bx + boxW / 2, y + boxH / 2, boxW - 8);
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
   });
+  return boxH;
 }
 
 function drawCompianceFooter(ctx, size, light) {
@@ -369,19 +366,25 @@ function drawCandidateCard(ctx, opts) {
       y += size * 0.015;
     }
 
-    drawPriorityTags(ctx, { tags, size, pad, minY: y + size * 0.02, tagsFontScale });
+    drawPriorityTags(ctx, { tags, size, pad, y: y + size * 0.02, tagsFontScale });
 
   } else if (template === "fullbleed") {
-    // Rebuilt again (Aug 27 2026, second pass) — solid text panel below a fixed-
-    // height photo window, instead of overlaying text directly on the photo via a
-    // translucent scrim. The scrim couldn't guarantee text wouldn't land across a
-    // candidate's face — that depends entirely on where any given headshot happens
-    // to frame the face, which varies per photo and isn't something this tool
-    // controls for. A solid panel guarantees text never touches the photo at all,
-    // regardless of framing — same principle Split's corner-box layout already
-    // relies on. Trade-off worth knowing: the photo window is now a shorter,
-    // wider strip than the old edge-to-edge photo was, to leave guaranteed room
-    // for the panel's content even in the largest-slider, longest-text case.
+    // Option B (Aug 27 2026, third pass) — true full-bleed photo again (edge-to-
+    // edge, full height below the ARIZONA band), with a SOLID opaque caption
+    // block at the bottom instead of a translucent scrim. The previous version
+    // (a fixed-height photo window + solid panel) guaranteed text never touched
+    // the photo, but forced every headshot into a short, wide letterbox crop that
+    // looked broken. This is the standard "photo + solid caption bar" pattern.
+    // Trade-off, explicit and accepted per direct instruction: this doesn't
+    // structurally guarantee text can never cross a face — it relies on the
+    // existing "Photo vertical crop" slider to nudge framing per-candidate if
+    // needed. In exchange, the photo actually looks like a portrait again.
+    //
+    // The caption block's height is measured from the real content that will go
+    // in it (not a guessed fixed proportion) and the block is positioned to end
+    // exactly at the footer — this specifically fixes a confirmed bug in the
+    // previous version, where priority tags could render on top of the footer
+    // bar when content ran longer than the fixed position assumed.
     const azSize = Math.round(size * 0.115);
     const bandH = azSize * 1.7;
 
@@ -392,10 +395,48 @@ function drawCandidateCard(ctx, opts) {
     ctx.fillText("ARIZONA", pad, bandH * 0.68);
 
     const photoY = bandH;
-    const panelY = size * 0.52;
-    const photoH = panelY - photoY;
-    if (hasRealPhoto) drawImageCover(ctx, img, 0, photoY, size, photoH, photoPosY);
-    else drawPlaceholder(ctx, img, 0, photoY, size, photoH, showPlaceholderLabel, size);
+    if (hasRealPhoto) drawImageCover(ctx, img, 0, photoY, size, size - photoY, photoPosY);
+    else drawPlaceholder(ctx, img, 0, photoY, size, size - photoY, showPlaceholderLabel, size);
+
+    const maxW = size - pad * 2;
+    const footerH = size * FOOTER_PCT;
+
+    // ── Measure pass — figure out exactly how tall the caption block needs to
+    // be before drawing anything, rather than guessing a fixed proportion.
+    const podSize = Math.round(size * 0.03 * officeFontScale);
+    const podRows = wrapPartyOfficeDistrictRows(ctx, { party_label, office, district, showDistrict, fontSize: podSize, maxWidth: maxW });
+    const podH = podRows.length ? podRows.length * podSize * 1.3 : 0;
+
+    const voteBannerH = size * 0.1;
+
+    const nameSize = Math.round(size * 0.066 * nameFontScale);
+    ctx.font = `900 ${nameSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
+    const nameLines = wrapText(ctx, name || "Candidate name", maxW);
+    const nameH = nameLines.length * nameSize * 1.05;
+
+    const taglineSize = Math.round(size * 0.022 * taglineFontScale);
+    let taglineLines = [];
+    let taglineH = 0;
+    if (tagline) {
+      ctx.font = `italic 400 ${taglineSize}px Georgia, serif`;
+      taglineLines = wrapText(ctx, tagline, maxW);
+      taglineH = taglineLines.length * taglineSize * 1.2;
+    }
+
+    const filledTags = tags.filter(t => t && t.trim());
+    const tagsBoxH = size * 0.06;
+    const tagsH = filledTags.length ? size * 0.02 + tagsBoxH : 0;
+
+    const topPad = size * 0.045;
+    const contentH = topPad
+      + podH + (podH ? size * 0.02 : 0)
+      + voteBannerH + size * 0.02
+      + nameH + size * 0.01
+      + taglineH + (taglineH ? size * 0.014 : 0)
+      + tagsH
+      + size * 0.03; // bottom padding inside the block, before the footer
+
+    const panelY = size - footerH - contentH;
 
     const panelGrad = ctx.createLinearGradient(0, panelY, 0, size);
     panelGrad.addColorStop(0, scheme.c1);
@@ -407,18 +448,13 @@ function drawCandidateCard(ctx, opts) {
     ctx.fillRect(0, panelY - size * 0.004, size, size * 0.008);
 
     let x = pad + offsetX;
-    let y = panelY + size * 0.04 + offsetY;
-    const maxW = size - pad * 2;
+    let y = panelY + topPad + offsetY;
 
-    const podSize = Math.round(size * 0.03 * officeFontScale);
-    const podRows = wrapPartyOfficeDistrictRows(ctx, { party_label, office, district, showDistrict, fontSize: podSize, maxWidth: maxW });
     if (podRows.length) {
       y += drawWrappedPartyOfficeDistrict(ctx, podRows, { x, y, fontSize: podSize }) + size * 0.02;
     }
 
-    // "VOTE · NOV 3" full-width banner — unified with Split's treatment (Aug 27 2026)
-    // rather than the old separate "VOTE" headline + small date pill.
-    const voteBannerH = size * 0.1;
+    // "VOTE · NOV 3" full-width banner — unified with Split's treatment.
     ctx.fillStyle = ACCENT;
     ctx.fillRect(pad, y, size - pad * 2, voteBannerH);
     ctx.font = `900 ${Math.round(size * 0.052)}px 'Atkinson Hyperlegible', Arial, sans-serif`;
@@ -430,23 +466,19 @@ function drawCandidateCard(ctx, opts) {
     ctx.textBaseline = "alphabetic";
     y += voteBannerH + size * 0.02;
 
-    const nameSize = Math.round(size * 0.066 * nameFontScale);
     ctx.font = `900 ${nameSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
     ctx.fillStyle = "#ffffff";
-    const nameLines = wrapText(ctx, name || "Candidate name", maxW);
     nameLines.forEach(line => { ctx.fillText(line, x, y + nameSize); y += nameSize * 1.05; });
     y += size * 0.01;
 
     if (tagline) {
-      const taglineSize = Math.round(size * 0.022 * taglineFontScale);
       ctx.font = `italic 400 ${taglineSize}px Georgia, serif`;
       ctx.fillStyle = "rgba(255,255,255,0.9)";
-      const tLines = wrapText(ctx, tagline, maxW);
-      tLines.forEach(line => { y += taglineSize * 1.2; ctx.fillText(line, x, y); });
+      taglineLines.forEach(line => { y += taglineSize * 1.2; ctx.fillText(line, x, y); });
       y += size * 0.014;
     }
 
-    drawPriorityTags(ctx, { tags, size, pad, minY: y + size * 0.02, tagsFontScale });
+    drawPriorityTags(ctx, { tags, size, pad, y: y + size * 0.02, tagsFontScale });
 
   }
 
