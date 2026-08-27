@@ -74,6 +74,21 @@ function drawImageCover(ctx, img, x, y, w, h, posYPercent = 50) {
   ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
 }
 
+// Picks the largest font size (within [minSize,maxSize]) at which `text` fits inside
+// maxWidth, given a font spec template like `800 SIZEpx Arial, sans-serif` (SIZE gets
+// substituted in). Used for "ARIZONA" in the new corner layout (Aug 27 2026) — its box
+// width is a function of the photo size, which is itself adjustable, so a hardcoded
+// font size risks overflowing or under-filling the space; measuring is safer than guessing.
+function fitFontSize(ctx, text, fontTemplate, maxWidth, minSize, maxSize) {
+  let size = maxSize;
+  while (size > minSize) {
+    ctx.font = fontTemplate.replace("SIZE", size);
+    if (ctx.measureText(text).width <= maxWidth) break;
+    size -= 2;
+  }
+  return size;
+}
+
 function roundRectPath(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, r);
@@ -185,56 +200,71 @@ function drawCandidateCard(ctx, opts) {
   const pad = size * 0.08;
 
   if (template === "split") {
-    // Rebuilt (Aug 27 2026) from a left-photo/right-text two-column layout into a
-    // stacked one, per direct mockup: the old layout forced the photo into a tall,
-    // narrow 44%-width-by-full-height box, which doesn't match a natural head-and-
-    // shoulders crop and stretched/distorted real headshots. Photo now sits in a
-    // shorter, full-width band at the top; everything else stacks full-width below
-    // it so ARIZONA, the VOTE date banner, and the candidate's name can all be
-    // dramatically larger — the explicit ask was "really BIG words, can't see this
-    // on mobile."
-    const photoH = size * 0.33;
-    if (hasRealPhoto) drawImageCover(ctx, img, 0, 0, size, photoH, photoPosY);
-    else drawPlaceholder(ctx, img, 0, 0, size, photoH, showPlaceholderLabel, size);
+    // Rebuilt again (Aug 27 2026, second pass) — the previous full-width-photo-band
+    // version wasn't right either: the photo needs to stay in a top corner, with
+    // ARIZONA and the office/district sitting across from it at the same height, not
+    // spanning the full width above the photo. ARIZONA itself is a fixed design
+    // element (never resized by the person using this), so instead of guessing a
+    // font size, it's measured to fill exactly as much of that corner's width as it
+    // can — see fitFontSize(). Everything else (VOTE banner, name, tagline, tags)
+    // stacks full-width below this top row, largest at the bottom, per direct
+    // instruction on ordering.
+    const cornerH = size * 0.42;
+    const photoW = cornerH; // roughly square corner box — much closer to a natural
+                            // head-and-shoulders crop than the old tall/narrow or
+                            // full-width-short bands tried previously.
 
-    // Panel background (gradient), full-width band below the photo
-    const panelY = photoH;
-    const panelH = size - photoH;
-    const grad = ctx.createLinearGradient(0, panelY, size, size);
-    grad.addColorStop(0, CARD.dusk);
-    grad.addColorStop(1, CARD.duskDeep);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, panelY, size, panelH);
+    // Base gradient across the whole card first — the photo box below overwrites
+    // its own corner; the rest of the card shows this gradient straight through.
+    const baseGrad = ctx.createLinearGradient(0, 0, size, size);
+    baseGrad.addColorStop(0, CARD.dusk);
+    baseGrad.addColorStop(1, CARD.duskDeep);
+    ctx.fillStyle = baseGrad;
+    ctx.fillRect(0, 0, size, size);
 
-    // Accent divider stripe between photo and panel
+    if (hasRealPhoto) drawImageCover(ctx, img, 0, 0, photoW, cornerH, photoPosY);
+    else drawPlaceholder(ctx, img, 0, 0, photoW, cornerH, showPlaceholderLabel, size);
+
+    // Divider accents — vertical between photo and the ARIZONA block, horizontal
+    // between the top corner row and the stacked content below.
     ctx.fillStyle = ACCENT;
-    ctx.fillRect(0, photoH - size * 0.004, size, size * 0.008);
+    ctx.fillRect(photoW - size * 0.004, 0, size * 0.008, cornerH);
+    ctx.fillRect(0, cornerH - size * 0.004, size, size * 0.008);
 
-    let x = pad + offsetX;
-    let y = panelY + size * 0.04 + offsetY;
-    const maxW = size - pad * 2;
+    // ARIZONA + office/district, vertically centered in the space across from the
+    // photo. ARIZONA's size is measured to fill that width, not hardcoded.
+    const rcX = photoW + size * 0.05;
+    const rcMaxW = size - photoW - size * 0.1;
+    const azSize = fitFontSize(ctx, "ARIZONA", "800 SIZEpx Arial, sans-serif", rcMaxW, size * 0.05, size * 0.15);
+    const officeSize = Math.round(size * 0.03);
+    const hasOfficeLine = !!(office || (showDistrict && district));
+    const blockH = azSize * 1.05 + (hasOfficeLine ? size * 0.025 + officeSize * 1.3 : 0);
+    let blockY = (cornerH - blockH) / 2;
 
-    // ARIZONA — the single biggest lightweight-emphasis element other than the name,
-    // now spanning nearly the full card width per the mockup instead of a small caption.
-    ctx.font = `800 ${Math.round(size * 0.09)}px Arial, sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.fillText("ARIZONA", x, y + size * 0.07);
-    y += size * 0.105;
+    ctx.font = `800 ${azSize}px Arial, sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.fillText("ARIZONA", rcX + offsetX, blockY + azSize * 0.85);
+    blockY += azSize * 1.05 + size * 0.025;
+
+    if (hasOfficeLine) {
+      ctx.font = `700 ${officeSize}px Arial, sans-serif`;
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      const officeLine = showDistrict && district ? `${office || "Office"} \u00b7 ${district}` : (office || "Office");
+      ctx.fillText(officeLine, rcX + offsetX, blockY + officeSize * 0.85);
+    }
 
     if (party_label) {
-      y += drawPill(ctx, { text: party_label, x, y, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.026), size }) + size * 0.015;
+      // Party pill tucked just below the photo (Aug 27 2026) — the corner layout
+      // no longer has a natural spot for it beside ARIZONA without crowding that
+      // measured-to-fit text, so it sits under the photo instead.
+      drawPill(ctx, { text: party_label, x: size * 0.02, y: cornerH - size * 0.075, bg: ACCENT, color: contrastText(ACCENT), fontSize: Math.round(size * 0.024), size });
     }
 
-    if (office || (showDistrict && district)) {
-      ctx.font = `700 ${Math.round(size * 0.028)}px Arial, sans-serif`;
-      ctx.fillStyle = "rgba(255,255,255,0.95)";
-      const officeLine = showDistrict && district ? `${office || "Office"} \u00b7 ${district}` : (office || "Office");
-      ctx.fillText(officeLine, x, y + size * 0.02);
-      y += size * 0.038;
-    }
+    let x = pad + offsetX;
+    let y = cornerH + size * 0.045 + offsetY;
+    const maxW = size - pad * 2;
 
-    // "VOTE · NOV 3" as a full-width bold banner, not a small pill — matches the
-    // mockup's big highlighter-stroke emphasis on the date.
+    // "VOTE · NOV 3" as a full-width bold banner.
     const voteBannerH = size * 0.1;
     ctx.fillStyle = ACCENT;
     ctx.fillRect(pad, y, size - pad * 2, voteBannerH);
@@ -245,7 +275,15 @@ function drawCandidateCard(ctx, opts) {
     ctx.fillText("VOTE \u00b7 NOV 3", size / 2, y + voteBannerH / 2 + size * 0.003);
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    y += voteBannerH + size * 0.022;
+    y += voteBannerH + size * 0.03;
+
+    // Candidate name — full width, largest text on the card.
+    const nameSize = Math.round(size * 0.08 * nameFontScale);
+    ctx.font = `900 ${nameSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
+    ctx.fillStyle = "#ffffff";
+    const nameLines = wrapText(ctx, name || "Candidate name", maxW);
+    nameLines.forEach(line => { ctx.fillText(line, x, y + nameSize); y += nameSize * 1.05; });
+    y += size * 0.012;
 
     if (tagline) {
       const taglineSize = Math.round(size * 0.024 * taglineFontScale);
@@ -253,16 +291,8 @@ function drawCandidateCard(ctx, opts) {
       ctx.fillStyle = "rgba(255,255,255,0.88)";
       const tLines = wrapText(ctx, `"${tagline}"`, maxW);
       tLines.forEach(line => { y += taglineSize * 1.2; ctx.fillText(line, x, y); });
-      y += size * 0.018;
+      y += size * 0.015;
     }
-
-    // Candidate name — the largest, most dominant text on the card, spanning full
-    // width across the bottom of the panel per the mockup.
-    const nameSize = Math.round(size * 0.088 * nameFontScale);
-    ctx.font = `900 ${nameSize}px 'Atkinson Hyperlegible', Arial, sans-serif`;
-    ctx.fillStyle = "#ffffff";
-    const nameLines = wrapText(ctx, name || "Candidate name", maxW);
-    nameLines.forEach(line => { ctx.fillText(line, x, y + nameSize); y += nameSize * 1.05; });
 
     drawPriorityTags(ctx, { tags, size, pad, minY: y + size * 0.02 });
 
