@@ -301,11 +301,24 @@ export default async function (req) {
     // thing available. Fail-open like every other org-scoping in this app:
     // a legacy storm with no orgId yet simply isn't debited (logged, not
     // blocked) rather than failing the visitor's regenerate request.
+    //
+    // multiplier: 3 (Sep 3 2026 decision) — Public Storms bills at the same
+    // premium rate as Rebuttal/Rapid Response (see creditHelper.mjs's
+    // ORIGIN_MULTIPLIERS / the hardcoded 3 in generate-rebuttal.mjs and
+    // rapid-response.mjs), rather than building a separate tiered credit
+    // balance for the Public Storms add-on right now. Explicit call: only
+    // az-coalition uses Public Storms today and isn't paying real dollars
+    // for its own credits, so there's no revenue exposure yet — real tier
+    // tracking (a genuine separate balance at the Standard/Advanced add-on
+    // rates) is deferred until a paying customer actually wants Public
+    // Storms access. Revisit then; see Handoff #42 §15 / TODO item 1 for
+    // the full pricing history this reverses no further than logging rate.
     if (data.usage) {
       await debitGenerationCredits(app, {
         orgId: storm.orgId || null,
         uid: null,
         functionName: "public-storm-regenerate",
+        multiplier: 3,
         inputTokens: data.usage.input_tokens,
         outputTokens: data.usage.output_tokens,
       });
