@@ -30,6 +30,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
+import { keyDatesBlock } from "../../src/lib/electionCalendar.js";
 import { debitGenerationCredits } from "./creditHelper.mjs";
 
 const ALLOWED_ORIGINS = [
@@ -192,6 +193,7 @@ function buildRegenPrompt(storm, platformKey, currentText) {
   return `You are an expert political messaging strategist rewriting an existing storm post for a public viewer who wants to see an alternate phrasing before posting it themselves.
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
+${keyDatesBlock()}
 
 ${contextLines}
 
