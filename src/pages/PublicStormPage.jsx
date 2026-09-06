@@ -104,13 +104,17 @@ export default function PublicStormPage() {
 }
 
 function LogoBlock() {
-  // Linked to the coalition's own homepage (Aug 26 2026) — this page is
-  // fully public with no shared nav/header (see file header comment), so
-  // without this the logo was a dead end: a visitor landing here from a
-  // shared link had no way to reach the rest of the site.
+  // Originally linked to "/" (Aug 26 2026) so the logo wasn't a dead end on
+  // this fully public, no-nav page. Changed Sept 6 2026: "/" is auth-gated
+  // (AuthGuard.jsx) and resolves differently depending on whether the
+  // visitor happens to be logged in elsewhere in the same browser — a
+  // logged-out visitor lands on /about, but a logged-in staff member lands
+  // in the internal Comms Hub home page, which is not this page's context
+  // at all. Point at /storms/public instead so the destination is the same
+  // public storms directory for every visitor regardless of auth state.
   return (
-    <Link to="/" style={{ textAlign: "center", marginBottom: 28, textDecoration: "none", display: "block" }}>
-      <img src="/azc-logo-teal.png" alt="Arizona Coalition — go to homepage" style={{ height: 64, marginBottom: 12 }} />
+    <Link to="/storms/public" style={{ textAlign: "center", marginBottom: 28, textDecoration: "none", display: "block" }}>
+      <img src="/azc-logo-teal.png" alt="Arizona Coalition — view all public storms" style={{ height: 64, marginBottom: 12 }} />
       <div style={{ fontFamily: "var(--font-display)", fontSize: 24, color: "#fff", letterSpacing: "-0.01em" }}>Arizona Coalition</div>
       <div style={{ fontFamily: "var(--font-body)", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: GOLD, marginTop: 4 }}>
         Comms Hub · 2026
