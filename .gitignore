@@ -4,6 +4,18 @@ node_modules/
 .DS_Store
 dist/
 build/
-netlify/functions/*/firebase-service-account.json
-netlify/functions/*/google-service-account.json
+# These two credential files are written by scripts/inject-secrets.mjs at
+# build time DIRECTLY into netlify/functions/ (flat — no per-function
+# subfolder, per that script's own header comment), not into a
+# netlify/functions/<something>/ subdirectory. The old "*/firebase-..." /
+# "*/google-..." patterns below required an extra path segment that never
+# exists in this repo's real layout, so they silently never matched the
+# actual files and provided no protection at all — confirmed directly with
+# `git check-ignore -v` against the real flat paths. Fixed Sep 2026
+# security pass. Kept broad (**/) so this stays correct even if the build
+# script's output location ever changes.
+netlify/functions/firebase-service-account.json
+netlify/functions/google-service-account.json
+**/firebase-service-account.json
+**/google-service-account.json
 *.local.json
