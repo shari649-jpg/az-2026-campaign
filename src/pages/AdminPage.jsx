@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import AdminHeadshots from "./AdminHeadshots";
 import AddonCreditsPurchase from "../components/AddonCreditsPurchase";
+import { ELECTION_CALENDAR, isElectionCalendarStale } from "../lib/electionCalendar";
 
 const GOLD       = "var(--gold)";
 const TEAL       = "var(--teal)";
@@ -1561,6 +1562,26 @@ export default function AdminPage() {
       </div>
 
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "28px 24px" }}>
+
+        {/* Election calendar staleness banner — see src/lib/electionCalendar.js.
+            Fires once today is past the stored Election Day, meaning
+            ELECTION_CALENDAR almost certainly still reflects a PAST cycle and
+            needs updating before the next one's early-voting window opens.
+            Every AI-generated message (Message Machine, Rebuttal, Storms)
+            currently trusts this file as ground truth for Election Day /
+            early-voting dates — a stale value here won't be caught by any
+            other guardrail. Admin/Manager-visible only, matching this page's
+            existing access scope. */}
+        {isElectionCalendarStale() && (
+          <div style={{ background: "#FFF8DC", border: `2px solid ${GOLD}`, borderRadius: 10, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ fontSize: 20 }}>⚠️</div>
+            <div style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.5 }}>
+              <strong>Election calendar is out of date.</strong> src/lib/electionCalendar.js still shows{" "}
+              <strong>{ELECTION_CALENDAR.cycleLabel}</strong> (Election Day {ELECTION_CALENDAR.electionDateLabel}), which has already passed.
+              Every AI-generated message trusts this file for Election Day and early-voting dates — update it for the next cycle before Message Machine, Rebuttal, or Storms are used again.
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div style={{ display: "flex", alignItems: "flex-end", gap: 4, marginBottom: 24, borderBottom: `2px solid #ddd`, paddingBottom: 0 }}>
