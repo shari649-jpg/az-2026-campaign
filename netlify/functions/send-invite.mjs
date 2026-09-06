@@ -102,7 +102,24 @@ async function sendEmail({ to, subject, html }) {
   return res.json();
 }
 
+// Escapes attacker-controlled text before it's interpolated into the HTML
+// email body below. `fullName` originates from the fully public,
+// unauthenticated waitlist signup form (only .trim()'d there, never
+// sanitized) — send-welcome.mjs and notify-waitlist-signup.mjs both already
+// escape every interpolated field this same way (send-welcome.mjs's own
+// comment documents this exact bug class being fixed there in a July 2026
+// pass); this file was missed in that pass. Fixed Sep 2026 security pass.
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function inviteEmailHtml({ fullName, inviteUrl }) {
+  const safeName = escapeHtml(fullName);
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>Your Invitation</title></head>
@@ -118,7 +135,7 @@ function inviteEmailHtml({ fullName, inviteUrl }) {
         </tr>
         <tr>
           <td style="padding:36px 40px;">
-            <p style="margin:0 0 16px;font-size:16px;color:#362A44;line-height:1.7;">Hi <strong>${fullName}</strong>,</p>
+            <p style="margin:0 0 16px;font-size:16px;color:#362A44;line-height:1.7;">Hi <strong>${safeName}</strong>,</p>
             <p style="margin:0 0 16px;font-size:16px;color:#362A44;line-height:1.7;">Your request to join the Arizona Coalition Comms Hub has been approved! Click below to complete your registration.</p>
             <p style="margin:0 0 28px;font-size:16px;color:#362A44;line-height:1.7;">The Comms Hub gives your coalition access to AI-powered messaging, candidate research, rapid response, and more.</p>
             <table cellpadding="0" cellspacing="0" width="100%">
