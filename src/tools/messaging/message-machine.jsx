@@ -5,6 +5,7 @@ import {
   AI_TELL_PHRASING_BAN, detectBannedStructures,
   HASHTAG_BODY_BAN, JSON_ONLY_INSTRUCTION, JSON_ESCAPING_INSTRUCTION,
 } from "../../lib/messageRules";
+import { keyDatesBlock } from "../../lib/electionCalendar";
 import {
   loadAllStorms, loadPosts as loadStormPosts, createPost as createStormPost,
   MEDIA_TYPES as STORM_MEDIA_TYPES, STORM_STATUS, PUSH_TO_STORM_KEY, STORM_TO_MM_KEY,
@@ -86,6 +87,7 @@ const PLATFORM_VOICE_GUIDE_NATIONAL = `PLATFORM VOICE — each platform below ha
 function guardrailAndVoiceBlock(mode) {
   const platformVoice = mode === "national" ? PLATFORM_VOICE_GUIDE_NATIONAL : PLATFORM_VOICE_GUIDE;
   return `${FACTUAL_ACCURACY_GUARDRAIL}
+${keyDatesBlock()}
 ${AI_TELL_PHRASING_BAN}
 ${platformVoice}`;
 }
