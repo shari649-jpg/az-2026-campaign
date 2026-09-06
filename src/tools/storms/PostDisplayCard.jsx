@@ -23,6 +23,7 @@ import { useState } from "react";
 import { zipSync } from "fflate";
 import { MEDIA_TYPES, PLATFORMS, CHAR_LIMITS, formatGenParams } from "../../lib/stormLibrary";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
+import { keyDatesBlock } from "../../lib/electionCalendar";
 import { auth } from "../../firebase";
 
 const TEAL       = "var(--teal)";
@@ -155,6 +156,7 @@ export default function PostDisplayCard({ post, hashtag, storm, isPublic, public
     const prompt = `You are an expert political messaging strategist rewriting an existing storm post.
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
+${keyDatesBlock()}
 
 ${stormContextBlock()}
 
