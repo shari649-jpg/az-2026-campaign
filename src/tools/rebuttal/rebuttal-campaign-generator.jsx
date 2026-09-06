@@ -843,4 +843,8 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
         )}
       </main>
       <p style={{ textAlign:"center", fontSize:12, color:"var(--text-mute)", padding:"20px 20px 28px", margin:0 }}>
-        ⚠️ AI-generated content — 
+        ⚠️ AI-generated content — always verify facts and claims before publishing.
+      </p>
+    </div>
+  );
+}
