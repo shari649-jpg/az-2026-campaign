@@ -55,15 +55,47 @@ async function requireSignedIn(app, idToken) {
   return decoded.uid;
 }
 
+// SSRF allowlist check for a user-supplied "analyze this article" URL.
+//
+// Fixed Sep 2026 security pass — two confirmed bugs in the previous version:
+//
+// 1. IPv6 literals never actually matched. `new URL(rawUrl).hostname`
+//    returns IPv6 host names WITH their brackets (e.g. "http://[::1]/" has
+//    hostname "[::1]", not "::1") — confirmed directly. Every comparison
+//    below used to test the bracket-less form, so the entire IPv6
+//    loopback/link-local/unique-local block was dead code: "[::1]",
+//    "[fd00::1]", etc. all sailed through isUrlAllowed() untouched. Fixed
+//    by stripping the brackets before comparing.
+// 2. An IPv4-mapped IPv6 address (the "::ffff:127.0.0.1" family, including
+//    its all-hex form "::ffff:7f00:1") could smuggle a blocked IPv4 target
+//    past the dotted-quad regex, since that regex only ever matched a
+//    literal dotted-quad hostname, never an embedded one. Fixed by pulling
+//    the embedded IPv4 back out (dotted form) and re-running it through the
+//    same IPv4 checks, plus explicitly blocking the hex-groups form's
+//    "::ffff:7f" (127.x) / "::ffff:a" (10.x) prefixes directly.
+//
+// Known, accepted residual gap, not fixed here: this only checks the
+// LITERAL host/IP in the URL string. It does not resolve DNS before
+// fetching, so a hostname that resolves to an internal IP only at request
+// time (DNS rebinding) would still pass this check. Closing that fully
+// would mean resolving the hostname here and validating the resolved IP
+// before fetch() ever runs — a larger change, flagged as a real follow-up,
+// not attempted in this pass.
 function isUrlAllowed(rawUrl) {
   let parsed;
   try { parsed = new URL(rawUrl); } catch { return false; }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-  const host = parsed.hostname.toLowerCase();
+
+  let host = parsed.hostname.toLowerCase();
+  if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
+
   if (host === "localhost" || host === "0.0.0.0") return false;
   if (host === "169.254.169.254") return false;
   if (host.endsWith(".internal") || host.endsWith(".local")) return false;
-  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+
+  const mappedDotted = host.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  const ipv4Candidate = mappedDotted ? mappedDotted[1] : host;
+  const ipv4 = ipv4Candidate.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (ipv4) {
     const a = parseInt(ipv4[1], 10), b = parseInt(ipv4[2], 10);
     if (a === 127) return false;
@@ -72,8 +104,43 @@ function isUrlAllowed(rawUrl) {
     if (a === 192 && b === 168) return false;
     if (a === 169 && b === 254) return false;
   }
-  if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return false;
+
+  if (
+    host === "::1" ||
+    host === "::" ||
+    host.startsWith("fe80:") ||
+    host.startsWith("fc") ||
+    host.startsWith("fd") ||
+    host.startsWith("::ffff:7f") ||  // ::ffff:127.x.x.x in all-hex form (0x7f == 127)
+    host.startsWith("::ffff:a")      // ::ffff:10.x.x.x in all-hex form (0xa == 10)
+  ) return false;
+
   return true;
+}
+
+// Follows redirects manually, re-validating every hop against
+// isUrlAllowed() before it's fetched. The previous version passed
+// `redirect: "follow"` straight to fetch(), which only validated the FIRST
+// url — an attacker-hosted page that itself passes the allowlist (any
+// ordinary public site) could 302 to an internal/blocked target
+// (169.254.169.254, [::1], etc.) and that redirect would be followed
+// blindly, bypassing isUrlAllowed() entirely. Fixed Sep 2026 security pass.
+async function fetchWithValidatedRedirects(startUrl, headers, maxHops = 5) {
+  let currentUrl = startUrl;
+  for (let hop = 0; hop <= maxHops; hop++) {
+    if (!isUrlAllowed(currentUrl)) {
+      throw new Error("blocked_redirect_target");
+    }
+    const res = await fetch(currentUrl, { headers, redirect: "manual" });
+    const isRedirect = res.status >= 300 && res.status < 400;
+    const location = res.headers.get("location");
+    if (isRedirect && location) {
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
+    }
+    return res;
+  }
+  throw new Error("too_many_redirects");
 }
 
 // Strips a fetched page down to its readable text before it gets sent to
@@ -231,13 +298,10 @@ export default async function (req) {
       let pageText = "";
       let fetchOk = false;
       try {
-        const pageRes = await fetch(url, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-          },
-          redirect: "follow",
+        const pageRes = await fetchWithValidatedRedirects(url, {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.5",
         });
         if (pageRes.ok) {
           const html = await pageRes.text();
