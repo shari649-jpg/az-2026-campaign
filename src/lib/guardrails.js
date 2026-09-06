@@ -41,9 +41,32 @@
 // options considered (the other being an explicit Tense field/dropdown).
 // Revisit and consider the explicit-field approach if this inference-based
 // version doesn't hold up in practice.
+//
+// DATE FIDELITY rule added Sept 2026, real production incident. A user
+// typed "early voting starts Oct 7th" into Issue/Content with no election
+// date stated anywhere in that generation's input. Every platform's output
+// said early voting started "October 9th" and named the election "November
+// 5th" — instead of just repeating the given Oct 7th. Root-caused by
+// reading the actual prompt sent to Claude (confirmed no code bug: the
+// literal input text was passed through untouched, nothing hardcoded either
+// wrong date). Working theory, consistent with the exact arithmetic: the
+// model filled the missing Election Day from a strong training-data prior
+// (Nov 5, 2024 — the actual most recent U.S. general election) and then
+// applied Arizona's real "early voting starts 27 days before Election Day"
+// rule to THAT wrong date (Nov 5 − 27 = Oct 9), overriding the correct Oct
+// 7th it had already been given (Nov 3, the real 2026 date, − 27 = Oct 7).
+// The pre-existing "NEVER invent... a date that isn't present in the input"
+// line didn't stop this, because the model wasn't inventing a date from
+// nothing — it was deriving one from a partial input plus outside knowledge,
+// which reads as different from "invention" even though the effect is the
+// same: a wrong date stated as fact. This rule closes that specific gap.
+// Paired with electionCalendar.js's keyDatesBlock(), now injected into every
+// prompt that uses this guardrail, so the model always has the real dates
+// and never has to fill a gap at all.
 export const FACTUAL_ACCURACY_GUARDRAIL = `FACTUAL ACCURACY:
 - Treat the user's own input (issue, focal point, false narrative, or the existing message you're rewriting) as trusted source material — build on its facts, figures, and names directly instead of hedging around them.
 - NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date that isn't present in the input.
+- DATE FIDELITY: if a KEY DATES block appears in this prompt, it is the sole authoritative source for Election Day and the early-voting window — never override, "correct," or recompute it using outside knowledge (a general rule like "early voting starts N days before Election Day," a memorized past election date, or anything else you know independently of this prompt). If the user's own input states a specific date directly, reproduce it exactly as given — do not adjust it to match your own calculation, even if you believe a general rule would produce a different date. Never state a specific Election Day or early-voting date unless it is present in a KEY DATES block or explicitly given in the user's input; if neither gives you a date, write around it (e.g. "election day," "before early voting closes") rather than naming one.
 - NEVER fabricate or paraphrase quotes from real people. Only use quotes explicitly provided in the input.
 - NEVER invent a named person, organization, study, bill, court case, or law that wasn't present in the input.
 - CANDIDATE STATUS: if a candidate's status (Incumbent, Challenger, Open Seat, etc.) is given in the input, never contradict it. If a candidate is a Challenger or the office is listed as Open, never write as if they already hold that office — "came to Congress," "in the Senate," "as your Representative," etc. are Incumbent-only framing. If no status is given at all, don't assume incumbency from an office label — write about their record and candidacy without asserting they currently hold the seat.
