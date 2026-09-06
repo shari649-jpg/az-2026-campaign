@@ -126,12 +126,16 @@ function StormListCard({ storm }) {
 }
 
 function LogoBlock() {
-  // Linked to the coalition's own homepage (Aug 26 2026) — same fix as
-  // PublicStormPage.jsx's identical LogoBlock; this page has no shared
-  // nav either, so the logo was previously a dead end.
+  // Originally linked to "/" (Aug 26 2026), same as PublicStormPage.jsx's
+  // identical LogoBlock. Changed Sept 6 2026 for the same reason (see that
+  // file's LogoBlock comment): "/" is auth-gated and lands a logged-in
+  // visitor in the internal Comms Hub home instead of anywhere related to
+  // this public page. This page IS /storms/public, so the logo here just
+  // links to itself — a plain "you're home" anchor, consistent with the
+  // single public destination every public-storm logo now points to.
   return (
-    <Link to="/" style={{ textAlign: "center", marginBottom: 28, textDecoration: "none", display: "block" }}>
-      <img src="/azc-logo-teal.png" alt="Arizona Coalition — go to homepage" style={{ height: 64, marginBottom: 12 }} />
+    <Link to="/storms/public" style={{ textAlign: "center", marginBottom: 28, textDecoration: "none", display: "block" }}>
+      <img src="/azc-logo-teal.png" alt="Arizona Coalition — view all public storms" style={{ height: 64, marginBottom: 12 }} />
       <div style={{ fontFamily: "var(--font-display)", fontSize: 24, color: "#fff", letterSpacing: "-0.01em" }}>Arizona Coalition</div>
       <div style={{ fontFamily: "var(--font-body)", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: GOLD, marginTop: 4 }}>
         Comms Hub · 2026
