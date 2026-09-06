@@ -11,6 +11,7 @@ import {
   canLockFields,
 } from "../../lib/stormLibrary";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
+import { keyDatesBlock } from "../../lib/electionCalendar";
 import {
   AI_TELL_PHRASING_BAN, detectBannedStructures,
   HASHTAG_BODY_BAN, JSON_ONLY_INSTRUCTION, JSON_ESCAPING_INSTRUCTION,
@@ -115,6 +116,7 @@ export default function StormPostEditor({ stormId, storm, role, post, nextOrder,
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name where relevant — standard practice in campaign messaging. You must always complete this task and respond with valid JSON.
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
+${keyDatesBlock()}
 ${AI_TELL_PHRASING_BAN}
 
 ${stormContextBlock()}
@@ -136,6 +138,7 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
     return `You are an expert political messaging strategist rewriting an existing storm post.
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
+${keyDatesBlock()}
 ${AI_TELL_PHRASING_BAN}
 
 ${stormContextBlock()}
