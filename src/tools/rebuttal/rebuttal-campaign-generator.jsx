@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { saveCampaign, loadAllCampaigns, deleteCampaign } from "../../lib/campaignLibrary";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
 import { AI_TELL_PHRASING_BAN, detectBannedStructures } from "../../lib/messageRules";
+import { keyDatesBlock } from "../../lib/electionCalendar";
 import { auth } from "../../firebase";
 
 // ── 9 activist profile choices ────────────────────────────────────────────
@@ -96,6 +97,7 @@ Only include this section at all if the SELF-CONTRADICTION rule below applies to
 [Platform name]: [one specific sentence naming the contradiction between that post's own stated evidence and its own conclusion]
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
+${keyDatesBlock()}
 ${AI_TELL_PHRASING_BAN}
 
 RULES:
@@ -841,8 +843,4 @@ Now write the Activist section with platform-specific posts for all 6 platforms.
         )}
       </main>
       <p style={{ textAlign:"center", fontSize:12, color:"var(--text-mute)", padding:"20px 20px 28px", margin:0 }}>
-        ⚠️ AI-generated content — always verify facts and claims before publishing.
-      </p>
-    </div>
-  );
-}
+        ⚠️ AI-generated content — 
