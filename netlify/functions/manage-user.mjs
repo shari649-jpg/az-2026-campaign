@@ -179,6 +179,27 @@ export default async function (req) {
 
     if (action === "disable" || action === "enable") {
       await auth.updateUser(targetUid, { disabled: action === "disable" });
+      // Disabling a user's Firebase Auth account (above) blocks future
+      // sign-in, but does NOT invalidate an ID token that was already
+      // issued — that token stays valid, and every Netlify function's
+      // requireSignedIn()/verifyIdToken() would keep honoring it, for up to
+      // its natural ~1hr expiry. A disabled user could keep spending
+      // Claude/AssemblyAI credits with a token grabbed just before being
+      // disabled. Fixed Sep 2026 security pass: revoke all of the target's
+      // existing refresh tokens (forces re-authentication) whenever they're
+      // disabled — this doesn't retroactively kill an already-issued ID
+      // token instantly (Firebase only enforces revocation on token
+      // refresh/re-verification with checkRevoked, which this app's
+      // functions don't currently pass), so the ~1hr natural-expiry window
+      // isn't fully closed by this alone, but it does stop the account from
+      // getting a NEW valid token going forward and closes the "long-lived
+      // session token" persistence risk. Only runs on disable, not enable —
+      // there's nothing to revoke when re-enabling.
+      if (action === "disable") {
+        await auth.revokeRefreshTokens(targetUid).catch(err => {
+          console.error(`[manage-user] revokeRefreshTokens failed for ${targetUid}:`, err.message);
+        });
+      }
       await db.doc(`users/${targetUid}`).update({
         disabled: action === "disable",
         ...(action === "disable" ? { disabledAt: new Date() } : { disabledAt: admin.firestore.FieldValue.delete() }),
