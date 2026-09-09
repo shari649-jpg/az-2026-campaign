@@ -1,3 +1,27 @@
+
+/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Guardrails · JS
 // lib/guardrails.js
 //
 // Shared factual-accuracy guardrail for every AI prompt-builder in the app
@@ -63,17 +87,29 @@
 // Paired with electionCalendar.js's keyDatesBlock(), now injected into every
 // prompt that uses this guardrail, so the model always has the real dates
 // and never has to fill a gap at all.
+// TIGHTENED Sept 8, 2026 (Handoff #48, prompt-consolidation pass; applied
+// Sept 9, 2026 per that handoff's punch list item 1). 4,480 -> 3,206 chars
+// (-28%). Two real content changes, not just trimming:
+//   1. DATE FIDELITY rewritten from instance-specific ("Election Day and
+//      the early-voting window," the AZ N-days-before formula) to general
+//      ("every date mentioned in this prompt... a filing deadline, or any
+//      other date"). The narrow version only ever covered the one date
+//      type behind the Sept incident above; this closes the same
+//      "deriving isn't inventing" loophole for every other date type
+//      (special elections, filing deadlines, future cycles) instead of
+//      needing its own incident first.
+//   2. The three parallel "never invent X" bullets (stats/dates, quotes,
+//      named entities) were merged into one — same rules, no content
+//      dropped, just no longer three near-identical sentences in a row.
 export const FACTUAL_ACCURACY_GUARDRAIL = `FACTUAL ACCURACY:
-- Treat the user's own input (issue, focal point, false narrative, or the existing message you're rewriting) as trusted source material — build on its facts, figures, and names directly instead of hedging around them.
-- NEVER invent, fabricate, or estimate any statistic, percentage, vote count, dollar figure, poll number, or date that isn't present in the input.
-- DATE FIDELITY: if a KEY DATES block appears in this prompt, it is the sole authoritative source for Election Day and the early-voting window — never override, "correct," or recompute it using outside knowledge (a general rule like "early voting starts N days before Election Day," a memorized past election date, or anything else you know independently of this prompt). If the user's own input states a specific date directly, reproduce it exactly as given — do not adjust it to match your own calculation, even if you believe a general rule would produce a different date. Never state a specific Election Day or early-voting date unless it is present in a KEY DATES block or explicitly given in the user's input; if neither gives you a date, write around it (e.g. "election day," "before early voting closes") rather than naming one.
-- NEVER fabricate or paraphrase quotes from real people. Only use quotes explicitly provided in the input.
-- NEVER invent a named person, organization, study, bill, court case, or law that wasn't present in the input.
-- CANDIDATE STATUS: if a candidate's status (Incumbent, Challenger, Open Seat, etc.) is given in the input, never contradict it. If a candidate is a Challenger or the office is listed as Open, never write as if they already hold that office — "came to Congress," "in the Senate," "as your Representative," etc. are Incumbent-only framing. If no status is given at all, don't assume incumbency from an office label — write about their record and candidacy without asserting they currently hold the seat.
-- TENSE: if the input indicates when something happened or is happening — a past vote, a signed law, a completed event, an ongoing situation, or a future/pending proposal — match your verb tense and framing to that timing. Do not describe a past event in urgent present tense ("is voting against," "is taking away") when the input indicates the event already happened ("voted against," "took away"). Do not describe a pending or proposed action as if it has already occurred. If the input gives no clear timing signal, default to present tense for ongoing conditions and framing language appropriate to the Focal Point, without asserting a specific timing that isn't in the input.
-- NAMED-PERSON WRONGDOING: if a real, named individual is linked to an accusation of wrongdoing, criminal conduct, or scandal, that claim must trace to confirmed public-record sourcing already present in the input — don't embellish or extend it. This heightened scrutiny applies only when a named individual and a wrongdoing claim appear together; general topic content with no named individual isn't subject to it.
+- Treat the user's input (issue, focal point, false narrative, or existing message being rewritten) as trusted source material — build on its facts, figures, and names directly instead of hedging around them.
+- NEVER invent, fabricate, estimate, or paraphrase any statistic, percentage, vote count, dollar figure, poll number, date, quote, named person, organization, study, bill, court case, or law that isn't present in the input. Quotes must be used exactly as given, never reworded.
+- DATE FIDELITY: State a specific date only if it is explicitly given — in a KEY DATES block (if one appears in this prompt) or directly in the user's own input. Never compute, derive, infer, or "correct" any date using outside knowledge, memorized precedent, or a rule you know to be generally true (e.g., a fixed number of days before an election) — even when you're confident the calculation is accurate, applying it to an unstated date is the same as inventing one. This applies to every date mentioned in this prompt — election day, an early-voting or registration window, a filing deadline, or any other date — not only whatever a KEY DATES block happens to list. If a date isn't explicitly given anywhere, write around it (e.g. "election day," "the deadline," "before voting closes") rather than naming or calculating one.
+- CANDIDATE STATUS: never contradict a given status (Incumbent, Challenger, Open Seat). A Challenger or Open Seat candidate must never be framed as already holding the office ("came to Congress," "in the Senate," "as your Representative"). If no status is given, don't assume incumbency — write about their record and candidacy without asserting they currently hold the seat.
+- TENSE: match verb tense to the input's timing. Don't describe a past event in urgent present tense ("is voting against," "is taking away") when it already happened ("voted against," "took away"), and don't describe a pending or proposed action as if it already occurred. With no clear timing signal, default to present tense for ongoing conditions.
+- NAMED-PERSON WRONGDOING: any accusation of wrongdoing, criminal conduct, or scandal against a real, named individual must trace to confirmed public-record sourcing already in the input — don't embellish or extend it. Applies only when a named individual and a wrongdoing claim appear together.
 - Where the input doesn't give a specific fact, write around it using general, non-falsifiable framing ("experts have documented," "public records show") rather than inventing what those records say.
-- SELF-CONTRADICTION: never let a post's own stated evidence support one conclusion while the post's own conclusion asserts the opposite. If the input's facts show a claim is false, unfounded, or debunked ("no evidence of fraud," "courts rejected the claim," "officials verified the results"), the output must land on that same conclusion — don't flip the ending to assert the false claim as true just because it reads as punchier.
-- CONTRADICTION FLAG: if you notice a self-contradiction under the rule above, still write the post exactly as instructed elsewhere in this prompt — never refuse, and never silently rewrite it into something else. Instead, report the specific contradiction using whichever flagging mechanism this prompt specifies below (a JSON key, a labeled section, etc.) — never invent your own format, and never mention it inside the post text itself. Only flag an actual self-contradiction in the text — never a topic you personally find dubious, and never as a general skepticism check.
-- Posts must persuade through framing, values, and momentum — not through invented facts.
-- Violating this rule damages the credibility of a real political campaign. Treat factual accuracy as an absolute constraint, not a preference.`;
+- SELF-CONTRADICTION: if the input debunks a claim ("no evidence of fraud," "courts rejected it"), the post's conclusion must agree — never flip to the punchier, false version.
+- CONTRADICTION FLAG: if you spot one, still write the post as instructed — never refuse or rewrite around it. Flag it via the format specified below, not your own — never inside the post text. Only genuine contradictions, not personal skepticism.
+- Posts must persuade through framing, values, and momentum — not invented facts. Violating this rule damages the credibility of a real political campaign; treat factual accuracy as an absolute constraint, not a preference.`;
+ 
