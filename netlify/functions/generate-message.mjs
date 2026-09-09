@@ -142,12 +142,32 @@ export default async function (req) {
     // output was still landing on an obvious "this is not X, it is Y"
     // construction, so this needs the same client-can't-skip-it guarantee
     // the factual-accuracy rule already has.
+    //
+    // FIXED Sept 9, 2026 (Handoff #48 §5.6 / punch list #4): this check used
+    // to test ONLY `clientSystem`. Message Machine's single-platform regen
+    // path (Shorten/Expand/Rephrase — buildRegenPrompt() in
+    // message-machine.jsx) embeds both guardrails directly into the prompt
+    // TEXT via guardrailAndVoiceBlock(), and callAPI() never sends a
+    // `system` field for that path at all — so `clientSystem` was always ""
+    // for every regen call, both pieces looked "missing," and the server
+    // appended full second copies into `system` on top of the copies
+    // already sitting in `messages`. Every regen call was billing and
+    // sending both guardrails twice. `generate-storm-text.mjs` had the
+    // identical "no system field, guardrails embedded in messages" client
+    // pattern and never had this bug, because its own missingPieces check
+    // already tested the actual message text too — ported that exact,
+    // already-working check here rather than inventing a new approach.
     const clientSystem = typeof system === "string" ? system : "";
+    const messagesText = Array.isArray(messages)
+      ? messages.map(m => (typeof m.content === "string" ? m.content : "")).join("\n")
+      : "";
     const missingPieces = [
-      !clientSystem.includes("FACTUAL ACCURACY:") ? FACTUAL_ACCURACY_GUARDRAIL : null,
-      !clientSystem.includes("AVOID AI-SOUNDING PHRASING:") ? AI_TELL_PHRASING_BAN : null,
+      (!clientSystem.includes("FACTUAL ACCURACY:") && !messagesText.includes("FACTUAL ACCURACY:")) ? FACTUAL_ACCURACY_GUARDRAIL : null,
+      (!clientSystem.includes("AVOID AI-SOUNDING PHRASING:") && !messagesText.includes("AVOID AI-SOUNDING PHRASING:")) ? AI_TELL_PHRASING_BAN : null,
     ].filter(Boolean);
-    const effectiveSystem = [clientSystem, ...missingPieces].filter(Boolean).join("\n\n");
+    const effectiveSystem = missingPieces.length
+      ? [clientSystem, ...missingPieces].filter(Boolean).join("\n\n")
+      : clientSystem;
 
     // Rough input size, logged before the call so it's visible in Netlify logs
     // even if the function gets killed by the 26s timeout mid-call.
@@ -157,7 +177,7 @@ export default async function (req) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: Math.min(max_tokens || 1000, MAX_TOKENS_CEILING), messages, system: effectiveSystem }),
+      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: Math.min(max_tokens || 1000, MAX_TOKENS_CEILING), messages, ...(effectiveSystem && { system: effectiveSystem }) }),
     });
     const tClaudeCall = Date.now();
     console.log(`[generate-message] timing: claude_call=${tClaudeCall - tRateLimit}ms status=${response.status}`);
