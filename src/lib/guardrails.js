@@ -1,27 +1,3 @@
-
-/
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Guardrails · JS
 // lib/guardrails.js
 //
 // Shared factual-accuracy guardrail for every AI prompt-builder in the app
@@ -112,4 +88,3 @@ export const FACTUAL_ACCURACY_GUARDRAIL = `FACTUAL ACCURACY:
 - SELF-CONTRADICTION: if the input debunks a claim ("no evidence of fraud," "courts rejected it"), the post's conclusion must agree — never flip to the punchier, false version.
 - CONTRADICTION FLAG: if you spot one, still write the post as instructed — never refuse or rewrite around it. Flag it via the format specified below, not your own — never inside the post text. Only genuine contradictions, not personal skepticism.
 - Posts must persuade through framing, values, and momentum — not invented facts. Violating this rule damages the credibility of a real political campaign; treat factual accuracy as an absolute constraint, not a preference.`;
- 
