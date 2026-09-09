@@ -30,6 +30,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
+import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 import { keyDatesBlock } from "../../src/lib/electionCalendar.js";
 import { debitGenerationCredits } from "./creditHelper.mjs";
 
@@ -179,6 +180,15 @@ async function checkAndIncrementLimits(db, ip, stormId) {
   return { blocked: false };
 }
 
+// FIXED Sept 9, 2026 (Handoff #48 §5.2 / punch list #3): this prompt used
+// to enforce only FACTUAL_ACCURACY_GUARDRAIL — AI_TELL_PHRASING_BAN never
+// appeared anywhere in this file, even though every other generation path
+// in the app enforces it. This is the app's one fully public,
+// unauthenticated content-generation endpoint, so it was the one path
+// with weaker enforcement than every internal tool. Added directly to the
+// prompt below (this file has no `system`/`messages` split to backstop
+// server-side the way generate-message.mjs does — the whole prompt is one
+// string sent as a single user message).
 function buildRegenPrompt(storm, platformKey, currentText) {
   const label = PLATFORM_LABELS[platformKey] || platformKey;
   const limit = CHAR_LIMITS[platformKey] || 500;
@@ -194,6 +204,7 @@ function buildRegenPrompt(storm, platformKey, currentText) {
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
 ${keyDatesBlock()}
+${AI_TELL_PHRASING_BAN}
 
 ${contextLines}
 
