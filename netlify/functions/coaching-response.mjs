@@ -7,6 +7,8 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
+import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
+import { keyDatesBlock } from "../../src/lib/electionCalendar.js";
 
 // Transition period: both the new custom domain and the legacy Netlify
 // subdomain are accepted. Browsers only honor a single exact-match origin
@@ -52,10 +54,25 @@ async function requireSignedIn(app, idToken) {
 
 // ── System prompt builders ──────────────────────────────────────────────────
 
-const FACTUAL_ACCURACY_RULE = `
-FACTUAL ACCURACY: Never invent statistics, quotes, names, studies, bills, or specific factual
-claims not present in the user's input. Write around missing facts with non-falsifiable framing.
-This is an absolute constraint — violating it damages a real political campaign.`.trim();
+// FIXED Sept 9, 2026 (Handoff #48 §5.1 / punch list #2). This used to be a
+// separate, local FACTUAL_ACCURACY_RULE — the exact pre-incident wording
+// (no DATE FIDELITY, TENSE, CANDIDATE STATUS, NAMED-PERSON WRONGDOING, or
+// SELF-CONTRADICTION clauses, and no keyDatesBlock() access to the real
+// Election Day/early-voting dates) that Handoff #46's root-cause section
+// documents as insufficient to stop the real Sept 2026 date-hallucination
+// incident, because the model wasn't inventing a date from nothing, it was
+// deriving one from partial input plus outside knowledge. Every other
+// generation path in the app was patched with the real shared guardrail;
+// this file never imported from guardrails.js at all, so The Coach — which
+// drafts real reply text real staffers can copy/paste into public
+// comments — kept the old, insufficient wording. This consolidation
+// question was first raised at Handoff #18 and never closed until now.
+// Consolidated onto the same shared FACTUAL_ACCURACY_GUARDRAIL + real
+// keyDatesBlock() dates every other tool uses, rather than backporting
+// just the one missing clause into a second local copy that could drift
+// again.
+const FACTUAL_ACCURACY_RULE = `${FACTUAL_ACCURACY_GUARDRAIL}
+${keyDatesBlock()}`;
 
 const CONVERSATIONAL_PRINCIPLES = `
 Core principles for constructive engagement:
