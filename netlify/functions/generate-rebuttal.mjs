@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
 import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, generationWarningPayload } from "./creditHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
+import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
 // COST FIX (this session) — see generate-message.mjs for the full
 // reasoning: max_tokens was entirely client-controlled with no upper
@@ -116,15 +117,33 @@ export default async function (req) {
     // duplicate; otherwise append it so it's always enforced regardless of
     // caller. Note this function is called twice per full rebuttal
     // generation — both calls get the guardrail enforced identically.
+    // ADDED Sept 9, 2026 (Handoff #48 §5.4 / punch list #7). Not a live bug
+    // when this was written — rebuttal-campaign-generator.jsx correctly
+    // embeds AI_TELL_PHRASING_BAN client-side and sends it via a real
+    // `system` field — but unlike Message Machine, Storms, and Sandbox,
+    // this server never checked for or backstopped it specifically (only
+    // FACTUAL ACCURACY: had a safety net). Defense in depth only: if the
+    // client-side prompt-building ever regresses, nothing here would have
+    // caught it before now. Also checks the actual message text, not just
+    // `system` — the same pattern generate-storm-text.mjs already uses —
+    // so this stays correct even if a future client sends it embedded in
+    // `messages` instead.
     const clientSystem = typeof system === "string" ? system : "";
-    const effectiveSystem = clientSystem.includes("FACTUAL ACCURACY:")
-      ? clientSystem
-      : [clientSystem, FACTUAL_ACCURACY_GUARDRAIL].filter(Boolean).join("\n\n");
+    const messagesText = Array.isArray(messages)
+      ? messages.map(m => (typeof m.content === "string" ? m.content : "")).join("\n")
+      : "";
+    const missingPieces = [
+      (!clientSystem.includes("FACTUAL ACCURACY:") && !messagesText.includes("FACTUAL ACCURACY:")) ? FACTUAL_ACCURACY_GUARDRAIL : null,
+      (!clientSystem.includes("AVOID AI-SOUNDING PHRASING:") && !messagesText.includes("AVOID AI-SOUNDING PHRASING:")) ? AI_TELL_PHRASING_BAN : null,
+    ].filter(Boolean);
+    const effectiveSystem = missingPieces.length
+      ? [clientSystem, ...missingPieces].filter(Boolean).join("\n\n")
+      : clientSystem;
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: Math.min(max_tokens || 600, MAX_TOKENS_CEILING), messages, system: effectiveSystem }),
+      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: Math.min(max_tokens || 600, MAX_TOKENS_CEILING), messages, ...(effectiveSystem && { system: effectiveSystem }) }),
     });
 
     const data = await response.json();
