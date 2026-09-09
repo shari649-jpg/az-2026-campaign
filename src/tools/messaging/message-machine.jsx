@@ -47,24 +47,78 @@ const PLATFORMS = [
 // just formatting rules. The priority-rule paragraph up top ensures Tone/Style/
 // Voice settings modulate that persona rather than flattening it (e.g. a
 // "Professional" tone should still read sharper on Twitter/X than on Facebook).
-const PLATFORM_VOICE_GUIDE = `PLATFORM VOICE — each platform below has its own fixed baseline personality; the Tone, Style, and Voice/Persona settings specified for this post modulate HOW that personality delivers the message, they never flatten or replace it. A "Professional" tone on Twitter/X should still read sharper and more clipped than the same "Professional" tone on Facebook; a "Sarcastic" tone on Facebook should still read warmer and more explanatory than the same "Sarcastic" tone on Twitter/X.
+// TIGHTENED Sept 8, 2026 (Handoff #48, prompt-consolidation pass; applied
+// Sept 9, 2026 per that handoff's punch list item 1). 1,993 -> 1,300 chars
+// (-35%). Real content changes, not just trims, made by direct person
+// review/revision — not a one-pass automated edit:
+//   - Dropped a redundant second intro example (kept one Professional-tone
+//     illustration, cut the parallel Sarcastic one).
+//   - Dropped the static "Strict 300-char limit" / "max 280 chars" text
+//     from BlueSky/Twitter — confirmed via direct code read that
+//     PLATFORMS' own maxChars values are already injected into every
+//     prompt separately, so this was pure duplication of a number the app
+//     already sends correctly.
+//   - Facebook: "2-5 paragraphs" -> "at least 2," no ceiling. The model was
+//     reliably hitting 5 (the top of the old range) every time; the
+//     working theory is a numeric ceiling paired with "detailed
+//     storytelling" reads as a target to reach TOWARD, not just a cap.
+//     Confirmed correct by the person independently against real output
+//     ("that is exactly what I was seeing") — worth re-checking real
+//     post-change length once this ships, not a blind guess.
+//   - Twitter/X: baseline voice was reported flat (needs Sarcastic/Angry/
+//     Disgusted stacked on top to read as "Twitter-worthy" alone).
+//     Rewritten around a concrete bar ("high school reading level, not
+//     college") instead of a word-choice example list. Watch after this
+//     ships — if still flat, the real fix is likely a technique-based
+//     instruction the way TONE_MODIFIER_DEFINITIONS gave the tone
+//     modifiers one, not more adjectives (Handoff #48 punch list #10).
+//   - TikTok: "trendy hook" wording was flagged as reliably producing the
+//     same 1-2 clichéd openers in practice. Replaced with a concrete
+//     mechanism ("open with a claim that assumes the viewer already has
+//     context — don't explain, just drop them into it") instead of a
+//     vibe-word. If this doesn't resolve it, next step is collecting 2-3
+//     real flat outputs and naming the actual repeated phrase directly,
+//     the way the AI-tell ban's dodge-rounds were closed (punch list #11).
+const PLATFORM_VOICE_GUIDE = `PLATFORM VOICE — each platform has its own fixed baseline personality; Tone, Style, and Voice/Persona settings shape HOW that personality delivers the message, never flatten or replace it. A "Professional" tone on Twitter/X should still read sharper and more clipped than the same tone on Facebook.
 
-- Facebook: Older-skewing, community- and family-oriented readers. Warm, explanatory register — take the time to walk through context, like a longtime neighbor at a town meeting. Detailed storytelling, clear call to action, 2–5 paragraphs.
-- Instagram: Younger-adult, millennial-leaning readers. Visual, punchy, values-driven — write like a real feed post, not a press release. Emotional hook at start.
-- Threads: Conversational middle ground between Instagram and Twitter/X — casual, in-the-moment, like joining a conversation already happening. 2–4 sentences.
-- BlueSky: Policy-literate, community-minded readers who reward nuance and depth over punchlines. Thoughtful and substantive — willing to sit with a claim and unpack it. Measured, explanatory tone even when angry. Strict 300-char limit.
-- Twitter/X: Confrontational, visceral, built to be screenshotted. Readers scroll past hundreds of posts a minute — this one has to physically land, not just make a point. Short, blunt words over precise ones ("gutted," "stole," "torched" — not "reduced," "obtained," "damaged"). Land on one raw image or gut-punch line, not a reasoned takeaway — this is NOT the same register as BlueSky's careful, explanatory tone turned up in volume; it's a different instinct entirely, closer to a shout than an essay. Fragments and blunt declaratives over full explanatory sentences. Punchy headline style, max 280 chars.
-- TikTok: Gen Z-adjacent, informal, "smart friend" energy. Trendy hook in first line, energetic language.`;
+- Facebook: Older, community- and family-oriented readers. Warm, explanatory — like a longtime neighbor chatting at a town meeting. Detailed storytelling, end on a clear call to action. At least 2 paragraphs.
+- Instagram: Younger, millennial-leaning readers. Visual, punchy, values-driven — a real feed post, not a press release. Emotional hook at start.
+- Threads: Casual, in-the-moment, like joining a conversation already happening. At least 350 characters.
+- BlueSky: Policy-literate readers who reward nuance over punchlines. Thoughtful, willing to sit with a claim and unpack it — measured even when angry.
+- Twitter/X: Confrontational, visceral, built to be screenshotted — a shout not an essay. Short, blunt words at a high school reading level, not college. Raw gut-punch, not a reasoned takeaway.
+- TikTok: Gen Z-adjacent, "smart friend" energy. Open with a claim that assumes the viewer already has context — don't explain, just drop them into it. Energetic language, 2 or more paragraphs.`;
 
 // National mode's platform-voice guidance — same persona layer, laid over the
 // National Messaging Style Guide's own per-platform structural notes.
-const PLATFORM_VOICE_GUIDE_NATIONAL = `PLATFORM VOICE — each platform below has its own fixed baseline personality on top of the National Style Guide above; the Tone, Style, and Voice/Persona settings modulate HOW that personality delivers the message, they never flatten or replace it. A "Professional" tone on Twitter/X should still read sharper and more clipped than the same "Professional" tone on Facebook; the same tone on Facebook should still read warmer and more explanatory than on Twitter/X.
+//
+// TIGHTENED Sept 8, 2026 (Handoff #48), same pass as PLATFORM_VOICE_GUIDE
+// above. 1,578 -> 1,261 chars (-20%). Same treatment: the intro's redundant
+// pair was even more redundant here (stated the same Twitter-vs-Facebook
+// comparison twice, once from each direction) — cut to one. Reused the same
+// Twitter/X fix as the Neutral/AZ version (same platform, same flatness
+// complaint). Facebook's "3-4 paragraph" ceiling opened up the same way as
+// the Neutral/AZ fix, by assumption for consistency rather than direct
+// person sign-off on National's Facebook specifically — flag if that
+// assumption should be reverted.
+//
+// Open architectural question, NOT resolved this pass (Handoff #48 punch
+// list #9): why does National mode need a fully separate ~1,300-char
+// platform-voice constant at all, rather than a shared base plus a small
+// National-specific diff? Real answer on inspection: Facebook's structure
+// genuinely differs (tied to the five-beat framework's cost->action
+// bookend) and Instagram/Threads are merged into one entry here but not in
+// Neutral/AZ — real, load-bearing differences. Everything else (BlueSky,
+// Twitter/X, TikTok's core register) is the same idea restated, which reads
+// as copy-paste drift, not intentional duplication. That's a structural
+// refactor, not a text edit — belongs in its own scoped session, not bundled
+// into this text-tightening pass.
+const PLATFORM_VOICE_GUIDE_NATIONAL = `PLATFORM VOICE — each platform below has its own fixed baseline personality on top of the National Style Guide above; Tone, Style, and Voice/Persona settings shape HOW that personality delivers the message, never flatten or replace it. A "Professional" tone on Twitter/X should still read sharper and more clipped than the same tone on Facebook.
 
-- Facebook: Older-skewing, community- and family-oriented readers. Richardson letter format — full story with history and context, 3–4 paragraphs, start with the cost a real person is paying, end with one specific action.
-- Instagram/Threads: Younger-adult, millennial-leaning readers. Lead with the most visceral, concrete version of the cost. Make the first sentence hit. Keep it human and visual.
-- BlueSky: Policy-literate, community-minded readers who reward nuance and depth. Thoughtful and substantive — willing to sit with a claim and unpack it. Strict 300-char limit.
-- Twitter/X: Confrontational, visceral, built to be screenshotted. One raw image or gut-punch line, not a reasoned takeaway — this is NOT the same register as BlueSky's careful, explanatory tone turned up in volume; it's a shout, not an essay. Short, blunt words over precise ones. Fragments and blunt declaratives over full sentences. Max 280 chars.
-- TikTok: Gen Z-adjacent, informal, "smart friend" energy. Open with the hook nobody expects a politician to say out loud. Authenticity and mild irreverence. The "wait, really?" moment.`;
+- Facebook: Older-skewing, community- and family-oriented readers. Richardson letter format — full story with history and context, start with the cost a real person is paying, end with one specific action. At least 3 paragraphs.
+- Instagram/Threads: Younger-adult, millennial-leaning readers. Lead with the most visceral, concrete version of the cost — make the first sentence hit. Keep it human and visual.
+- BlueSky: Policy-literate readers who reward nuance and depth. Thoughtful and substantive — willing to sit with a claim and unpack it.
+- Twitter/X: Confrontational, visceral, built to be screenshotted — a shout not an essay. Short, blunt words at a high school reading level, not college. Raw gut-punch, not a reasoned takeaway.
+- TikTok: Gen Z-adjacent, "smart friend" energy. Open with the hook nobody expects a politician to say out loud — the "wait, really?" moment. Authenticity and mild irreverence.`;
 
 // Shared "guardrail + AI-tell + platform-voice" block and its "hashtag ban
 // + JSON contract" counterpart (added Aug 2026, Batch 2 messaging-system
@@ -202,16 +256,45 @@ const VOICE_PRESETS = [
 // Layered ON TOP of Voice/Persona, not a replacement for it — Rural AZ
 // Style is about place/local stakes, persona (Mom Blog, Bro Code, etc.) is
 // about who's speaking. Same relationship the old County Voice layer had.
-const RURAL_AZ_STYLE = `RURAL ARIZONA STYLE:
-Core Positioning: Rural Arizona neighbors fighting for our water, jobs, families, and fair votes—from small towns to tribal lands. We live your realities, show up consistently, fix what [name villain] (corporations, DC politicians, billionaires, etc.) break, instead talk about small business, local leaders, communities. Speak as a lifelong rural neighbor (40-65)—blunt, warm, no jargon, like coffee chats at the county fair or VFW.
+//
+// TIGHTENED Sept 8, 2026 (Handoff #48, prompt-consolidation pass; applied
+// Sept 9, 2026 per that handoff's punch list item 1). 2,014 -> 1,646 chars
+// (-18%) — smallest percentage cut of the five constants touched this
+// pass, deliberately: this text is dense with concrete, specific content
+// (real place names, real phrase examples) rather than restated framing,
+// so there was genuinely less redundancy to remove without losing
+// something functional. What WAS cut mattered more than the character
+// count suggests — two real content bugs, not style trims:
+//   1. SELF-CONTRADICTION, caught and fixed: the old example sentence named
+//      "Phoenix" as the villain twice ("Phoenix water cuts hit our farms
+//      hard"; "When Phoenix cuts water, [County] farms feel it first"),
+//      directly contradicting this same constant's own villain-scoping
+//      rule two paragraphs later ("corporations, DC politicians, or
+//      billionaires — never local business or community"). Fixed: "Phoenix
+//      water cuts" -> "Corporate price-gouging" (same sentence structure,
+//      correct villain category); the local-stakes line is now a real
+//      template ("When [the real cause] hits...") instead of a hardcoded,
+//      frequently-wrong example. Same pattern, smaller: "childcare
+//      deserts" (a policy-wonk term inside a guide that explicitly bans
+//      "coastal jargon") -> "no local daycare."
+//   2. "'we/our' over 'I/you'" removed entirely, not reworded. Confirmed
+//      via direct code read that SPEAKER_PERSPECTIVES — a separate,
+//      independent per-call dropdown (First/"I"-"We", Second/"You",
+//      Third/"They") — already owns this decision. Rural AZ Style is an
+//      opt-in checkbox independent of that dropdown, so both can be active
+//      on the same post; this line could directly contradict an explicit
+//      Second-person selection. Not hypothetical — a real, confirmed
+//      instance of the exact contradiction class this pass was auditing
+//      for, caught here before it needed to be found in real output.
+const RURAL_AZ_STYLE = `RURAL ARIZONA STYLE: Speak as a lifelong rural Arizona neighbor (40–65) — blunt, warm, no jargon, like coffee chats at the county fair or VFW. Name the villain as corporations, DC politicians, or billionaires — never local business or community — breaking what rural neighbors built. Core promise: "We see your struggles because we live them too. Let's fix this together."
 
-Key traits: neighborly ("we/our" over "I/you"), practical (solutions before complaints), proud/humble (honoring hard work, faith, land without flash). Emotional promise: "We see your struggles because we live them too. Let's fix this together." Target Democrats, left-leaning Independents, and democracy-minded Republicans craving stability over DC drama.
+Voice: practical solutions before complaints, proud and humble — honoring hard work, faith, and land without flash. Target Democrats, left-leaning Independents, and democracy-minded Republicans who want stability over DC drama; use "neighbors/families/retirees/workers/tribes" rather than "Democrats" to invite that broader audience in.
 
-Tone & Execution Rules: Use short sentences, plain words ("jobs/water/schools/SS checks"), active voice—warm but direct: "Phoenix water cuts hit our farms hard. Here's the fix." Practice hopeful realism: name problems (drought/childcare deserts), end with steps ("Join a community group," "attend a local meeting of your school board or city council," etc). Bridge-build with "neighbors/families/retirees/workers/tribes" over "Democrats"; invite indies/soft GOP. Start every post with local stakes ("When Phoenix cuts water, [County] farms/lake/seniors feel it first"), weave in place names (Kingman VFW, Navajo Nation, Payson trails), dominate "we/our" ("Our kids need childcare").
+Execution: short sentences, plain words ("jobs/water/schools/SS checks"), active and direct ("Corporate price-gouging hit our farms hard. Here's the fix."). Name real problems (drought, no local daycare), always end with a concrete step ("attend your school board meeting," "join a community group"). Open every post on local stakes ("When [the real cause] hits, [County] farms feel it first" — never Phoenix as the villain), and weave in real place names (Kingman VFW, Navajo Nation, Payson trails).
 
-If the input names a specific place or county, ground any additional place references — landmarks, towns, local institutions — within that same county or region. Do not introduce place names from elsewhere in Arizona.
+If the input names a specific place or county, keep any additional place references grounded in that same region — don't pull in landmarks from elsewhere in Arizona.
 
-Never mock conservatives/guns/faith (shared rural culture), never use coastal jargon ("defund/Latinx"), never go party-first—instead lead with shared values. Always respect regional culture: Diné nods north, mining grit east, military Cochise, retirees west. Never use "out here" or any derivative.`;
+Never mock conservatives, guns, or faith. Never use coastal jargon ("defund," "Latinx"). Never lead with party over shared values. Respect regional culture — Diné nods north, mining grit east, military Cochise, retirees west. Never use "out here" or any derivative.`;
 
 // National frames defined above; SPEAKER_PERSPECTIVES defined above
 
