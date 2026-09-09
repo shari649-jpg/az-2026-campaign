@@ -21,7 +21,7 @@ import {
 } from "../../lib/sandboxLibrary";
 import {
   JSON_ONLY_INSTRUCTION, JSON_ESCAPING_INSTRUCTION, HASHTAG_BODY_BAN, contradictionFlagFormat,
-  lengthTargetHint, detectBannedStructures, AI_TELL_PHRASING_BAN,
+  lengthTargetHint, detectBannedStructures,
 } from "../../lib/messageRules";
 
 const PURPLE      = "var(--purple)";
@@ -148,16 +148,30 @@ async function expandPost(text, min, max, hashtagContext) {
 // everywhere else. Kept intentionally simple: it flags, it doesn't
 // rewrite — an auto-rewrite step would be a second cost decision on top
 // of this one.
+// FIXED Sept 9, 2026 (Handoff #48 §5.3 / punch list #6): this used to
+// embed AI_TELL_PHRASING_BAN directly here AND send it to
+// generate-sandbox-text.mjs, which unconditionally joins the same
+// constant into every call's `system` field regardless of caller — so
+// every judge call sent the rule twice. Removed the client-side copy
+// rather than making the server-side join conditional (the other fix
+// this handoff considered): the server's unconditional-join design is
+// deliberate for every OTHER caller of this endpoint (the file's own
+// header comment explains why — the freeform Sandbox prompt can't be
+// trusted to have kept identity/scope wording intact), so making it
+// conditional here would have meant special-casing that shared function
+// for this one caller instead of fixing the one caller that duplicates
+// it. The rule still reaches the model via `system` on every call; the
+// prompt below now points at "your instructions" rather than "the rule
+// above" so it stays accurate regardless of where in context the model
+// actually sees it.
 async function judgePost(text) {
   const prompt = [
     "You are reviewing a single political social media post for a phrasing quality check. Be direct and honest — the goal is catching real instances a writer would want to fix, not being lenient or hedging.",
     "",
-    AI_TELL_PHRASING_BAN,
-    "",
     "POST TO REVIEW:",
     text,
     "",
-    "Does this specific post violate the rule above?",
+    "Does this specific post violate the AVOID AI-SOUNDING PHRASING rule in your instructions?",
     JSON_ONLY_INSTRUCTION,
     `Format: {"violates": true or false, "reason": "one-sentence explanation naming the exact phrase, or empty string if it does not violate"}`,
   ].join("\n");
