@@ -23,6 +23,7 @@ import { useState } from "react";
 import { zipSync } from "fflate";
 import { MEDIA_TYPES, PLATFORMS, CHAR_LIMITS, formatGenParams } from "../../lib/stormLibrary";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
+import { AI_TELL_PHRASING_BAN } from "../../lib/messageRules";
 import { keyDatesBlock } from "../../lib/electionCalendar";
 import { auth } from "../../firebase";
 
@@ -148,7 +149,15 @@ export default function PostDisplayCard({ post, hashtag, storm, isPublic, public
   // since this is the same authenticated tool, just reached from a
   // read-only card instead of the edit modal. Calls the same
   // generate-storm-text.mjs function (server-side guardrail enforcement
-  // already covers this path).
+  // already covers this path either way).
+  //
+  // FIXED Sept 9, 2026 (Handoff #48 §5.5 / punch list #8): this didn't
+  // embed AI_TELL_PHRASING_BAN client-side at all (only
+  // FACTUAL_ACCURACY_GUARDRAIL + dates), unlike StormPostEditor.jsx, which
+  // embeds it directly. Not a live bug — generate-storm-text.mjs's
+  // server-side safety net already added it whenever it was missing from
+  // both `system` and the message text — but inconsistent with the
+  // sibling file for no real reason. Added directly for consistency.
   async function regenerateAsMember(platformKey) {
     const platform = PLATFORMS.find(p => p.key === platformKey);
     const limit = CHAR_LIMITS[platformKey];
@@ -157,6 +166,7 @@ export default function PostDisplayCard({ post, hashtag, storm, isPublic, public
 
 ${FACTUAL_ACCURACY_GUARDRAIL}
 ${keyDatesBlock()}
+${AI_TELL_PHRASING_BAN}
 
 ${stormContextBlock()}
 
