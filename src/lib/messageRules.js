@@ -97,10 +97,23 @@ export function lengthTargetHint(min, max) {
 // smaller surface area, and detection adds a backreference-based pattern
 // that catches "[he/she/they/you] is not X, [same subject] is Y" the same
 // way it already caught the demonstrative forms.
-export const AI_TELL_PHRASING_BAN = `AVOID AI-SOUNDING PHRASING: Never end a post by summarizing or labeling what you just described in a short standalone "verdict" sentence — this is the single most common AI tell in political social copy, and it shows up in more than one form:
-- Contrastive reframing, where the SAME subject is negated then re-asserted: "This is not X, it is Y," "This isn't X, this is Y," "That's not X, that's Y," "That isn't X, that's Y," "It isn't X, it is Y," "He's not X, he's Y," "They're not X, they're Y" — with ANY subject (a demonstrative like this/that/it, OR a personal pronoun like he/she/they/you), in ANY negated form (contracted "isn't/aren't" or spelled-out "is not/are not"), joined by a comma OR split into two short sentences ("He's not governing. He's day-trading the entire country."). Changing the subject word, the contraction, or the punctuation is not a workaround — it's the identical construction.
-- A closing sentence that just names the offense in the abstract, with no new information: "This is corruption." "That's a scandal." "That's looting in broad daylight." "It's right there in the paperwork."
-Real anger doesn't explain its own punchline. End on the concrete detail itself, a specific consequence, a real question, or what should happen next — not a sentence that restates the point as a label. Test: if a post's last sentence could be swapped into a completely different post about a different scandal and still make sense, it's a label, not an ending. Cut it, or replace it with something specific to this post's own facts.`;
+// TIGHTENED Sept 8, 2026 (Handoff #48, prompt-consolidation pass; applied
+// Sept 9, 2026 per that handoff's punch list item 1). 1,548 -> 916 chars
+// (-41%). Cut from 7 spelled-out subject-variant examples down to 2
+// representative ones — the general pattern description already covers
+// every variant, and detectBannedStructures() (separate code, below)
+// catches them regardless of what this instruction spells out.
+//
+// Real fix, not just a trim: the old wording said the banned structure
+// applied whether "joined by a comma or split into two sentences" — a
+// closed list that a semicolon-joined instance slips right past (see the
+// BANNED_STRUCTURE_PATTERNS comment below; the regex has the identical
+// gap and needs its own fix). Rather than growing the list to name every
+// joiner, this version states the rule at the level that makes the
+// joining punctuation irrelevant.
+export const AI_TELL_PHRASING_BAN = `AVOID AI-SOUNDING PHRASING: Never end a post on a short "verdict" sentence that just restates or labels what you already said — the most common AI tell in political social copy. Two forms to avoid:
+- Contrastive reframing: negating a subject then re-asserting it as the real thing — "That's not X, that's Y," "He's not X, he's Y" — with any subject (this/that/it/he/she/they/you) and any negation form (isn't/aren't or is not/are not). Swapping the subject word, punctuation, or connecting word isn't a workaround.
+- A closing line that just names the offense abstractly with no new information: "This is corruption." "That's a scandal." Real anger doesn't explain its own punchline. End on a concrete detail, consequence, question, or next step — not a label. Test: if the last sentence could be swapped into a different post about a different scandal and still work, it's a label — cut it or make it specific to this post's own facts.`;
 
 // ── Banned sentence-structure detection (revised — see comment above) ──────
 // Two layers now: (1) the contrastive-reframe patterns — three fixed
@@ -141,13 +154,30 @@ Real anger doesn't explain its own punchline. End on the concrete detail itself,
 // addressed this round: "it's not X, it is Y" (apostrophe-s contraction
 // of "it is" used as the negated subject) isn't caught either, since
 // textually "it's" never contains the literal letters "is" — flagging
-// for the next round rather than expanding scope here.
+// for the next round rather than expanding scope here. STILL not
+// addressed as of the FIFTH round below — a separate axis (contraction
+// form, not separator punctuation) from what that round fixed.
+//
+// FIFTH round (Sept 9, 2026, Handoff #48 §5.7 / punch list #5): every
+// pattern below required a literal comma or period ([,.]) as the
+// separator between the negated half and the re-asserted half. Handoff
+// #48 tested this directly and confirmed a semicolon-joined instance of
+// the exact banned structure ("This isn't a mistake; this is a
+// strategy.") slipped past every pattern untouched — real output was
+// observed doing this in production, not a theoretical gap. The
+// AI_TELL_PHRASING_BAN prompt text above was already rewritten (Sept 8)
+// to state the rule at a level where the joining punctuation doesn't
+// matter, closing this at the generation-time-nudge layer; this is the
+// matching regex-side fix, widening the separator character class from
+// comma/period only to comma, period, semicolon, colon, and any dash
+// (em, en, or hyphen) — so swapping the joining punctuation is no longer
+// a way around detection either.
 const BANNED_STRUCTURE_PATTERNS = [
-  { label: `"this is not X, it is / this is Y" structure`, regex: /\bthis\s+is\s*(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.]\s*(it['’]?s|it\s+is|this\s+is)\b/i },
-  { label: `"that's not X, that's Y" structure`, regex: /\bthat['’]?s\s+not\b[^.?!]{0,80}[,.]\s*that['’]?s\b/i },
-  { label: `"that isn't X, that's / that is Y" structure`, regex: /\bthat\s+is\s*(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.]\s*that(['’]?s|\s+is)\b/i },
-  { label: `"it isn't X, it is Y" structure`,     regex: /\bit\s+is\s*(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.]\s*it(['’]?s|\s+is)\b/i },
-  { label: `"[he/she/they/you] is not X, [same subject] is Y" structure`, regex: /\b(he|she|they|you)\b(?:['’]s|\s+is|\s+are)?\s*(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.]\s*\1\b(?:['’]s)?\s+/i },
+  { label: `"this is not X, it is / this is Y" structure`, regex: /\bthis\s+is\s*(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.;:—–-]\s*(it['’]?s|it\s+is|this\s+is)\b/i },
+  { label: `"that's not X, that's Y" structure`, regex: /\bthat['’]?s\s+not\b[^.?!]{0,80}[,.;:—–-]\s*that['’]?s\b/i },
+  { label: `"that isn't X, that's / that is Y" structure`, regex: /\bthat\s+is\s*(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.;:—–-]\s*that(['’]?s|\s+is)\b/i },
+  { label: `"it isn't X, it is Y" structure`,     regex: /\bit\s+is\s*(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.;:—–-]\s*it(['’]?s|\s+is)\b/i },
+  { label: `"[he/she/they/you] is not X, [same subject] is Y" structure`, regex: /\b(he|she|they|you)\b(?:['’]s|\s+is|\s+are)?\s*(?:not\b|n['’]?t\b)[^.?!]{0,80}[,.;:—–-]\s*\1\b(?:['’]s)?\s+/i },
 ];
 
 // Flags a post whose LAST sentence is a short demonstrative "verdict" —
