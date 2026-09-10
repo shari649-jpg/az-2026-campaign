@@ -157,27 +157,80 @@ export default async function (req) {
     // pattern and never had this bug, because its own missingPieces check
     // already tested the actual message text too — ported that exact,
     // already-working check here rather than inventing a new approach.
-    const clientSystem = typeof system === "string" ? system : "";
+    // ARRAY-SHAPED system (Sept 2026, regen caching). message-machine.jsx's
+    // regenPlatform now sends system as a cache_control-tagged content-
+    // block array for the Shorten/Expand/Rephrase path (same shape
+    // generate-message-background.mjs already used for generateAll), not a
+    // plain string. Every OTHER existing caller (generateHashtags, the
+    // no-currentText regen fallback) still sends no system field at all —
+    // that path is completely unchanged, `system` stays undefined,
+    // systemIsArray is false, clientSystemText is "", identical to before
+    // this change.
+    const systemIsArray = Array.isArray(system);
+    const clientSystemText = systemIsArray
+      ? system.map(b => (b && typeof b.text === "string" ? b.text : "")).join("\n\n")
+      : (typeof system === "string" ? system : "");
     const messagesText = Array.isArray(messages)
       ? messages.map(m => (typeof m.content === "string" ? m.content : "")).join("\n")
       : "";
     const missingPieces = [
-      (!clientSystem.includes("FACTUAL ACCURACY:") && !messagesText.includes("FACTUAL ACCURACY:")) ? FACTUAL_ACCURACY_GUARDRAIL : null,
-      (!clientSystem.includes("AVOID AI-SOUNDING PHRASING:") && !messagesText.includes("AVOID AI-SOUNDING PHRASING:")) ? AI_TELL_PHRASING_BAN : null,
+      (!clientSystemText.includes("FACTUAL ACCURACY:") && !messagesText.includes("FACTUAL ACCURACY:")) ? FACTUAL_ACCURACY_GUARDRAIL : null,
+      (!clientSystemText.includes("AVOID AI-SOUNDING PHRASING:") && !messagesText.includes("AVOID AI-SOUNDING PHRASING:")) ? AI_TELL_PHRASING_BAN : null,
     ].filter(Boolean);
-    const effectiveSystem = missingPieces.length
-      ? [clientSystem, ...missingPieces].filter(Boolean).join("\n\n")
-      : clientSystem;
+
+    // For the array case, any missingPieces text (should be a no-op in
+    // normal operation — clientSystemText already contains both, same as
+    // generate-message-background.mjs's identical safety net) is appended
+    // INSIDE the last block's own text, not as a new block — so the
+    // cache_control tag on that block still covers the complete static
+    // content, not just part of it. Mirrors buildEffectiveSystem() in
+    // generate-message-background.mjs exactly, on purpose — one pattern,
+    // not two independently-maintained copies.
+    let effectiveSystem;
+    if (systemIsArray) {
+      effectiveSystem = system.map(b => ({ ...b }));
+      if (missingPieces.length) {
+        if (effectiveSystem.length) {
+          const lastIdx = effectiveSystem.length - 1;
+          effectiveSystem[lastIdx].text = [effectiveSystem[lastIdx].text, ...missingPieces].filter(Boolean).join("\n\n");
+        } else {
+          effectiveSystem = [{ type: "text", text: missingPieces.join("\n\n") }];
+        }
+      }
+    } else {
+      effectiveSystem = missingPieces.length
+        ? [clientSystemText, ...missingPieces].filter(Boolean).join("\n\n")
+        : clientSystemText;
+    }
+    const hasSystem = Array.isArray(effectiveSystem) ? effectiveSystem.length > 0 : Boolean(effectiveSystem);
+    const effectiveSystemChars = Array.isArray(effectiveSystem)
+      ? effectiveSystem.reduce((sum, b) => sum + (b.text ? b.text.length : 0), 0)
+      : effectiveSystem.length;
 
     // Rough input size, logged before the call so it's visible in Netlify logs
     // even if the function gets killed by the 26s timeout mid-call.
-    const inputChars = effectiveSystem.length + JSON.stringify(messages || []).length;
-    console.log(`[generate-message] timing: calling Claude, model=${GENERATION_MODEL} input_chars=${inputChars} max_tokens=${max_tokens || 1000}`);
+    const inputChars = effectiveSystemChars + JSON.stringify(messages || []).length;
+    console.log(`[generate-message] timing: calling Claude, model=${GENERATION_MODEL} input_chars=${inputChars} max_tokens=${max_tokens || 1000} cached_system=${systemIsArray}`);
+
+    // ttl: "1h" (Sept 2026) — UNCONFIRMED, verify against current Anthropic
+    // docs before relying on this: the extended-cache-ttl beta header name
+    // and pricing below reflect this codebase's best understanding at
+    // implementation time, not a live-verified check (no network access to
+    // Anthropic's docs from the environment this was built in). Test a real
+    // call and confirm usage.cache_creation_input_tokens/
+    // cache_read_input_tokens behave as expected before trusting this in
+    // production. Only added to the request when the client actually sent
+    // a cache_control-tagged array — the plain-string legacy path
+    // (generateHashtags, etc.) is untouched and never triggers this header.
+    const anthropicHeaders = { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" };
+    if (systemIsArray && effectiveSystem.some(b => b.cache_control)) {
+      anthropicHeaders["anthropic-beta"] = "extended-cache-ttl-2025-04-11";
+    }
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: Math.min(max_tokens || 1000, MAX_TOKENS_CEILING), messages, ...(effectiveSystem && { system: effectiveSystem }) }),
+      headers: anthropicHeaders,
+      body: JSON.stringify({ model: GENERATION_MODEL, max_tokens: Math.min(max_tokens || 1000, MAX_TOKENS_CEILING), messages, ...(hasSystem && { system: effectiveSystem }) }),
     });
     const tClaudeCall = Date.now();
     console.log(`[generate-message] timing: claude_call=${tClaudeCall - tRateLimit}ms status=${response.status}`);
@@ -210,6 +263,17 @@ export default async function (req) {
         functionName: "generate-message",
         inputTokens: data.usage.input_tokens,
         outputTokens: data.usage.output_tokens,
+        // cacheCreationTokens/cacheReadTokens (Sept 2026, regen caching) —
+        // previously always omitted (defaulted to 0) here because this
+        // path never had any cache activity to report at all. Now that the
+        // Shorten/Expand/Rephrase path can send a cached system block,
+        // read the same two usage fields generate-message-background.mjs
+        // already reads, so creditTransactions actually reflects real
+        // cache hits/misses on this path instead of always showing blank —
+        // this is also what the next gap-analysis pass would need to
+        // confirm the fix worked.
+        cacheCreationTokens: data.usage.cache_creation_input_tokens,
+        cacheReadTokens: data.usage.cache_read_input_tokens,
         multiplier: multiplierForOrigin(origin),
       });
     }
