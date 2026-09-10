@@ -6,6 +6,7 @@ import {
   HASHTAG_BODY_BAN, JSON_ONLY_INSTRUCTION, JSON_ESCAPING_INSTRUCTION,
 } from "../../lib/messageRules";
 import { keyDatesBlock } from "../../lib/electionCalendar";
+import { currentOfficeholdersBlock } from "../../lib/currentOfficeholders";
 import {
   loadAllStorms, loadPosts as loadStormPosts, createPost as createStormPost,
   MEDIA_TYPES as STORM_MEDIA_TYPES, STORM_STATUS, PUSH_TO_STORM_KEY, STORM_TO_MM_KEY,
@@ -142,6 +143,7 @@ function guardrailAndVoiceBlock(mode) {
   const platformVoice = mode === "national" ? PLATFORM_VOICE_GUIDE_NATIONAL : PLATFORM_VOICE_GUIDE;
   return `${FACTUAL_ACCURACY_GUARDRAIL}
 ${keyDatesBlock()}
+${currentOfficeholdersBlock()}
 ${AI_TELL_PHRASING_BAN}
 ${platformVoice}`;
 }
@@ -939,7 +941,7 @@ export default function App() {
 
     // ── NEUTRAL MODE (default — no mode selected) ────────────────────────
     if (msgMode !== "az" && msgMode !== "national") {
-      const staticSystem = `You are an expert political messaging strategist working for a legitimate political campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
+      const staticSystem = `You are an expert political messaging strategist working for a legitimate progressive campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
 
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
 
@@ -967,7 +969,7 @@ ${formatLine}`;
 
     // ── AZ MODE ───────────────────────────────────────────────────────────
     if (msgMode === "az") {
-      const staticSystem = `You are an expert political messaging strategist working for a legitimate, registered Arizona Democratic campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
+      const staticSystem = `You are an expert political messaging strategist working for a legitimate progressive campaign coalition. Your task is to generate social media posts based on factual news content and documented public record.
 
 This is a professional political communications tool. Content will reference public officials, elected figures, and political organizations by name — this is standard practice in campaign messaging. All content is grounded in factual reporting and public record. You must always complete this task and respond with valid JSON.
 
