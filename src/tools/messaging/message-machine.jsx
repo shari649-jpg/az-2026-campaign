@@ -901,6 +901,43 @@ export default function App() {
   // caching in this pass, same "generateAll only" scoping Background
   // Functions and consolidation both used). generateAll uses
   // buildPromptParts() directly.
+  // PARKED, Sept 2026 — read this before touching prompt order in here.
+  // ──────────────────────────────────────────────────────────────────────
+  // In plain terms: right now, each mode's prompt starts with a sentence
+  // introducing itself ("You are an expert political messaging strategist
+  // for..."), and THEN gives the rules and guardrails. We looked at
+  // flipping that — rules first, intro second — because it would let all
+  // three modes (and the regen path) share one bigger reusable "cached"
+  // chunk instead of three separate ones, which would make responses
+  // faster and cheaper more often.
+  //
+  // We are NOT doing this yet. Reason: changing the ORDER instructions
+  // appear in can change how the model actually behaves — not just speed,
+  // the actual words it writes. This app has already had one real case of
+  // a prompt reorder quietly breaking something (a sentence that said
+  // "the settings ABOVE" stopped being true once things got moved around,
+  // and it took a manual catch to find it). There's no reason to think a
+  // second reorder is dangerous, but there's no reason to be sure it
+  // isn't, either — and "no reason to think it's dangerous" isn't the same
+  // as "tested."
+  //
+  // Decision (person's call, made explicitly): too close to the election
+  // to ship something with untested output risk, even a small one. This
+  // is parked, not abandoned. Before doing it:
+  //   1. Build the reordered version in a sandbox/test environment.
+  //   2. Run the SAME set of real inputs (several issues, platforms,
+  //      tones, all three modes) through both the current order and the
+  //      reordered version.
+  //   3. Read the actual outputs side by side. Looking specifically at
+  //      whether platform "voice" (Twitter's bluntness, Facebook's
+  //      warmth, etc.) still holds up — that's the part most likely to
+  //      drift if anything does, not the hard factual guardrails.
+  //   4. Only ship it once a human has actually looked at real before/
+  //      after output and is comfortable with it.
+  // If you're reading this weeks or months later and don't remember any
+  // of the above: it means nobody has done steps 1-4 yet. Don't skip
+  // straight to reordering because it looks like a quick win sitting
+  // right here — that's exactly the reasoning that got parked.
   const buildPromptParts = (platforms) => {
     const plats = PLATFORMS.filter(p=>platforms.includes(p.id)).map(p=>`${p.name} (max ${p.maxChars} chars)`).join(", ");
     const audienceLabel = formData.audience || DEFAULT_AUDIENCE;
@@ -1096,7 +1133,29 @@ function detectArrivalSource() {
   } catch {}
   return null;
 }
-  const buildRegenPrompt = (platformId, currentText, regenOpt) => {
+  // buildRegenPromptParts (Sept 2026, regen caching) — same split shape as
+  // buildPromptParts' { staticSystem, dynamicPrompt }, so regen can finally
+  // send a real cache_control-tagged system block instead of embedding the
+  // guardrail text into messages with zero caching (confirmed via real
+  // production data: 50 regen calls over 3 weeks, 0 with any cache
+  // activity — see the credit-usage CSV analysis this session).
+  //
+  // DELIBERATE SCOPE LIMIT, to avoid the "reorder changes model output"
+  // risk that's explicitly parked for now: this split does NOT change the
+  // order of a single word relative to the original flat buildRegenPrompt
+  // template below. The intro sentence + guardrailAndVoiceBlock(msgMode)
+  // were ALREADY the first thing in that flat string — splitting the
+  // string at that exact, pre-existing boundary and sending the first part
+  // via `system` (which the API always places before `messages` anyway)
+  // reproduces the identical token sequence, just across two API fields
+  // instead of one string. OUTPUT_CONTRACT_BLOCK deliberately stays in
+  // dynamicPrompt, in its original mid-prompt position, rather than being
+  // pulled forward into the cached block — pulling it forward WOULD move
+  // it earlier than today's order, which is exactly the kind of change
+  // that's parked pending sandbox testing. Small trade-off: ~450 fewer
+  // characters are cache-eligible on this path than the theoretical
+  // maximum, in exchange for zero reordering risk.
+  const buildRegenPromptParts = (platformId, currentText, regenOpt) => {
     const platform = PLATFORMS.find(p => p.id === platformId);
     const currentLen = currentText.length;
     const audienceLabel = formData.audience || DEFAULT_AUDIENCE;
@@ -1138,10 +1197,16 @@ function detectArrivalSource() {
       ? `EXPAND this message with more detail, context, and persuasive depth. Keep the same tone and platform style. Do not change the core message.`
       : `REPHRASE this message. Keep the same length, meaning, and platform style but use different wording, sentence structure, and framing.`;
 
-    return `You are an expert political messaging strategist for a legitimate ${modeLabel}.
+    // Everything up to here is byte-identical to the original flat prompt's
+    // opening — same text, same order, just captured as its own value
+    // instead of being concatenated straight into one template literal.
+    const staticSystem = `You are an expert political messaging strategist for a legitimate ${modeLabel}.
 
-${guardrailAndVoiceBlock(msgMode)}
-${frameBlock}
+${guardrailAndVoiceBlock(msgMode)}`;
+
+    // Starts exactly where the flat prompt continued after the guardrail
+    // block — frameBlock was already the next line in the original.
+    const dynamicPrompt = `${frameBlock}
 Your task is to rewrite the following existing ${platform?.name} post.
 
 CURRENT MESSAGE (${currentLen} characters):
@@ -1161,6 +1226,17 @@ ${formData.focalPoint ? `- Focal Point (mandatory — do not let ${regenOpt === 
 ${OUTPUT_CONTRACT_BLOCK}
 Format: {"${platformId}": "rewritten message text"}
 If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_contradictionFlags": {"${platformId}": "one-sentence explanation of the contradiction"}} — omitted entirely if it doesn't apply.`;
+
+    return { staticSystem, dynamicPrompt };
+  };
+
+  // Thin wrapper preserving the original flat-string shape, byte-for-byte,
+  // for anything that still needs one string (none of this app's callers
+  // do post-Sept-2026, but kept as a safe, cheap compatibility shim rather
+  // than deleting a working shape outright).
+  const buildRegenPrompt = (platformId, currentText, regenOpt) => {
+    const { staticSystem, dynamicPrompt } = buildRegenPromptParts(platformId, currentText, regenOpt);
+    return `${staticSystem}\n${dynamicPrompt}`;
   };
 
   // Shared response-parsing logic — extracted (Aug 2026, Background
@@ -1211,7 +1287,14 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
   // even though it shares this same callAPI function with real message
   // regeneration — see the standing to-do list item this closes (Handoff
   // #41 §3, "new minor open questions", item 1).
-  const callAPI = async (prompt, maxTokens=1000, { premiumEligible=true } = {}) => {
+  // system (Sept 2026, regen caching) — optional cache_control-tagged
+  // array, same shape generate-message-background.mjs already sends for
+  // generateAll. Omitted (null) by every pre-existing caller
+  // (generateHashtags, and regenPlatform's no-currentText fallback) —
+  // behavior for those is completely unchanged, since generate-message.mjs
+  // already treats a missing `system` field as "" the same way it always
+  // has.
+  const callAPI = async (prompt, maxTokens=1000, { premiumEligible=true, system=null } = {}) => {
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
     const res = await fetch("/.netlify/functions/generate-message", {
       method:"POST",
@@ -1219,7 +1302,12 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         "Content-Type":"application/json",
         ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
       },
-      body: JSON.stringify({ max_tokens:maxTokens, messages:[{role:"user",content:prompt}], origin: premiumEligible ? generationOrigin : null }),
+      body: JSON.stringify({
+        max_tokens:maxTokens,
+        messages:[{role:"user",content:prompt}],
+        origin: premiumEligible ? generationOrigin : null,
+        ...(system && { system }),
+      }),
     });
     if (res.status === 429) {
       const limitData = await res.json();
@@ -1510,11 +1598,28 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
         ? Math.min(4096, Math.max(1600, Math.ceil((currentText.length / 3.5) * 1.5) + 200))
         : 1000;
       // Use the current message text as the base — so Shorten/Expand/Rephrase
-      // work from what's actually on screen, not a fresh generation
-      const prompt = currentText
-        ? buildRegenPrompt(platformId, currentText, regenOpt)
-        : buildPrompt([platformId], regenOpt);
-      const r = await callAPI(prompt, maxTok);
+      // work from what's actually on screen, not a fresh generation.
+      //
+      // Caching (Sept 2026): only the currentText branch is wired to
+      // cache_control this pass — it's the actual Shorten/Expand/Rephrase
+      // path and the one the CSV data showed had zero cache activity. The
+      // no-currentText fallback (buildPrompt, used when there's nothing on
+      // screen yet to regen from) is a rare edge case and deliberately
+      // left as a flat, uncached prompt for now — not worth the added
+      // complexity in the same pass, and easy to bring in later.
+      let prompt, system = null;
+      if (currentText) {
+        const parts = buildRegenPromptParts(platformId, currentText, regenOpt);
+        prompt = parts.dynamicPrompt;
+        // ttl: "1h" — see generate-message-background.mjs's matching
+        // comment. Same UNCONFIRMED flag applies: verify the current
+        // Anthropic beta header/pricing before relying on this in
+        // production; generate-message.mjs sends the matching beta header.
+        system = [{ type: "text", text: parts.staticSystem, cache_control: { type: "ephemeral", ttl: "1h" } }];
+      } else {
+        prompt = buildPrompt([platformId], regenOpt);
+      }
+      const r = await callAPI(prompt, maxTok, { system });
       const { _contradictionFlags, ...textOnly } = r;
       setMessages(p=>({...p,...textOnly}));
       const note = _contradictionFlags && _contradictionFlags[platformId];
