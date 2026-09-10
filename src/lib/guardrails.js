@@ -77,10 +77,21 @@
 //   2. The three parallel "never invent X" bullets (stats/dates, quotes,
 //      named entities) were merged into one — same rules, no content
 //      dropped, just no longer three near-identical sentences in a row.
+//
+// OFFICEHOLDER FIDELITY rule added Sept 2026, same real-incident pattern as
+// DATE FIDELITY above and the same root cause: a strong training-data
+// prior overriding available current information. Confirmed real incident:
+// generated posts described Donald Trump in PAST tense, as a former
+// president, despite his being the actual sitting President. Paired with
+// currentOfficeholders.js's currentOfficeholdersBlock(), now injected into
+// every prompt that uses this guardrail (see guardrailAndVoiceBlock() in
+// message-machine.jsx), so the model always has the real current
+// officeholder and never has to fill the gap from a stale prior.
 export const FACTUAL_ACCURACY_GUARDRAIL = `FACTUAL ACCURACY:
 - Treat the user's input (issue, focal point, false narrative, or existing message being rewritten) as trusted source material — build on its facts, figures, and names directly instead of hedging around them.
 - NEVER invent, fabricate, estimate, or paraphrase any statistic, percentage, vote count, dollar figure, poll number, date, quote, named person, organization, study, bill, court case, or law that isn't present in the input. Quotes must be used exactly as given, never reworded.
 - DATE FIDELITY: State a specific date only if it is explicitly given — in a KEY DATES block (if one appears in this prompt) or directly in the user's own input. Never compute, derive, infer, or "correct" any date using outside knowledge, memorized precedent, or a rule you know to be generally true (e.g., a fixed number of days before an election) — even when you're confident the calculation is accurate, applying it to an unstated date is the same as inventing one. This applies to every date mentioned in this prompt — election day, an early-voting or registration window, a filing deadline, or any other date — not only whatever a KEY DATES block happens to list. If a date isn't explicitly given anywhere, write around it (e.g. "election day," "the deadline," "before voting closes") rather than naming or calculating one.
+- OFFICEHOLDER FIDELITY: If a CURRENT OFFICEHOLDERS block appears in this prompt, it is the sole authoritative source for who currently holds that office — never override, "correct," or recompute it using outside knowledge, memorized precedent, or who you believe held that office as of your own training. Write about a currently-serving officeholder in PRESENT tense (they ARE the officeholder), never as a past or former one, even if your own training data suggests otherwise. If no CURRENT OFFICEHOLDERS block or explicit user input states who holds a given office, don't assume — write around it rather than asserting a status you can't confirm.
 - CANDIDATE STATUS: never contradict a given status (Incumbent, Challenger, Open Seat). A Challenger or Open Seat candidate must never be framed as already holding the office ("came to Congress," "in the Senate," "as your Representative"). If no status is given, don't assume incumbency — write about their record and candidacy without asserting they currently hold the seat.
 - TENSE: match verb tense to the input's timing. Don't describe a past event in urgent present tense ("is voting against," "is taking away") when it already happened ("voted against," "took away"), and don't describe a pending or proposed action as if it already occurred. With no clear timing signal, default to present tense for ongoing conditions.
 - NAMED-PERSON WRONGDOING: any accusation of wrongdoing, criminal conduct, or scandal against a real, named individual must trace to confirmed public-record sourcing already in the input — don't embellish or extend it. Applies only when a named individual and a wrongdoing claim appear together.
