@@ -97,13 +97,28 @@ function buildEffectiveSystem(staticSystem) {
     !ss.includes("AVOID AI-SOUNDING PHRASING:") ? AI_TELL_PHRASING_BAN : null,
   ].filter(Boolean);
   const fullStatic = [ss, ...missingPieces].filter(Boolean).join("\n\n");
-  return [{ type: "text", text: fullStatic, cache_control: { type: "ephemeral" } }];
+  // ttl: "1h" (Sept 2026) — was the default 5-minute ephemeral cache.
+  // CONFIRMED from real creditTransactions data (Sept 2026 gap analysis):
+  // 80 of 195 generateAll calls over 3 weeks landed in a 6-59 minute gap
+  // since the previous call, and every single one of those 80 recorded a
+  // real cache MISS (cacheReadTokens = 0) — a 5-minute TTL was measurably
+  // too short for real usage patterns. UNCONFIRMED, verify before relying
+  // on this in production: the exact current Anthropic beta header name/
+  // pricing for extended cache TTL — this reflects best understanding at
+  // implementation time, not a live-checked call (no network access to
+  // Anthropic's docs from the build environment). Requires the matching
+  // "anthropic-beta": "extended-cache-ttl-2025-04-11" header on the
+  // request that sends this — see callClaude() below.
+  return [{ type: "text", text: fullStatic, cache_control: { type: "ephemeral", ttl: "1h" } }];
 }
 
 async function callClaude({ dynamicPrompt, maxTokens, system }) {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    // anthropic-beta (Sept 2026) — required alongside buildEffectiveSystem()'s
+    // ttl: "1h" above; see that function's comment for the same
+    // UNCONFIRMED-verify-before-relying-on-this flag.
+    headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "anthropic-beta": "extended-cache-ttl-2025-04-11" },
     body: JSON.stringify({
       model: GENERATION_MODEL,
       max_tokens: Math.min(maxTokens || 1000, MAX_TOKENS_CEILING),
