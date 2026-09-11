@@ -74,6 +74,62 @@ export function multiplierForOrigin(origin) {
   return ORIGIN_MULTIPLIERS[origin] || 1;
 }
 
+// hasRecentRapidResponseSession (Sept 2026) — closes the highest-priority
+// carried-forward item from the Handoff #43 security review: origin was
+// trusted verbatim from the CLIENT'S request body with no server-side
+// verification at all (confirmed by direct code read of generate-message.mjs,
+// generate-message-background.mjs, and start-message-generation.mjs — all
+// three just destructured `origin` straight off the request/job doc and
+// fed it to multiplierForOrigin()). A "denial-of-wallet" gap in the
+// direction that actually matters most: nothing stopped a client from
+// claiming origin: "rapid-response" on every single call, silently forcing
+// every generation to bill at the 3x premium rate regardless of whether a
+// real Rapid Response session ever happened — draining an org's
+// generationBalance far faster than legitimate usage would.
+//
+// Fix: rapid-response.mjs now stamps a real, server-written, short-TTL
+// session record (rapidResponseSessions/{uid}) on every genuine
+// fetch_and_analyze call — the actual premium action that starts a real
+// Rapid Response session. Callers here check for a RECENT record instead
+// of trusting the client's claim; the client-sent `origin` field is now
+// only used for cosmetic purposes (the UI label), never for billing.
+//
+// 30-minute window: generous enough to cover a real "analyze a story, then
+// push into Message Machine and generate" workflow (these two steps
+// aren't instantaneous — someone reads the analysis, decides what to do
+// with it), tight enough that it can't be used to justify premium billing
+// on work genuinely unrelated to the Rapid Response session hours later.
+const RAPID_RESPONSE_SESSION_WINDOW_MS = 30 * 60 * 1000;
+
+export async function hasRecentRapidResponseSession(app, uid) {
+  if (!uid) return false;
+  try {
+    const db = admin.firestore(app);
+    const snap = await db.doc(`rapidResponseSessions/${uid}`).get();
+    if (!snap.exists) return false;
+    const startedAt = snap.data()?.startedAt;
+    if (!startedAt || typeof startedAt.toMillis !== "function") return false;
+    return (Date.now() - startedAt.toMillis()) <= RAPID_RESPONSE_SESSION_WINDOW_MS;
+  } catch (err) {
+    // Fail closed on a read error — better to under-bill a rare edge case
+    // than to throw and block a real generation over a verification-check
+    // failure that has nothing to do with whether the call itself is valid.
+    console.warn(`[creditHelper] hasRecentRapidResponseSession check failed for uid=${uid} (treating as false): ${err.message}`);
+    return false;
+  }
+}
+
+// verifiedMultiplier (Sept 2026) — the function every caller should
+// actually use instead of multiplierForOrigin(clientSuppliedOrigin)
+// directly. Ignores the client's origin claim entirely for billing
+// purposes; derives the real multiplier from the server-verified session
+// record above. The client-sent origin string can still be used elsewhere
+// (e.g. UI display) — just never here.
+export async function verifiedMultiplier(app, uid, claimedOrigin) {
+  if (claimedOrigin !== "rapid-response") return 1;
+  return (await hasRecentRapidResponseSession(app, uid)) ? ORIGIN_MULTIPLIERS["rapid-response"] : 1;
+}
+
 export function creditsForTokens(inputTokens, outputTokens, cacheCreationTokens = 0, cacheReadTokens = 0, multiplier = 1) {
   // UPDATED (Aug 2026, prompt caching): cacheCreationTokens/cacheReadTokens
   // are new parameters, weighted by their real price relative to base
