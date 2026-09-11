@@ -58,7 +58,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
-import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, multiplierForOrigin } from "./creditHelper.mjs";
+import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, verifiedMultiplier } from "./creditHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
@@ -300,8 +300,14 @@ export default async function (req) {
         // origin (Aug 22 2026) — read from the job doc (see
         // start-message-generation.mjs's comment for why it's persisted
         // there rather than passed directly to this invocation).
-        // multiplierForOrigin() maps it to the 3x Rapid Response premium;
-        // the vast majority of jobs have no origin and get the default 1x.
+        // verifiedMultiplier (Sept 2026, security review) — REPLACES
+        // multiplierForOrigin(origin), which trusted the job doc's origin
+        // field (itself just copied verbatim from the client's original
+        // request body — confirmed in start-message-generation.mjs, no
+        // verification there either) with zero server-side check. See
+        // generate-message.mjs's matching comment and
+        // hasRecentRapidResponseSession() in creditHelper.mjs for the full
+        // reasoning; same fix, same call site pattern, applied here too.
         await debitGenerationCredits(app, {
           orgId, uid,
           functionName: "generate-message-background",
@@ -309,7 +315,7 @@ export default async function (req) {
           outputTokens: u.output_tokens,
           cacheCreationTokens: u.cache_creation_input_tokens,
           cacheReadTokens: u.cache_read_input_tokens,
-          multiplier: multiplierForOrigin(origin),
+          multiplier: await verifiedMultiplier(app, uid, origin),
         });
       }
 
