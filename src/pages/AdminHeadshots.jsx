@@ -92,17 +92,29 @@ export default function AdminHeadshots() {
 
   const uploadedNames = new Set(uploadedFiles.map(f => f.name));
 
-  // Real bug fix (Aug 27 2026): this read `c.photo_filename` (snake_case)
-  // everywhere, but the actual Firestore field — confirmed against
-  // scripts/migrate-candidates-to-firestore.mjs, the source of truth for what
-  // the migration actually wrote — is `photoFilename` (camelCase), the same key
-  // AdminPage.jsx's own candidate edit form reads and writes. The snake_case
-  // read was always undefined, so every candidate always showed "No filename
-  // set" here regardless of their real state. Fixed to read the real field.
+  // CORRECTED Sept 2026 — this read c.photoFilename (camelCase), based on
+  // an Aug 27 2026 fix that reasoned from Firestore's real field name
+  // (photoFilename) without accounting for WHERE this component's data
+  // actually comes from. loadCandidates() above calls query-candidates.mjs,
+  // which deliberately returns photo_filename (snake_case) — confirmed
+  // directly in that file: `photo_filename: data.photoFilename || ""`.
+  // So c.photoFilename was always undefined here, and every single
+  // candidate always fell into the first branch below regardless of their
+  // real state — confirmed via real live testing: 8 candidates checked,
+  // all showed "—" (no filename set), including 5 whose headshots load
+  // successfully elsewhere in the app, which is only possible if Firestore
+  // genuinely has photoFilename set for them. The Aug 27 fix was solving
+  // for a direct-Firestore-read that this component doesn't do; the write
+  // side a few lines below (handleUpload's updateDoc call) DOES read/write
+  // Firestore directly via the client SDK, so photoFilename (camelCase) is
+  // correctly right there — this file genuinely needs both conventions,
+  // one per data-access path, which is exactly how this regression
+  // happened the first time. Don't "fix" this back to camelCase again
+  // without checking which path is actually being read.
   function candidateStatus(c) {
-    if (!c.photoFilename) return { label: "No photo filename set", tone: "muted" };
-    if (uploadedNames.has(c.photoFilename)) return { label: "Photo uploaded", tone: "good" };
-    return { label: `Firestore says "${c.photoFilename}" but no matching file is uploaded`, tone: "warn" };
+    if (!c.photo_filename) return { label: "No photo filename set", tone: "muted" };
+    if (uploadedNames.has(c.photo_filename)) return { label: "Photo uploaded", tone: "good" };
+    return { label: `Firestore says "${c.photo_filename}" but no matching file is uploaded`, tone: "warn" };
   }
 
   // Distinct states present in the loaded candidate list, for the state filter
