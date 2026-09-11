@@ -34,7 +34,8 @@ const WAITLIST_STATUS_COLORS = {
 // by hand since one lives in the client bundle and the other in a Netlify
 // function. Only used here to decide whether to show the same-day override
 // control (Handoff #15, decision #9); the actual enforcement is server-side.
-const DAILY_LIMITS = { administrator: 200, manager: 100, user: 50 };
+// ×6 (Sept 2026, un-consolidation) — see rateLimitHelper.mjs's comment.
+const DAILY_LIMITS = { administrator: 1200, manager: 600, user: 300 };
 
 function todayUTC() { return new Date().toISOString().slice(0, 10); }
 
