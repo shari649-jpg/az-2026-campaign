@@ -77,6 +77,34 @@ function getClientIp(req) {
   );
 }
 
+// postId validation (Sept 2026 security fix). Real bug: postId arrived
+// from the client (body.postId) and was coerced to a String but otherwise
+// completely unvalidated before being passed straight into
+// db.collection("storms").doc(stormDoc.id).collection("posts").doc(postId)
+// below. Firestore's Admin SDK — which this whole function deliberately
+// uses specifically to bypass Firestore rules (see this file's own header
+// comment) — treats a "/" inside a doc-path segment as a real path
+// separator, not a literal character: a crafted postId containing
+// slashes can redirect that .doc() call to an entirely different
+// document path than the intended storms/{id}/posts/{id} subcollection,
+// with none of the Firestore-rules protection normal client reads would
+// have, since the Admin SDK ignores rules entirely. This function was the
+// one place in the app where a fully public, unauthenticated caller's
+// input flowed directly into a doc-path segment with zero shape checking.
+//
+// Fixed as an ALLOWLIST, not a blocklist of dangerous characters — real
+// post IDs are always standard Firestore auto-generated IDs (createPost()
+// in stormLibrary.js uses addDoc(), never a custom ID), which are always
+// exactly 20 characters from Firestore's fixed alphanumeric push-ID
+// alphabet. Anything that doesn't match that exact shape was never a
+// legitimate post ID to begin with, regardless of what characters it
+// contains — this closes the whole class of path-construction risk at
+// once rather than trying to enumerate which characters are unsafe.
+const FIRESTORE_AUTO_ID_RE = /^[A-Za-z0-9]{20}$/;
+function isValidPostId(id) {
+  return typeof id === "string" && FIRESTORE_AUTO_ID_RE.test(id);
+}
+
 // Minimal platform metadata duplicated here on purpose — stormLibrary.js
 // is a browser-side module (imports the client Firestore SDK via
 // ../firebase) and can't be imported from a Netlify Function. Keep these
@@ -240,6 +268,13 @@ export default async function (req) {
     const postId = String(body.postId || "");
     const platformKey = String(body.platformKey || "");
     if (!token || !postId || !platformKey || !CHAR_LIMITS[platformKey]) {
+      return new Response(JSON.stringify(generic({ error: "bad_request" })), { status: 200, headers: corsHeaders(req) });
+    }
+    // postId shape check — see isValidPostId()'s own comment for the full
+    // reasoning. Checked here, before postId is ever used in a doc-path
+    // construction below, same "reject before it can do anything" posture
+    // as the kill-switch and lock checks further down this function.
+    if (!isValidPostId(postId)) {
       return new Response(JSON.stringify(generic({ error: "bad_request" })), { status: 200, headers: corsHeaders(req) });
     }
 
