@@ -331,6 +331,22 @@ export default async function (req) {
           outputTokens: analysisData.usage.output_tokens,
           multiplier: 3,
         });
+        // Rapid Response session marker (Sept 2026) — this IS the real,
+        // premium-priced action that starts a genuine Rapid Response
+        // session (see creditHelper.mjs's hasRecentRapidResponseSession()
+        // for the full reasoning). Stamped only on a successful, billed
+        // analysis — not on every call to this endpoint — so a failed or
+        // credit-blocked attempt can't be used to manufacture a session
+        // record without ever actually paying the premium rate once.
+        // Best-effort: a failure to write this shouldn't fail the
+        // response the user is already waiting on; it just means the
+        // eventual Message Machine push won't get premium-priced, which
+        // is the safe direction to fail in (under-bill, never over-bill).
+        try {
+          await admin.firestore(app).doc(`rapidResponseSessions/${uid}`).set({ startedAt: admin.firestore.FieldValue.serverTimestamp() });
+        } catch (err) {
+          console.warn(`[rapid-response] failed to write session marker for uid=${uid} (non-fatal): ${err.message}`);
+        }
       }
       if (balanceCheck.warning) analysisData.creditWarning = generationWarningPayload(balanceCheck.balance);
       if (usage.warning) analysisData.usageWarning = { used: usage.used, limit: usage.limit, remaining: usage.remaining };
