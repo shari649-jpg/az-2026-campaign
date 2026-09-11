@@ -2,6 +2,54 @@
   command = "npm run build"
   publish = "dist"
 
+# Security headers (Sept 2026) — this app had none at all before this.
+# Applied to every route via the "/*" glob, Netlify's standard pattern for
+# a site-wide header block.
+#
+# The four below are enforced immediately — well-understood, essentially
+# no risk of breaking anything in THIS app (none of them touch what
+# domains the page is allowed to talk to):
+#   - X-Content-Type-Options: stops the browser from guessing a file's
+#     type from its content instead of trusting the server's declared
+#     Content-Type — closes a class of MIME-sniffing attack.
+#   - X-Frame-Options: DENY — this app is never meant to be embedded in
+#     someone else's page in an iframe (no legitimate use case here, this
+#     isn't an embeddable widget), so blocking it outright closes
+#     clickjacking risk with zero downside.
+#   - Referrer-Policy: strict-origin-when-cross-origin — sends the full
+#     URL as referrer for same-origin requests (useful for this app's own
+#     analytics/debugging) but only the bare origin, never the full path/
+#     query, to any other site — a real privacy leak otherwise, e.g. a
+#     candidate name or storm token appearing in the referrer header sent
+#     to an external image host or API.
+#   - Permissions-Policy: this app doesn't use camera, microphone, or
+#     geolocation anywhere — explicitly denying all three is free
+#     hardening with no feature to lose.
+#
+# Content-Security-Policy is deliberately shipped in REPORT-ONLY mode, not
+# enforced. Real risk here, not a formality: this app's login flow
+# (LoginPage.jsx's signInWithPopup + GoogleAuthProvider) depends on a
+# Firebase-hosted auth-helper iframe, and Stripe/Google/Firebase all touch
+# several different domains — a CSP that's even slightly wrong could
+# silently break sign-in or checkout in production, which is a worse
+# outcome than having no CSP at all. Report-Only mode logs violations to
+# the browser console (and to config/cspReports below, if that domain is
+# wired up — not done here) without blocking a single request, so it's
+# possible to verify this policy is actually complete against real usage
+# BEFORE ever switching it to enforcing. Domains below are based on what's
+# confirmed used in the codebase (Firebase Auth/Firestore/Storage, Google
+# Sign-In's popup+iframe flow, Google Fonts if referenced) — not something
+# tested against a live browser session from this environment, so treat
+# this as a first draft to watch, not a finished, verified policy.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com https://firebasestorage.googleapis.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://firebasestorage.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; frame-src https://*.firebaseapp.com https://accounts.google.com; object-src 'none'; base-uri 'self'"
+
 [functions]
   external_node_modules = ["googleapis", "@netlify/blobs", "@netlify/functions", "firebase-admin", "stripe"]
 
