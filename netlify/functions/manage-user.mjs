@@ -122,6 +122,33 @@ async function authorize(app, idToken, action, targetUid) {
     return { callerUid: decoded.uid, isOrgAdminCaller: true };
   }
 
+  // Manager branch (Sept 2026) — closes a confirmed real bug: when
+  // Handoff #42 rebuilt Manager access to the Admin panel, firestore.rules
+  // and AdminPage.jsx's UI were updated with a real Manager-scoped branch
+  // (disable/enable/delete buttons render for a Manager, matching their
+  // scoped user list), but this function — which every one of those three
+  // actions actually goes through, since Firebase Auth changes require the
+  // Admin SDK — was never updated in parallel. A Manager clicking any of
+  // these three buttons got a fully clickable UI that always 403'd
+  // server-side.
+  //
+  // Scope mirrors what AdminPage.jsx's own UI already does elsewhere for a
+  // Manager (see its edit-button gating: a Manager can edit/manage another
+  // Manager in their org, but never an Administrator, even one who happens
+  // to share their orgId) — same "own org, never target an Administrator"
+  // boundary, just applied here to disable/enable/delete instead of edit.
+  const isManagerScopedAction = action === "disable" || action === "enable" || action === "delete";
+  if (caller.role === "manager" && isManagerScopedAction) {
+    if (!caller.orgId) throw new Error("forbidden");
+    const targetSnap = await db.doc(`users/${targetUid}`).get();
+    if (!targetSnap.exists) throw new Error("not_found");
+    const target = targetSnap.data();
+    if (target.orgId !== caller.orgId || target.role === "administrator") {
+      throw new Error("forbidden");
+    }
+    return { callerUid: decoded.uid, isManagerCaller: true };
+  }
+
   throw new Error("forbidden");
 }
 
