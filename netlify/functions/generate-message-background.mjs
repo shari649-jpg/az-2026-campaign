@@ -130,6 +130,67 @@ async function callClaude({ dynamicPrompt, maxTokens, system }) {
   return { ok: response.ok, status: response.status, data };
 }
 
+// Cache warm-up (Sept 2026, un-consolidation). All groups in one job share
+// byte-identical staticSystem — it depends only on msgMode, never on which
+// platform(s) are in a group (confirmed: buildPromptParts() in
+// message-machine.jsx builds staticSystem before it ever looks at the
+// platforms param). Once un-consolidation went to one group per platform,
+// that means up to 6 requests now fire at once (Promise.all below) instead
+// of 1-3 — and Anthropic's cache is only READABLE once a request finishes
+// WRITING it. Requests fired at the same instant have no guarantee a
+// sibling's write has landed yet — real risk of several of them missing
+// the cache simultaneously ("thundering herd"), confirmed as a concern in
+// this project's own prior caching work, not a new worry invented here.
+//
+// Fix: fire one small, cheap request containing ONLY the static block
+// first, with a trivial max_tokens and a throwaway instruction, and AWAIT
+// its full completion before firing the real per-platform groups. A
+// completed response guarantees the input was fully processed (and so the
+// cache write landed) — a more reliable signal than guessing at a fixed
+// delay. The real groups fire together immediately after, all benefiting
+// from the now-warm cache, rather than picking two platforms to go first
+// at the expense of the rest's timing.
+//
+// Best-effort only: if this call fails for any reason, the real groups
+// still run normally below — they just don't get the head start. A failed
+// warm-up should never block or fail the actual generation.
+//
+// Billed to the job's own org/uid (Sept 2026) — this call costs real
+// tokens (cache-write pricing on the static block, plus a handful of
+// output tokens), same as every other real API call in this file. Passed
+// through debitGenerationCredits() exactly like a real group's result
+// would be, rather than left unbilled — matches this file's own
+// established principle (see the CREDIT CHARGING header comment) that
+// silently skipping a real cost is an undercharge, not a discount.
+async function warmCache(staticSystem, { app, orgId, uid }) {
+  try {
+    const result = await callClaude({
+      dynamicPrompt: "Reply with the single word OK.",
+      maxTokens: 8,
+      system: buildEffectiveSystem(staticSystem),
+    });
+    if (result.ok && result.data.usage) {
+      const u = result.data.usage;
+      await debitGenerationCredits(app, {
+        orgId, uid,
+        functionName: "generate-message-background-warmup",
+        inputTokens: u.input_tokens,
+        outputTokens: u.output_tokens,
+        cacheCreationTokens: u.cache_creation_input_tokens,
+        cacheReadTokens: u.cache_read_input_tokens,
+        // multiplier: 1, always — deliberately NOT multiplierForOrigin(origin).
+        // The Rapid Response 3x premium prices the feature's value to the
+        // user; this call delivers no value to them directly, it's pure
+        // internal plumbing, so it's billed to the org at cost regardless
+        // of what triggered the job.
+        multiplier: 1,
+      });
+    }
+  } catch (err) {
+    console.warn(`[generate-message-background] cache warm-up call failed (non-fatal, real groups proceed without it): ${err.message}`);
+  }
+}
+
 export default async function (req) {
   const t0 = Date.now();
   let app;
@@ -259,6 +320,17 @@ export default async function (req) {
         usageWarning: usage.warning ? { used: usage.used, limit: usage.limit, remaining: usage.remaining } : null,
       };
     };
+
+    // Fire the cache warm-up first, and actually wait for it — see
+    // warmCache()'s own comment for why. Only bother when there's more
+    // than one group to warm the cache FOR; a single-group job (e.g. one
+    // platform selected) gets nothing from priming a cache it's about to
+    // be the only reader of anyway. All groups share the same
+    // staticSystem (see buildPromptParts()), so warming with groups[0]'s
+    // copy warms it for all of them.
+    if (groups.length > 1) {
+      await warmCache(groups[0].staticSystem, { app, orgId, uid });
+    }
 
     const groupResults = await Promise.all(groups.map(processGroup));
 
