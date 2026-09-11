@@ -322,7 +322,17 @@ service cloud.firestore {
                         resource.data.status == "invited" &&
                         request.resource.data.status == "registered" &&
                         request.auth.token.email == resource.data.email);
-      allow delete: if isAdmin();
+      // Manager delete grant (Sept 2026) — closes a confirmed real bug:
+      // get/list/update above already had the "isManager() && own org"
+      // branch; delete was simply never given the matching branch when
+      // those were added (Aug 26 2026). AdminPage.jsx's own Remove button
+      // (handleRemoveWaitlistEntry) has been fully clickable for a Manager
+      // this whole time and always failed with permission-denied — exactly
+      // the failure mode that function's own comment predicted ("If this
+      // ever comes back with a permission-denied error, the waitlist rule
+      // needs an explicit delete grant"). Same scope as the other three
+      // grants on this doc: a Manager's own org's entries only.
+      allow delete: if isAdmin() || (isManager() && resource.data.orgId == myOrgId());
     }
     // ── saved_campaigns/{doc} ────────────────────────────────────────────
     // Shared team Library — any logged-in coalition member can read, save,
