@@ -19,7 +19,7 @@
 import admin from "firebase-admin";
 import { readFileSync } from "node:fs";
 import { checkAndIncrementRateLimit } from "./rateLimitHelper.mjs";
-import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, generationWarningPayload, multiplierForOrigin } from "./creditHelper.mjs";
+import { debitGenerationCredits, checkGenerationBalance, generationBlockedPayload, generationWarningPayload, verifiedMultiplier } from "./creditHelper.mjs";
 import { FACTUAL_ACCURACY_GUARDRAIL } from "../../src/lib/guardrails.js";
 import { AI_TELL_PHRASING_BAN } from "../../src/lib/messageRules.js";
 
@@ -247,16 +247,20 @@ export default async function (req) {
     // and safe to ship ahead of the debiting logic.
     if (data.usage) {
       console.log(`[generate-message] token_usage: uid=${uid} input_tokens=${data.usage.input_tokens} output_tokens=${data.usage.output_tokens} model=${GENERATION_MODEL}`);
-      // Generation-credit debiting (Aug 2026 TODO item 7) — fire-and-forget
-      // is deliberately NOT used here; awaited so a billing failure is
-      // caught and logged inline, but debitGenerationCredits itself never
-      // throws, so this can't turn a billing hiccup into a failed response.
       // origin (Aug 22 2026) — set by message-machine.jsx when the current
       // session originated from a Rapid Response push (persists through
       // regen and edit-then-regen, cleared on Start New — see that file's
-      // own comment for the full lifecycle). multiplierForOrigin() maps
-      // it to the 3x premium rate; any call with no origin (the vast
-      // majority) gets the default 1x, completely unaffected.
+      // own comment for the full lifecycle).
+      // verifiedMultiplier (Sept 2026, security review) — REPLACES the old
+      // multiplierForOrigin(origin) call, which trusted the client's
+      // `origin` field directly with zero server-side verification — a
+      // real denial-of-wallet gap (confirmed, Handoff #43 security review):
+      // nothing stopped a client from claiming origin: "rapid-response" on
+      // every call, silently billing every generation at 3x. Now derived
+      // from a real server-written session record instead — see
+      // hasRecentRapidResponseSession() in creditHelper.mjs. The client's
+      // `origin` value is still read and passed in (still useful as the
+      // claim to check), just never trusted on its own anymore.
       await debitGenerationCredits(app, {
         orgId: usage.orgId,
         uid,
@@ -274,7 +278,7 @@ export default async function (req) {
         // confirm the fix worked.
         cacheCreationTokens: data.usage.cache_creation_input_tokens,
         cacheReadTokens: data.usage.cache_read_input_tokens,
-        multiplier: multiplierForOrigin(origin),
+        multiplier: await verifiedMultiplier(app, uid, origin),
       });
     }
 
