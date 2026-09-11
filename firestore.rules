@@ -413,11 +413,24 @@ service cloud.firestore {
       // Update: Admins can change anything, any org, any time. Managers
       // can change anything but ONLY within their own org — or on legacy
       // storms that don't have orgId set yet (fail-open, see note above).
-      // A Member may only edit their OWN storm, only while it is still a
-      // draft, and only if it's STILL a draft after their edit — they
-      // cannot use an update to move themselves into pending_review/
-      // active; that transition only happens through the Manager/Admin-
-      // gated path above.
+      // A Member may only edit their OWN storm while it is still a draft.
+      //
+      // RESOLVED Sept 2026 (was a flagged conflict — this comment
+      // previously said a Member "cannot use an update to move themselves
+      // into pending_review... that transition only happens through the
+      // Manager/Admin-gated path above," which blocked the storm's own
+      // creator from ever submitting their own draft for review at all,
+      // contradicting the UI's "Submit for Review" option and
+      // stormLibrary.js's own header comment. Explicitly decided: a Member
+      // SHOULD be able to flag their own draft as ready for review — from
+      // a workflow standpoint there was no reason to require a
+      // Manager/Admin to do this on the Member's behalf. Narrow exception
+      // added: while their storm is still a draft, a Member may set its
+      // status to either "draft" (a normal edit — unchanged from before)
+      // or "pending_review" (submit for review — newly allowed). They
+      // still can never set it to "active" or "archived" directly, and
+      // stormLibrary.js's setStormStatus() enforces this exact same
+      // narrow exception client-side too, so both layers agree.
       allow update: if isSignedIn() && (
         isAdmin()
         ||
@@ -429,7 +442,10 @@ service cloud.firestore {
         (
           resource.data.createdBy.uid == request.auth.uid
           && resource.data.status == "draft"
-          && request.resource.data.status == "draft"
+          && (
+            request.resource.data.status == "draft"
+            || request.resource.data.status == "pending_review"
+          )
         )
       );
       // Delete: administrators only. Managers archive instead of deleting
