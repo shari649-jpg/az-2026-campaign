@@ -45,16 +45,29 @@ function getAdminApp() {
   return admin.initializeApp({ credential });
 }
 
-// Verify the caller's ID token and confirm they hold the administrator role
-// in Firestore before allowing this collection to be overwritten. This is
-// the only thing standing between this endpoint and "anyone can inject
-// fake misinformation data into the BS Monitor."
-async function requireAdmin(app, idToken) {
+// Verify the caller's ID token and confirm they're authorized to overwrite
+// this collection. Real Administrator, or a Manager — added Sept 2026,
+// same confirmed 403 bug as manage-user.mjs/send-invite.mjs (see
+// manage-user.mjs's matching comment for the full history).
+//
+// Worth being explicit about, since this one differs in shape from the
+// other two Manager fixes: this data is GLOBAL, not scoped per-org — one
+// shared Netlify Blob every org's BS Monitor reads from (see this file's
+// own header comment). There's no "own org" boundary to apply here the
+// way there is for disable/enable/delete or invites, so this grants any
+// Manager, from any org, the ability to overwrite what every org sees.
+// That's a real, different-shaped privilege than the other two fixes —
+// included here because AdminPage.jsx's own tab-visibility filter already
+// deliberately shows the Community Notes tab to Managers (it excludes
+// only "settings" and "orgs", not this tab), so this matches an
+// intentional choice already made elsewhere in the UI, not a new one
+// introduced by this fix.
+async function requireAdminOrManager(app, idToken) {
   if (!idToken) throw new Error("unauthenticated");
   const decoded = await admin.auth(app).verifyIdToken(idToken);
   const snap = await admin.firestore(app).doc(`users/${decoded.uid}`).get();
   const role = snap.exists ? snap.data().role : null;
-  if (role !== "administrator") throw new Error("forbidden");
+  if (role !== "administrator" && role !== "manager") throw new Error("forbidden");
   return decoded.uid;
 }
 
@@ -82,7 +95,7 @@ export default async function (req) {
 
     // ── Auth ──────────────────────────────────────────────────────────────
     try {
-      await requireAdmin(app, idToken);
+      await requireAdminOrManager(app, idToken);
     } catch (err) {
       const status = err.message === "unauthenticated" ? 401 : 403;
       return new Response(JSON.stringify({ error: "Not authorized to perform this action." }), {
