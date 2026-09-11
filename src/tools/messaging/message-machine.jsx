@@ -26,22 +26,25 @@ const PLATFORMS = [
   { id: "tiktok", name: "TikTok", abbr: "TK", maxChars: 2200, bg: "#b91c1c", text: "#fff" },
 ];
 
-// Platform-call consolidation (Aug 2026, TODO #8) — generateAll now sends
-// ONE combined call for every selected platform instead of splitting into
-// PLATFORM_GROUP_A/B/C (removed). That splitting existed specifically to
-// keep each call's output small enough to stay fast under the old 26-
-// second synchronous Netlify timeout; now that generateAll runs through
-// Background Functions (no more 26s ceiling, real per-group work already
-// proven safe running concurrently), the tradeoff flips: one combined call
-// pays the ~7,000-char guardrail/platform-voice overhead once instead of
-// up to 3 times, which is the actual per-generation cost problem measured
-// in Handoff #36. Known, accepted tradeoff (same one already named in the
-// TODO item that scoped this): a single larger call is somewhat slower
-// end-to-end than the fastest of 3 parallel smaller ones, and a bad
-// response now affects the whole generation rather than one platform pair
-// — acceptable since Background Functions removed the timeout risk that
-// made the old design necessary, and a failed generation is fully visible
-// and retryable, not a silent partial gap.
+// Platform-call un-consolidation, take two (Sept 2026) — history worth
+// keeping, because the reasoning flip-flopped twice for good reasons each
+// time. Originally: PLATFORM_GROUP_A/B/C, 3 groups of 2 platforms, run in
+// parallel specifically for latency (total wait = slowest group, not the
+// sum of all of them). Aug 2026 (TODO #8): consolidated into ONE combined
+// call for every selected platform, because Background Functions had just
+// removed the 26-second synchronous-timeout ceiling that made small groups
+// necessary, and one call paying the ~7,000-char guardrail overhead once
+// beat paying it up to 3 times. Sept 2026 (this change): un-consolidated
+// again, further than the original design even — one group PER PLATFORM,
+// not per pair. The overhead-duplication argument that justified combining
+// them is now handled by prompt caching instead (see
+// generate-message-background.mjs's cache warm-up call), so it no longer
+// has to be traded against latency the way it did in August. Total wait
+// for N parallel single-platform calls is smaller still than 3 groups of
+// 2 ever was — smaller output per call, same "slowest one sets the wait"
+// logic the original design was built on, just carried further now that
+// nothing is stopping it. See buildPromptParts() and generateAll() for
+// where this is actually built.
 
 // Shared platform-voice guidance for Neutral + AZ modes (identical in both).
 // Each platform gets a real baseline persona — who's talking, to whom — not
@@ -177,11 +180,16 @@ const TONE_CONTRAST_INSTRUCTION = "This post must be structurally distinguishabl
 // ceiling only recreates the truncation bug at a slightly larger input size;
 // a flat, generous number removes that failure mode instead of narrowing it.
 //
-// RAISED (Aug 2026, platform-call consolidation, TODO #8): this used to
-// cover at most 2 platforms per call (PLATFORM_GROUPS); one combined call
-// now has to produce up to all 6 at once. Matches
-// generate-message-background.mjs's own MAX_TOKENS_CEILING exactly, so
-// this can't get silently clamped smaller than what's actually requested.
+// RAISED (Aug 2026, then left high through the Sept 2026 un-consolidation
+// back to one-group-per-platform): originally sized to cover up to 2
+// platforms per call (PLATFORM_GROUPS), then briefly needed to cover all 6
+// at once during the single-combined-call period. Each call now only ever
+// needs to produce ONE platform's worth of output, so 8,000 is now far more
+// headroom than any single call needs — left this high anyway, on purpose,
+// per the "no cost to setting this high, only downside is narrowing it too
+// far" reasoning right above. Matches generate-message-background.mjs's
+// own MAX_TOKENS_CEILING exactly, so this can't get silently clamped
+// smaller than what's actually requested.
 const GENERATION_MAX_TOKENS = 8000;
 
 const AUDIENCES = ["Democrat","Independent","Persuadable Republican","Disillusioned Voter","Brand New Voter"];
@@ -1462,17 +1470,41 @@ If, and only if, the SELF-CONTRADICTION rule above applies, also include: {"_con
 
     try {
       const selected = formData.platforms;
-      // One combined group, all selected platforms in a single call — see
-      // the "Platform-call consolidation" comment near the top of this
-      // file (right after the PLATFORMS array) for why this replaced the
-      // old 3-way PLATFORM_GROUPS split.
-      // Prompt caching (Aug 2026) — sends the static/dynamic split from
-      // buildPromptParts() instead of one flat string, so
-      // generate-message-background.mjs can send Claude a real
-      // cache_control-tagged system block. See buildPromptParts() itself
-      // for exactly what's in each half.
-      const { staticSystem, dynamicPrompt } = buildPromptParts(selected);
-      const groups = [{ platformIds: selected, staticSystem, dynamicPrompt, maxTokens: GENERATION_MAX_TOKENS }];
+      // Un-consolidated (Sept 2026) — one group PER PLATFORM instead of one
+      // combined group covering every selected platform. Reverts to (and
+      // extends) the original PLATFORM_GROUPS design's actual reasoning:
+      // total wait for N parallel calls is "however long the slowest one
+      // takes," and the smallest possible per-call output produces the
+      // fastest possible slowest-call time. The Aug 2026 consolidation to
+      // one combined call was the right call AT THE TIME specifically to
+      // pay the ~7,000-char guardrail overhead once instead of 3 times —
+      // but that overhead argument is now handled by prompt caching
+      // instead (see buildEffectiveSystem() in
+      // generate-message-background.mjs and the cache warm-up call that
+      // function now fires before these groups go out), so paying it
+      // once-per-call is no longer the same real cost it was when this
+      // tradeoff was first decided.
+      //
+      // buildPromptParts() already generalizes cleanly to a single
+      // platform — plats/platformIdsLine/formatLine all just narrow to
+      // that one platform, nothing platform-count-specific about them.
+      // staticSystem is byte-identical across every group here regardless
+      // of platform count (it depends only on msgMode — see
+      // buildPromptParts() itself) — that's what makes the single shared
+      // cache entry possible across all N groups of one generateAll click.
+      //
+      // Known, accepted tradeoffs from going this granular (same category
+      // of tradeoff the original PLATFORM_GROUPS design comment already
+      // named, just at a different point on the same spectrum): more
+      // concurrent Firestore rate-limit/credit-balance checks per click
+      // (N instead of 1-3) — see checkGenerationBalance()'s documented
+      // non-atomic-race caveat in creditHelper.mjs, which matters more at
+      // higher concurrency than it did before. Worth watching real timing
+      // data once this is live, not assumed safe by reasoning alone.
+      const groups = selected.map(platformId => {
+        const { staticSystem, dynamicPrompt } = buildPromptParts([platformId]);
+        return { platformIds: [platformId], staticSystem, dynamicPrompt, maxTokens: GENERATION_MAX_TOKENS };
+      });
 
       const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
       const res = await fetch("/.netlify/functions/start-message-generation", {
