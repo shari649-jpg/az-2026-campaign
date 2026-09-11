@@ -74,7 +74,9 @@ async function requireSignedIn(app, idToken) {
 // generate-message-background.mjs, exactly where it ran before this
 // rearchitecture — nothing about the real quota enforcement changed, only
 // where in the pipeline the fast-fail feedback happens.
-const LIMITS = { administrator: 200, manager: 100, user: 50 };
+// ×6 (Sept 2026, un-consolidation) — mirrors rateLimitHelper.mjs's real
+// LIMITS table exactly; see that file's comment for the full reasoning.
+const LIMITS = { administrator: 1200, manager: 600, user: 300 };
 function todayUTC() { return new Date().toISOString().slice(0, 10); }
 
 async function peekQuotaAndBalance(app, uid, groupCount) {
