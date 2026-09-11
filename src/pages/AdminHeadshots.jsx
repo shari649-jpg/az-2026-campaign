@@ -281,13 +281,30 @@ export default function AdminHeadshots() {
                       <div
                         key={c.id || c.candidate_name}
                         onMouseDown={() => selectCandidate(c)}
+                        title={status.label}
                         style={{
                           padding: "9px 12px", fontSize: 13, cursor: "pointer",
                           background: selectedId === c.id ? "#eef6f6" : "#fff",
                           borderBottom: `1px solid ${BORDER}`,
                         }}
                       >
-                        {icon} {c.candidate_name} — {c.office}{c.state ? ` (${c.state})` : ""}
+                        <div>{icon} {c.candidate_name} — {c.office}{c.state ? ` (${c.state})` : ""}</div>
+                        {/* CORRECTED Sept 2026 — candidateStatus()'s label
+                            (the actual diagnostic detail, e.g. the exact
+                            filename value Firestore has stored) was
+                            computed here but never rendered anywhere —
+                            confirmed via real live use: a real ⚠ mismatch
+                            showed the icon with no way to see WHAT was
+                            mismatched, forcing a guess instead of a real
+                            comparison. Shown inline for warn (the case that
+                            actually needs the detail to fix); "good" and
+                            "muted" are already fully explained by the icon
+                            alone, no need to clutter those rows. Also
+                            still set as the row's title attribute above,
+                            for a hover tooltip on any status. */}
+                        {status.tone === "warn" && (
+                          <div style={{ fontSize: 11.5, color: "#8A5A00", marginTop: 3 }}>{status.label}</div>
+                        )}
                       </div>
                     );
                   })}
