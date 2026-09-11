@@ -83,46 +83,81 @@ const PLATFORMS = [
 //     vibe-word. If this doesn't resolve it, next step is collecting 2-3
 //     real flat outputs and naming the actual repeated phrase directly,
 //     the way the AI-tell ban's dodge-rounds were closed (punch list #11).
-const PLATFORM_VOICE_GUIDE = `PLATFORM VOICE — each platform has its own fixed baseline personality; Tone, Style, and Voice/Persona settings shape HOW that personality delivers the message, never flatten or replace it. A "Professional" tone on Twitter/X should still read sharper and more clipped than the same tone on Facebook.
+// RESOLVED Sept 2026, revised twice: was Handoff #48 punch list #9's open
+// question (does National need a fully separate platform-voice constant,
+// or a shared base plus a small diff?), first resolved by checking every
+// entry against its Neutral/AZ counterpart, then tightened further on
+// direct review — several entries first judged "genuinely different"
+// turned out to only need to differ by a small addition on top of the
+// shared base, not a fully separate rewrite:
+//   - Twitter/X, BlueSky: identical / near-identical — already fully
+//     shared (see PLATFORM_VOICE_TWITTER_LINE / PLATFORM_VOICE_BLUESKY_LINE).
+//   - Instagram: on review, National's wording is simply the better
+//     version for both — now ONE shared line, no Neutral/AZ variant left.
+//   - Threads: National has no separate Threads guidance of its own, so it
+//     now shares Neutral/AZ's line too, rather than leaving Threads posts
+//     in National mode with no platform-specific guidance at all — an
+//     inference, not something explicitly specified; flag if National
+//     should actually have its own distinct Threads voice instead.
+//   - TikTok: National's distinct "wait, really?" hook was a deliberate
+//     choice to REPLACE with Neutral/AZ's hook instruction, kept as one
+//     shared core line, with National adding "Authenticity and mild
+//     irreverence" on top — a real content decision (not a dedup), made
+//     explicitly on direct review.
+//   - Facebook: the only entry that keeps real, separate content in both
+//     directions — National adds the Richardson-letter-format instruction
+//     AND explicitly keeps its own 3-paragraph minimum (overriding the
+//     base's 2), a deliberate choice to keep that floor rather than let it
+//     fall back to the shared default.
+// Net effect: National's guide is now almost entirely "the shared base,
+// plus a genuinely small delta" — Facebook (format instruction + its own
+// paragraph floor) and TikTok (one added sentence) are the only two
+// platforms where National still says anything Neutral/AZ doesn't.
+const PLATFORM_VOICE_INTRO = (national) => `PLATFORM VOICE — each platform${national ? " below has its own fixed baseline personality on top of the National Style Guide above" : " has its own fixed baseline personality"}; Tone, Style, and Voice/Persona settings shape HOW that personality delivers the message, never flatten or replace it. A "Professional" tone on Twitter/X should still read sharper and more clipped than the same tone on Facebook.`;
+
+const PLATFORM_VOICE_BLUESKY_LINE = `- BlueSky: Policy-literate readers who reward nuance and depth over punchlines. Thoughtful and substantive — willing to sit with a claim and unpack it, measured even when angry.`;
+
+const PLATFORM_VOICE_TWITTER_LINE = `- Twitter/X: Confrontational, visceral, built to be screenshotted — a shout not an essay. Short, blunt words at a high school reading level, not college. Raw gut-punch, not a reasoned takeaway.`;
+
+// Now shared across all three modes — was National-only wording
+// ("Instagram/Threads" merged), judged on direct review to be simply the
+// better version for everyone, not something National-specific.
+const PLATFORM_VOICE_INSTAGRAM_LINE = `- Instagram: Younger-adult, millennial-leaning readers. Lead with the most visceral, concrete version of the cost — make the first sentence hit. Keep it human and visual.`;
+
+// Threads stays its OWN separate bullet (not merged with Instagram) — kept
+// distinct from Neutral/AZ on purpose, per direct instruction. Now shared
+// with National too (inference — National never had distinct Threads
+// guidance of its own; sharing this avoids leaving Threads posts in
+// National mode with zero platform-specific voice guidance at all).
+const PLATFORM_VOICE_THREADS_LINE = `- Threads: Casual, in-the-moment, like joining a conversation already happening. At least 350 characters.`;
+
+// TikTok's core instruction — now the SAME hook for every mode (a real
+// content decision, not dedup: National's own distinct "wait, really?"
+// hook was deliberately dropped in favor of this one). National adds one
+// sentence on top of this exact text at its own use site below.
+const PLATFORM_VOICE_TIKTOK_CORE = `Gen Z-adjacent, "smart friend" energy. Open with a claim that assumes the viewer already has context — don't explain, just drop them into it. Energetic language, 2 or more paragraphs.`;
+
+const PLATFORM_VOICE_GUIDE = `${PLATFORM_VOICE_INTRO(false)}
 
 - Facebook: Older, community- and family-oriented readers. Warm, explanatory — like a longtime neighbor chatting at a town meeting. Detailed storytelling, end on a clear call to action. At least 2 paragraphs.
-- Instagram: Younger, millennial-leaning readers. Visual, punchy, values-driven — a real feed post, not a press release. Emotional hook at start.
-- Threads: Casual, in-the-moment, like joining a conversation already happening. At least 350 characters.
-- BlueSky: Policy-literate readers who reward nuance over punchlines. Thoughtful, willing to sit with a claim and unpack it — measured even when angry.
-- Twitter/X: Confrontational, visceral, built to be screenshotted — a shout not an essay. Short, blunt words at a high school reading level, not college. Raw gut-punch, not a reasoned takeaway.
-- TikTok: Gen Z-adjacent, "smart friend" energy. Open with a claim that assumes the viewer already has context — don't explain, just drop them into it. Energetic language, 2 or more paragraphs.`;
+${PLATFORM_VOICE_INSTAGRAM_LINE}
+${PLATFORM_VOICE_THREADS_LINE}
+${PLATFORM_VOICE_BLUESKY_LINE}
+${PLATFORM_VOICE_TWITTER_LINE}
+- TikTok: ${PLATFORM_VOICE_TIKTOK_CORE}`;
 
-// National mode's platform-voice guidance — same persona layer, laid over the
-// National Messaging Style Guide's own per-platform structural notes.
-//
-// TIGHTENED Sept 8, 2026 (Handoff #48), same pass as PLATFORM_VOICE_GUIDE
-// above. 1,578 -> 1,261 chars (-20%). Same treatment: the intro's redundant
-// pair was even more redundant here (stated the same Twitter-vs-Facebook
-// comparison twice, once from each direction) — cut to one. Reused the same
-// Twitter/X fix as the Neutral/AZ version (same platform, same flatness
-// complaint). Facebook's "3-4 paragraph" ceiling opened up the same way as
-// the Neutral/AZ fix, by assumption for consistency rather than direct
-// person sign-off on National's Facebook specifically — flag if that
-// assumption should be reverted.
-//
-// Open architectural question, NOT resolved this pass (Handoff #48 punch
-// list #9): why does National mode need a fully separate ~1,300-char
-// platform-voice constant at all, rather than a shared base plus a small
-// National-specific diff? Real answer on inspection: Facebook's structure
-// genuinely differs (tied to the five-beat framework's cost->action
-// bookend) and Instagram/Threads are merged into one entry here but not in
-// Neutral/AZ — real, load-bearing differences. Everything else (BlueSky,
-// Twitter/X, TikTok's core register) is the same idea restated, which reads
-// as copy-paste drift, not intentional duplication. That's a structural
-// refactor, not a text edit — belongs in its own scoped session, not bundled
-// into this text-tightening pass.
-const PLATFORM_VOICE_GUIDE_NATIONAL = `PLATFORM VOICE — each platform below has its own fixed baseline personality on top of the National Style Guide above; Tone, Style, and Voice/Persona settings shape HOW that personality delivers the message, never flatten or replace it. A "Professional" tone on Twitter/X should still read sharper and more clipped than the same tone on Facebook.
+// National mode's platform-voice guidance — see the RESOLVED comment above
+// PLATFORM_VOICE_INTRO for exactly what's shared with the Neutral/AZ guide
+// above versus genuinely National-specific. Only Facebook and TikTok still
+// say anything different here; everything else is the identical shared line.
+const PLATFORM_VOICE_GUIDE_NATIONAL = `${PLATFORM_VOICE_INTRO(true)}
 
-- Facebook: Older-skewing, community- and family-oriented readers. Richardson letter format — full story with history and context, start with the cost a real person is paying, end with one specific action. At least 3 paragraphs.
-- Instagram/Threads: Younger-adult, millennial-leaning readers. Lead with the most visceral, concrete version of the cost — make the first sentence hit. Keep it human and visual.
-- BlueSky: Policy-literate readers who reward nuance and depth. Thoughtful and substantive — willing to sit with a claim and unpack it.
-- Twitter/X: Confrontational, visceral, built to be screenshotted — a shout not an essay. Short, blunt words at a high school reading level, not college. Raw gut-punch, not a reasoned takeaway.
-- TikTok: Gen Z-adjacent, "smart friend" energy. Open with the hook nobody expects a politician to say out loud — the "wait, really?" moment. Authenticity and mild irreverence.`;
+- Facebook: Richardson letter format — full story with history and context, start with the cost a real person is paying, end with one specific action. At least 3 paragraphs.
+${PLATFORM_VOICE_INSTAGRAM_LINE}
+${PLATFORM_VOICE_THREADS_LINE}
+${PLATFORM_VOICE_BLUESKY_LINE}
+${PLATFORM_VOICE_TWITTER_LINE}
+- TikTok: ${PLATFORM_VOICE_TIKTOK_CORE} Authenticity and mild irreverence.`;
 
 // Shared "guardrail + AI-tell + platform-voice" block and its "hashtag ban
 // + JSON contract" counterpart (added Aug 2026, Batch 2 messaging-system
