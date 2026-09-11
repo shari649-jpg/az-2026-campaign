@@ -77,6 +77,15 @@ async function authorize(app, idToken) {
   if (caller.orgAdmin === true && caller.orgId) {
     return { callerUid: decoded.uid, forcedOrgId: caller.orgId };
   }
+  // Manager branch (Sept 2026) — same confirmed 403 bug as manage-user.mjs
+  // (see that file's matching comment for the full history). Reuses the
+  // exact same forcedOrgId mechanism org admin already has below — a
+  // Manager's invite is always forced to "org" type, always their own
+  // org, regardless of what the request body claims, no new code path
+  // needed downstream of this function.
+  if (caller.role === "manager" && caller.orgId) {
+    return { callerUid: decoded.uid, forcedOrgId: caller.orgId };
+  }
   throw new Error("forbidden");
 }
 
