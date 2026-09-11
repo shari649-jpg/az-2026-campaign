@@ -78,6 +78,75 @@ function getAdminApp() {
   return admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 
+// IP-based rate limiting (Sept 2026) — this endpoint has no uid to key off
+// of at all (deliberately public/unauthenticated, per the file's own header
+// comment), so rateLimitHelper.mjs's existing per-user pattern doesn't
+// apply directly here. Before this, there was NO limit of any kind on a
+// fully public endpoint that fires a real Google Civic API call plus a
+// Firestore read on every single request — real exposure: a script could
+// exhaust the Civic API quota (breaking the tool for actual voters) or run
+// up Firestore read costs, and nothing here would even notice.
+//
+// Extraction order matches Netlify's documented behavior: it sets
+// x-nf-client-connection-ip to the real client IP on Functions traffic;
+// falling back to the first hop in x-forwarded-for covers any path where
+// that header isn't present, and "unknown" is the final fallback so a
+// missing IP fails to a single shared bucket rather than skipping the
+// check entirely.
+function getClientIp(req) {
+  const direct = req.headers.get("x-nf-client-connection-ip");
+  if (direct) return direct;
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0].trim();
+  return "unknown";
+}
+
+// 20 requests/hour per IP. Deliberately generous, not tuned against real
+// traffic yet — same "definitely won't block legitimate use, revisit with
+// real data" posture as rateLimitHelper.mjs's own limits. Sized to allow a
+// real person looking up several addresses (their own, then a few family
+// members') comfortably within one sitting, while still bounding a script
+// to a small multiple of plausible real usage rather than unlimited calls.
+// A fixed 1-hour window, not a rolling one — same simplicity tradeoff
+// rateLimitHelper.mjs's own daily window already accepts.
+const PUBLIC_LOOKUP_LIMIT = 20;
+const PUBLIC_LOOKUP_WINDOW_MS = 60 * 60 * 1000;
+
+// Firestore doc IDs can't contain "/" (IPv6 addresses never do; this is
+// just defensive in case a proxy ever hands back something unexpected in
+// the header instead of a clean IP).
+function sanitizeIpForDocId(ip) {
+  return (ip || "unknown").replace(/\//g, "_").slice(0, 200);
+}
+
+async function checkAndIncrementPublicLookupLimit(app, ip) {
+  const db = admin.firestore(app);
+  const ref = db.doc(`publicLookupRateLimit/${sanitizeIpForDocId(ip)}`);
+  const now = Date.now();
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const data = snap.exists ? snap.data() : null;
+      const windowStillOpen = data && data.windowStart && (now - data.windowStart.toMillis()) < PUBLIC_LOOKUP_WINDOW_MS;
+      const currentCount = windowStillOpen ? (data.count || 0) : 0;
+      if (currentCount >= PUBLIC_LOOKUP_LIMIT) {
+        return { blocked: true };
+      }
+      tx.set(ref, {
+        count: currentCount + 1,
+        windowStart: windowStillOpen ? data.windowStart : admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return { blocked: false };
+    });
+  } catch (err) {
+    // Fail OPEN on a rate-limit-check error — a Firestore hiccup shouldn't
+    // take down a public tool real voters are trying to use. Logged so a
+    // pattern of failures is still visible, just never blocks on its own.
+    console.warn(`[public-voter-lookup] rate limit check failed for ip=${ip} (failing open): ${err.message}`);
+    return { blocked: false };
+  }
+}
+
 function getSheetsAuthClient() {
   let credentials;
   try {
@@ -303,6 +372,19 @@ export default async function (req) {
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
   try {
+    const app = getAdminApp();
+
+    // Rate limit check FIRST, before the address is even parsed — the
+    // whole point is to avoid spending a Civic API call or a Firestore
+    // read on a request that's already over the limit.
+    const clientIp = getClientIp(req);
+    const rateCheck = await checkAndIncrementPublicLookupLimit(app, clientIp);
+    if (rateCheck.blocked) {
+      return new Response(JSON.stringify({
+        error: "Too many lookups from this connection recently. Please wait a bit and try again.",
+      }), { status: 429, headers: corsHeaders(req) });
+    }
+
     const body = await req.json();
     const address = (body.address || "").trim();
     if (!address) {
@@ -320,7 +402,6 @@ export default async function (req) {
       return new Response(JSON.stringify({ error: err.message }), { status: 400, headers: corsHeaders(req) });
     }
 
-    const app = getAdminApp();
     const db = admin.firestore(app);
     // Fetch candidates (Firestore) and ballot measures (Google Sheets) in
     // parallel — two independent data sources, no reason to serialize them.
