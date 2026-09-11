@@ -32,7 +32,14 @@ const RACE_SECTIONS = [
 
 export default function VoterLookupPage() {
   const [address, setAddress] = useState("");
-  const [demOnly, setDemOnly] = useState(false);
+  // showAllParties (Sept 2026) — replaces the old demOnly checkbox's
+  // semantics. Default view is now Democrats-only (matches this org's
+  // actual use case); this checkbox is the opt-IN to also see
+  // Republicans, not an opt-in to filter down to Democrats. The backend
+  // contract (public-voter-lookup.mjs) is unchanged — it still expects a
+  // `demOnly` boolean and still means the same thing there; this flag is
+  // just inverted right before the request is sent, below.
+  const [showAllParties, setShowAllParties] = useState(false);
   const [state, setState] = useState("idle");
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
@@ -46,7 +53,7 @@ export default function VoterLookupPage() {
       const res = await fetch("/.netlify/functions/public-voter-lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: address.trim(), demOnly }),
+        body: JSON.stringify({ address: address.trim(), demOnly: !showAllParties }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || "Couldn't look that up.");
@@ -92,11 +99,11 @@ export default function VoterLookupPage() {
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: CHARCOAL, cursor: "pointer" }}>
             <input
               type="checkbox"
-              checked={demOnly}
-              onChange={e => { setDemOnly(e.target.checked); handleChange(); }}
+              checked={showAllParties}
+              onChange={e => { setShowAllParties(e.target.checked); handleChange(); }}
               style={{ width: 18, height: 18, accentColor: TEAL, cursor: "pointer" }}
             />
-            Show Democratic candidates only
+            Also show Republican candidates
           </label>
           <button
             type="submit"
@@ -184,6 +191,11 @@ export default function VoterLookupPage() {
 function CandidateRow({ candidate, isLast }) {
   const [photoUrl, setPhotoUrl] = useState(null);
   const [photoTried, setPhotoTried] = useState(false);
+  // detailsOpen (Sept 2026) — recordAccomplishments text runs long and was
+  // pushing candidate cards well past a phone screen's fold on this
+  // mobile-first page. Collapsed by default; a button reveals it instead
+  // of it always rendering in full.
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   if (!photoTried && candidate.photoFilename) {
     setPhotoTried(true);
@@ -237,12 +249,38 @@ function CandidateRow({ candidate, isLast }) {
             {initial}
           </div>
         )}
-        {candidate.recordAccomplishments && (
-          <p style={{ fontSize: 13.5, color: CHARCOAL, lineHeight: 1.6, margin: 0 }}>
-            {candidate.recordAccomplishments}
-          </p>
+        {candidate.recordAccomplishments && !detailsOpen && (
+          <button
+            type="button"
+            onClick={() => setDetailsOpen(true)}
+            style={{
+              fontSize: 13, fontWeight: 700, color: TEAL, background: "none",
+              border: `1.5px solid ${TEAL}`, borderRadius: 8, padding: "8px 14px",
+              cursor: "pointer", fontFamily: "inherit", alignSelf: "center",
+            }}
+          >
+            View details
+          </button>
         )}
       </div>
+      {candidate.recordAccomplishments && detailsOpen && (
+        <div style={{ marginTop: 12 }}>
+          <p style={{ fontSize: 13.5, color: CHARCOAL, lineHeight: 1.6, margin: "0 0 8px" }}>
+            {candidate.recordAccomplishments}
+          </p>
+          <button
+            type="button"
+            onClick={() => setDetailsOpen(false)}
+            style={{
+              fontSize: 12.5, fontWeight: 700, color: "#999", background: "none",
+              border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit",
+              textDecoration: "underline",
+            }}
+          >
+            Hide details
+          </button>
+        </div>
+      )}
     </div>
   );
 }
