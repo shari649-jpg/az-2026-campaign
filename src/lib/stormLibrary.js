@@ -209,8 +209,29 @@ export async function updateStorm(id, data) {
   await updateDoc(doc(db, COL, id), { ...data, updatedAt: serverTimestamp() });
 }
 
-export async function setStormStatus(id, status, role) {
-  if (!canReview(role) && status !== STORM_STATUS.DRAFT) {
+// setStormStatus (Sept 2026 fix) — CONFIRMED REAL BUG closed here: this
+// function's own file header describes the storm's creator being able to
+// "manage a storm" they own, and StatusControl (StormsHubPage.jsx) has
+// always presented a plain Member with a working-looking "Submit for
+// Review" option on their own draft storm — but this function
+// unconditionally threw for ANY status other than DRAFT whenever the
+// caller wasn't a reviewer, with no exception for a Member submitting
+// their OWN draft. The option has been fully clickable and completely
+// non-functional since it was built; this closes that gap without
+// loosening anything else. A non-reviewer may now make exactly ONE
+// transition: their own storm, DRAFT -> PENDING_REVIEW. Every other case
+// (a reviewer's own broader transitions, a non-reviewer targeting any
+// other status, or a non-reviewer targeting a storm they don't own) is
+// still blocked exactly as before — this doesn't touch canReview()'s
+// existing authority over Active/Archived at all.
+export async function setStormStatus(id, status, role, storm = null, uid = null) {
+  const isOwnDraftSubmission = status === STORM_STATUS.PENDING_REVIEW
+    && storm?.status === STORM_STATUS.DRAFT
+    && !!storm?.createdBy?.uid
+    && !!uid
+    && storm.createdBy.uid === uid;
+
+  if (!canReview(role) && status !== STORM_STATUS.DRAFT && !isOwnDraftSubmission) {
     throw new Error("Only Managers and Administrators can change a storm's review status.");
   }
   const patch = { status, updatedAt: serverTimestamp() };
