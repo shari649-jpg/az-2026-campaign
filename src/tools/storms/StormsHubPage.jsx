@@ -549,7 +549,10 @@ function ManagerView({ role, uid }) {
 
   async function handleStatusChange(storm, status) {
     try {
-      await setStormStatus(storm.id, status, role);
+      // storm and uid passed through (Sept 2026) — see UserView's matching
+      // handleStatusChange comment. No-op for a real Manager/Admin caller
+      // here; passed for consistency with setStormStatus()'s real contract.
+      await setStormStatus(storm.id, status, role, storm, uid);
       notify(
         status === STORM_STATUS.ACTIVE ? "Storm activated." :
         status === STORM_STATUS.ARCHIVED ? "Storm archived." :
@@ -710,7 +713,12 @@ function UserView({ role, uid }) {
 
   async function handleStatusChange(storm, status) {
     try {
-      await setStormStatus(storm.id, status, role);
+      // storm and user.uid passed through (Sept 2026) — setStormStatus()
+      // needs both to verify a Member is submitting their OWN draft, not
+      // just checking role in isolation. Real Administrator/Manager
+      // callers are unaffected — canReview(role) already short-circuits
+      // before either value is even looked at for them.
+      await setStormStatus(storm.id, status, role, storm, user?.uid);
       notify(status === STORM_STATUS.PENDING_REVIEW ? "Submitted for review." : "Moved to Draft.");
       await load();
     } catch (e) { notify(e.message || "Couldn't update status.", "error"); }
