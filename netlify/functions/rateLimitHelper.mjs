@@ -30,9 +30,26 @@
 import admin from "firebase-admin";
 
 const LIMITS = {
-  administrator: 200,
-  manager:       100,
-  user:          50,
+  // ×6 (Sept 2026, un-consolidation) — was {200,100,50}. Message Machine's
+  // generateAll now increments this shared daily-call count once PER
+  // PLATFORM instead of once per click (see generate-message-background.mjs's
+  // "Platform-call un-consolidation, take two" comment) — deliberately kept
+  // per-platform granular rather than counted once per job, on request, for
+  // future usage analysis. ×6 matches the worst case (all 6 platforms
+  // selected every time) so no one's effective daily capacity regresses
+  // versus before this change. This limit is shared across every AI tool in
+  // the app, not just Message Machine (Storm, Sandbox, Rebuttal, Rapid
+  // Response, bill lookup, transcription, etc. all call
+  // checkAndIncrementRateLimit too) — loosening it here loosens it
+  // everywhere, not just for generateAll. Accepted as the simpler, lower-
+  // risk trade for now: the real cost backstop is checkGenerationBalance
+  // (credits), not this count, which exists mainly as a fairness/abuse
+  // guard rather than the primary cost control. Revisit with real
+  // platforms-per-click data once available — this is a "definitely won't
+  // regress anyone" number, not a tuned one.
+  administrator: 1200,
+  manager:       600,
+  user:          300,
 };
 
 const WARNING_THRESHOLD = 0.75;
