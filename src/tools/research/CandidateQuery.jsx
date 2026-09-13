@@ -331,29 +331,69 @@ export default function CandidateQuery() {
     setPushed(false);
   }
 
+  // CORRECTED Sept 13, 2026 — CONFIRMED real bug, found via direct user
+  // report with screenshots: whole-candidate selections (selected/
+  // selectedList — checking the box next to a candidate's name, selecting
+  // their full record) and individual fact selections (selectedFacts —
+  // checking one specific fact box) were treated as mutually exclusive
+  // alternatives via an if/else, not something to combine. The moment
+  // ANY individual fact was checked anywhere on the page, the function
+  // took the "if" branch and built issueText ENTIRELY from selectedFacts —
+  // silently dropping every whole-candidate selection, even though the
+  // page's own persistent "N selected: ..." banner kept showing them as
+  // selected the whole time. Real incident: two candidates' full 7-fact
+  // records were selected, one specific fact was individually selected for
+  // each of three other candidates — what actually reached Message Machine
+  // was only the three individual facts; both full records vanished with
+  // no error, no warning, nothing in the UI indicating they'd been dropped.
+  // Fixed to always combine both sources, with the whole-candidate version
+  // taking precedence for any candidate that has both (avoids duplicating
+  // that candidate's content if someone selects their full record AND
+  // separately checks one of their individual fact boxes too).
   function pushToMessageMachine() {
     const selectedFactList = Object.values(selectedFacts);
     const hasSelectedFacts = selectedFactList.length > 0;
-    let issueText;
+    const sections = [];
+
+    // Whole-candidate selections first — full record, same formatting the
+    // old "no facts selected" branch always used.
+    if (hasSelected) {
+      selectedList.forEach(c => sections.push(factsToText(c)));
+    }
+
+    // Individually-selected facts, grouped by candidate — but SKIP any
+    // candidate already fully covered above, so a candidate selected both
+    // ways doesn't get duplicated in the output.
     if (hasSelectedFacts) {
+      const wholeCandidateNames = new Set(selectedList.map(c => c.candidate_name));
       const byCandidate = {};
       selectedFactList.forEach(({ candidate, fact }) => {
+        if (wholeCandidateNames.has(candidate.candidate_name)) return;
         const label = candidateLabel(candidate);
         if (!byCandidate[label]) byCandidate[label] = [];
         const label2 = FACT_LABELS[fact.type] || (fact.type || '').toUpperCase();
         const tag = fact.type ? `[${label2}] ` : '';
         byCandidate[label].push(`• ${tag}${fact.text}`);
       });
-      issueText = Object.entries(byCandidate)
-        .map(([label, lines]) => `── ${label} ──\n${lines.join('\n')}`)
-        .join('\n\n');
-    } else {
-      const candidates = hasSelected ? selectedList : (results || []);
-      issueText = candidates.map(c => factsToText(c)).join('\n\n');
+      Object.entries(byCandidate).forEach(([label, lines]) => {
+        sections.push(`── ${label} ──\n${lines.join('\n')}`);
+      });
     }
+
+    // Nothing selected at all (neither whole candidates nor individual
+    // facts) — fall back to every visible result, same as before.
+    const issueText = sections.length > 0
+      ? sections.join('\n\n')
+      : (results || []).map(c => factsToText(c)).join('\n\n');
+
+    const hasAnySelection = hasSelected || hasSelectedFacts;
+    const sourceTitle = hasAnySelection
+      ? 'Selected Research — AZ 2026 Research'
+      : `Candidate Research: ${(results || []).map(c => c.candidate_name).join(', ')}`;
+
     const payload = {
       sourceArticleId: null,
-      sourceTitle: hasSelectedFacts ? 'Selected Facts — AZ 2026 Research' : `Candidate Research: ${(hasSelected ? selectedList : (results||[])).map(c => c.candidate_name).join(', ')}`,
+      sourceTitle,
       sourcePublication: 'AZ 2026 Candidate Research',
       issueText,
       focalPoint: '',
@@ -471,8 +511,15 @@ export default function CandidateQuery() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
             <p style={{ fontSize: 15, color: B.textMid, fontWeight: 700 }}>
               {orgFilteredResults.length} candidate{orgFilteredResults.length !== 1 ? 's' : ''} found{filter !== 'all' ? ` (filtered: ${filter})` : ''}
+              {/* CORRECTED Sept 13, 2026 — was if/else (only ever showed
+                  ONE of "N facts selected" or "N candidates selected",
+                  matching the same mutually-exclusive bug
+                  pushToMessageMachine() had — see that function's comment
+                  for the real incident this closes). Now shows both counts
+                  together whenever both exist, so the header always
+                  matches what will actually get sent. */}
+              {hasSelected && <span style={{ color: B.teal }}> · {selectedList.length} candidate{selectedList.length !== 1 ? 's' : ''} selected</span>}
               {Object.keys(selectedFacts).length > 0 && <span style={{ color: B.teal }}> · {Object.keys(selectedFacts).length} fact{Object.keys(selectedFacts).length !== 1 ? 's' : ''} selected</span>}
-              {Object.keys(selectedFacts).length === 0 && hasSelected && <span style={{ color: B.teal }}> · {selectedList.length} candidate{selectedList.length !== 1 ? 's' : ''} selected</span>}
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {(hasSelected || Object.keys(selectedFacts).length > 0) && (
@@ -483,8 +530,11 @@ export default function CandidateQuery() {
                 style={{ ...S.btnGold, opacity: pushed ? 0.7 : 1, cursor: pushed ? 'default' : 'pointer' }}
               >
                 {pushed ? '✓ Sent to Message Machine'
-                  : Object.keys(selectedFacts).length > 0 ? `Send ${Object.keys(selectedFacts).length} fact${Object.keys(selectedFacts).length !== 1 ? 's' : ''} to Message Machine →`
-                  : hasSelected ? `Send ${selectedList.length} candidate${selectedList.length !== 1 ? 's' : ''} to Message Machine →`
+                  : (hasSelected || Object.keys(selectedFacts).length > 0)
+                    ? `Send ${[
+                        hasSelected ? `${selectedList.length} candidate${selectedList.length !== 1 ? 's' : ''}` : null,
+                        Object.keys(selectedFacts).length > 0 ? `${Object.keys(selectedFacts).length} fact${Object.keys(selectedFacts).length !== 1 ? 's' : ''}` : null,
+                      ].filter(Boolean).join(' + ')} to Message Machine →`
                   : 'Send all to Message Machine →'}
               </button>
             </div>
@@ -686,7 +736,21 @@ export default function CandidateQuery() {
           })}
 
           {/* Floating selection bar */}
-          {hasSelected && (
+          {/* CORRECTED Sept 13, 2026 — was `{hasSelected && (...)}`, so this
+              bar never appeared at all when someone had ONLY individual
+              facts selected (zero whole-candidate selections) — their only
+              feedback was the header counter above. Also only ever
+              mentioned whole-candidate selections in its text, even though
+              pushToMessageMachine() (see that function's own comment) can
+              combine both kinds — the exact incomplete-feedback gap that
+              let the underlying bug go unnoticed: a person could see "2
+              selected: [names]" here, reasonably trust it as the complete
+              picture, and not realize individually-selected facts for
+              other candidates were also about to be included (or, before
+              the fix, silently override them entirely). Now shows both
+              counts whenever both exist, and appears whenever there's
+              anything selected at all. */}
+          {(hasSelected || Object.keys(selectedFacts).length > 0) && (
             <div style={{
               position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
               background: B.teal, color: '#fff', borderRadius: 12,
@@ -695,8 +759,16 @@ export default function CandidateQuery() {
               maxWidth: '90vw',
             }}>
               <span style={{ fontWeight: 700, fontSize: 15 }}>
-                {selectedList.length} candidate{selectedList.length !== 1 ? 's' : ''} selected:
-                {' '}{selectedList.map(c => c.candidate_name).join(', ')}
+                {hasSelected && (
+                  <>
+                    {selectedList.length} candidate{selectedList.length !== 1 ? 's' : ''} selected:
+                    {' '}{selectedList.map(c => c.candidate_name).join(', ')}
+                  </>
+                )}
+                {hasSelected && Object.keys(selectedFacts).length > 0 && ' · '}
+                {Object.keys(selectedFacts).length > 0 && (
+                  <>{Object.keys(selectedFacts).length} individual fact{Object.keys(selectedFacts).length !== 1 ? 's' : ''} selected</>
+                )}
               </span>
               <button
                 onClick={pushToMessageMachine}
@@ -704,7 +776,7 @@ export default function CandidateQuery() {
               >
                 {pushed ? '✓ Sent!' : 'Send to Message Machine →'}
               </button>
-              <button onClick={() => setSelected({})} style={{ background: 'transparent', color: 'rgba(255,255,255,0.7)', border: 'none', cursor: 'pointer', fontSize: 20, padding: 0, lineHeight: 1 }}>✕</button>
+              <button onClick={() => { setSelected({}); setSelectedFacts({}); }} style={{ background: 'transparent', color: 'rgba(255,255,255,0.7)', border: 'none', cursor: 'pointer', fontSize: 20, padding: 0, lineHeight: 1 }}>✕</button>
             </div>
           )}
         </>
