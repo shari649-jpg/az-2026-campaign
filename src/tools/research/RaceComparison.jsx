@@ -276,24 +276,42 @@ export default function RaceComparison() {
     setPushed(false);
   }
 
+  // CORRECTED Sept 13, 2026 — CONFIRMED real bug, same root cause as
+  // CandidateQuery.jsx's identical fix (see that file's own comment for
+  // the full incident writeup — a real user report with screenshots
+  // showing this exact function silently dropping whole-candidate
+  // selections). This file has its OWN, entirely separate copy of the
+  // same logic — fixing CandidateQuery.jsx alone did nothing here, which
+  // is why the bug kept reproducing after that first fix shipped: this is
+  // the file that actually powers the "Compare Races" tab, which is what
+  // was being tested the whole time, not "Search Candidates."
+  // Combines whole-candidate (selected/selectedList) and individual-fact
+  // (selectedFacts) sources instead of treating them as if/else
+  // alternatives. Whole-candidate takes precedence for any candidate that
+  // has both, so a candidate selected both ways doesn't get duplicated.
   function buildCandidateIssueText() {
+    const sections = [];
+    if (hasSelected) {
+      selectedList.forEach(c => sections.push(factsToText(c)));
+    }
     if (hasSelectedFacts) {
+      const wholeCandidateNames = new Set(selectedList.map(c => c.candidate_name));
       const byCandidate = {};
       selectedFactList.forEach(({ candidate, fact }) => {
+        if (wholeCandidateNames.has(candidate.candidate_name)) return;
         const label = candidateLabel(candidate);
         if (!byCandidate[label]) byCandidate[label] = [];
         const label2 = FACT_LABELS[fact.type] || (fact.type || '').toUpperCase();
         const tag = fact.type ? `[${label2}] ` : '';
         byCandidate[label].push(`• ${tag}${fact.text}`);
       });
-      return Object.entries(byCandidate)
-        .map(([label, lines]) => `── ${label} ──\n${lines.join('\n')}`)
-        .join('\n\n');
-    } else if (hasSelected) {
-      return selectedList.map(c => factsToText(c)).join('\n\n');
-    } else {
-      return (races || []).flatMap(r => r.candidates).map(c => factsToText(c)).join('\n\n');
+      Object.entries(byCandidate).forEach(([label, lines]) => {
+        sections.push(`── ${label} ──\n${lines.join('\n')}`);
+      });
     }
+    return sections.length > 0
+      ? sections.join('\n\n')
+      : (races || []).flatMap(r => r.candidates).map(c => factsToText(c)).join('\n\n');
   }
 
   // Must match the RURAL_MULTI_COUNTY sentinel in message-machine.jsx — these
@@ -312,11 +330,18 @@ export default function RaceComparison() {
     return c.includes(',') ? RURAL_MULTI_COUNTY : c;
   }
 
+  // CORRECTED Sept 13, 2026 — candidatesForTitle/sourceTitle were also
+  // mutually exclusive (hasSelectedFacts OR hasSelected, never both). Now
+  // reflects whatever combination is actually active, matching
+  // buildCandidateIssueText()'s own combined logic above.
   function doSend(issueText, withDistrict, county) {
-    const candidatesForTitle = hasSelected ? selectedList : (races||[]).flatMap(r=>r.candidates);
+    const hasAnySelection = hasSelected || hasSelectedFacts;
+    const candidatesForTitle = hasAnySelection
+      ? [...new Map([...selectedList, ...selectedFactList.map(({ candidate }) => candidate)].map(c => [c.candidate_name, c])).values()]
+      : (races || []).flatMap(r => r.candidates);
     const payload = {
       sourceArticleId:   null,
-      sourceTitle:       hasSelectedFacts ? 'Selected Facts — AZ 2026 Research' : `Candidate Research: ${candidatesForTitle.map(c=>c.candidate_name).join(', ')}`,
+      sourceTitle:       hasAnySelection ? 'Selected Research — AZ 2026 Research' : `Candidate Research: ${candidatesForTitle.map(c=>c.candidate_name).join(', ')}`,
       sourcePublication: 'AZ 2026 Candidate Research',
       issueText,
       county:            withDistrict ? (county || null) : null,
@@ -333,10 +358,15 @@ export default function RaceComparison() {
   function pushToMessageMachine() {
     const candidateIssueText = buildCandidateIssueText();
 
-    // Check if all selected candidates share a single district that exists in districtMap
-    const activeCandidates = hasSelectedFacts
-      ? [...new Map(selectedFactList.map(({candidate}) => [candidate.candidate_name, candidate])).values()]
-      : hasSelected ? selectedList : (races||[]).flatMap(r=>r.candidates);
+    // CORRECTED Sept 13, 2026 — this also only ever looked at ONE
+    // selection source for district-matching (whichever won the old
+    // if/else), so a district-context prompt could be silently skipped
+    // for candidates selected the other way. Now considers everyone
+    // selected either way when deciding whether they share one district.
+    const hasAnySelection = hasSelected || hasSelectedFacts;
+    const activeCandidates = hasAnySelection
+      ? [...new Map([...selectedList, ...selectedFactList.map(({ candidate }) => candidate)].map(c => [c.candidate_name, c])).values()]
+      : (races || []).flatMap(r => r.candidates);
 
     const districts = [...new Set(activeCandidates.map(c => c.district).filter(Boolean))];
     const singleDistrict = districts.length === 1 ? districtMap[districts[0]] : null;
@@ -444,8 +474,11 @@ export default function RaceComparison() {
           <p style={{ fontSize: 15, color: B.textMid, fontWeight: 700, margin: 0 }}>
             {filteredRaces.length} race{filteredRaces.length !== 1 ? 's' : ''}
             {search ? ` matching "${search}"` : ''}
+            {/* CORRECTED Sept 13, 2026 — was if/else, only ever showed ONE
+                of "N facts selected" or "N candidates selected" — same
+                fix as CandidateQuery.jsx's matching comment. */}
+            {hasSelected && <span style={{ color: B.teal }}> · {selectedList.length} candidate{selectedList.length !== 1 ? 's' : ''} selected</span>}
             {hasSelectedFacts && <span style={{ color: B.teal }}> · {selectedFactList.length} fact{selectedFactList.length !== 1 ? 's' : ''} selected</span>}
-            {!hasSelectedFacts && hasSelected && <span style={{ color: B.teal }}> · {selectedList.length} candidate{selectedList.length !== 1 ? 's' : ''} selected</span>}
           </p>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {(hasSelected || hasSelectedFacts) && (
@@ -456,8 +489,11 @@ export default function RaceComparison() {
               style={{ ...S.btnGold, opacity: pushed ? 0.7 : 1, cursor: pushed ? 'default' : 'pointer' }}
             >
               {pushed ? '✓ Sent to Message Machine'
-                : hasSelectedFacts ? `Send ${selectedFactList.length} fact${selectedFactList.length!==1?'s':''} to Message Machine →`
-                : hasSelected ? `Send ${selectedList.length} selected to Message Machine →`
+                : (hasSelected || hasSelectedFacts)
+                  ? `Send ${[
+                      hasSelected ? `${selectedList.length} candidate${selectedList.length !== 1 ? 's' : ''}` : null,
+                      hasSelectedFacts ? `${selectedFactList.length} fact${selectedFactList.length !== 1 ? 's' : ''}` : null,
+                    ].filter(Boolean).join(' + ')} to Message Machine →`
                 : 'Send all to Message Machine →'}
             </button>
           </div>
@@ -740,7 +776,13 @@ export default function RaceComparison() {
       )}
 
       {/* Floating selection bar — also hosts district prompt */}
-      {(hasSelected || districtPrompt) && (
+      {/* CORRECTED Sept 13, 2026 — visibility condition was
+          `hasSelected || districtPrompt`, which never even checked
+          hasSelectedFacts — this bar wouldn't appear AT ALL if someone had
+          only individual facts selected, zero whole-candidate selections.
+          Text was also whole-candidate-only, same gap CandidateQuery.jsx
+          had (see that file's matching comment). */}
+      {(hasSelected || hasSelectedFacts || districtPrompt) && (
         <div style={{
           position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
           background: B.teal, color: '#fff', borderRadius: 12,
@@ -769,7 +811,13 @@ export default function RaceComparison() {
           ) : (
             <>
               <span style={{ fontWeight: 700, fontSize: 15 }}>
-                {selectedList.length} selected: {selectedList.map(c => c.candidate_name).join(', ')}
+                {hasSelected && (
+                  <>{selectedList.length} candidate{selectedList.length !== 1 ? 's' : ''} selected: {selectedList.map(c => c.candidate_name).join(', ')}</>
+                )}
+                {hasSelected && hasSelectedFacts && ' · '}
+                {hasSelectedFacts && (
+                  <>{selectedFactList.length} individual fact{selectedFactList.length !== 1 ? 's' : ''} selected</>
+                )}
               </span>
               <button
                 onClick={pushToMessageMachine}
