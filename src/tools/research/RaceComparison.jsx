@@ -206,6 +206,29 @@ export default function RaceComparison() {
     }
   }
 
+  // New Search (Sept 13, 2026) — REPLACES the old separate "Refresh" +
+  // "clear selections" buttons entirely, at the person's explicit
+  // direction: one single action that lets someone genuinely start over,
+  // not two partial ones. Resets every piece of search/selection state
+  // this page tracks, then re-fetches races fresh — the same underlying
+  // fetch loadRaces() always did, just no longer leaving anything behind.
+  // Deliberately does NOT reset activeOrg — which org you're viewing is a
+  // standing preference, not part of "the current search," and silently
+  // switching it back on a reset would be a surprising side effect, not
+  // a "start over" a person actually asked for.
+  function startNewSearch() {
+    setSearch('');
+    setSelected({});
+    setSelectedFacts({});
+    setExpanded({});
+    setExpandedFacts({});
+    setDistrictExpanded({});
+    setDistrictPrompt(null);
+    setPushed(false);
+    setLsError(false);
+    loadRaces();
+  }
+
   const selectedList = Object.values(selected);
   const hasSelected  = selectedList.length > 0;
   const selectedFactList = Object.values(selectedFacts);
@@ -431,7 +454,7 @@ export default function RaceComparison() {
         </select>
       </div>
 
-      {/* Search + Refresh row */}
+      {/* Search + New Search row */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, alignItems: 'flex-end' }}>
         <div style={{ flex: 1 }}>
           <input
@@ -441,7 +464,10 @@ export default function RaceComparison() {
             onChange={e => { setSearch(e.target.value); setPushed(false); }}
           />
         </div>
-        <button onClick={loadRaces} style={{ ...S.btnPrimary, whiteSpace: 'nowrap' }}>↺ Refresh</button>
+        {/* Replaces the old separate "Refresh" and "clear selections"
+            buttons — one action, real start-over. See startNewSearch()'s
+            own comment for exactly what it resets. */}
+        <button onClick={startNewSearch} style={{ ...S.btnPrimary, whiteSpace: 'nowrap' }}>↺ New Search</button>
       </div>
 
       {/* Error */}
