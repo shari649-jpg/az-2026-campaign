@@ -34,8 +34,9 @@ const WAITLIST_STATUS_COLORS = {
 // by hand since one lives in the client bundle and the other in a Netlify
 // function. Only used here to decide whether to show the same-day override
 // control (Handoff #15, decision #9); the actual enforcement is server-side.
-// ×6 (Sept 2026, un-consolidation) — see rateLimitHelper.mjs's comment.
-const DAILY_LIMITS = { administrator: 1200, manager: 600, user: 300 };
+// REVERTED Sept 13, 2026 — back to {200,100,50}; see rateLimitHelper.mjs's
+// comment.
+const DAILY_LIMITS = { administrator: 200, manager: 100, user: 50 };
 
 function todayUTC() { return new Date().toISOString().slice(0, 10); }
 
@@ -1603,6 +1604,21 @@ export default function AdminPage() {
           // global app configuration. Everything else (Users, Waitlist,
           // Community Notes, Headshots, Usage, Candidates) confirmed
           // include for Managers.
+          //
+          // RESOLVED Sept 2026 (was a flagged open conflict as of Handoff
+          // #43/#49): a separate, older handoff had documented the Public
+          // Regenerate kill switch — the only thing that actually lives on
+          // the Settings tab today — as a Manager capability, contradicting
+          // the "not settings" instruction above. Explicitly revisited and
+          // decided: Settings stays admin-only, full stop. No code change
+          // was needed — this exclusion was already doing the right thing;
+          // what needed fixing was the stale claim that Managers have this
+          // capability, wherever that's written down outside this file
+          // (e.g. the Admin/Manager Manual, if it makes the same claim —
+          // not checked as part of this fix, worth a look if that doc gets
+          // revised next). If a future handoff references this as still
+          // open, it isn't — this comment is the record that it was
+          // decided, not overlooked.
           ].filter(tab => !isManagerScope || !["settings", "orgs"].includes(tab.id))
           .map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSearch(""); }}
