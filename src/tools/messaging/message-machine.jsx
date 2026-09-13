@@ -120,7 +120,7 @@ const PLATFORMS = [
 // plus a genuinely small delta" — Facebook (format instruction + its own
 // paragraph floor) and TikTok (one added sentence) are the only two
 // platforms where National still says anything Neutral/AZ doesn't.
-const PLATFORM_VOICE_INTRO = (national) => `PLATFORM VOICE — each platform${national ? " below has its own fixed baseline personality on top of the National Style Guide above" : " has its own fixed baseline personality"}; Tone, Style, and Voice/Persona settings shape HOW that personality delivers the message, never flatten or replace it. A "Professional" tone on Twitter/X should still read sharper and more clipped than the same tone on Facebook.`;
+const PLATFORM_VOICE_INTRO = (national) => `PLATFORM VOICE — each platform${national ? " below has its own fixed baseline personality on top of the National Style Guide above" : " has its own fixed baseline personality"}; Tone, Style, and Voice/Persona settings shape HOW that personality delivers the message, never flatten or replace it. A "Sarcastic" tone on Twitter/X should still read sharper and more clipped than the same tone on Facebook.`;
 
 const PLATFORM_VOICE_BLUESKY_LINE = `- BlueSky: Policy-literate readers who reward nuance and depth over punchlines. Thoughtful and substantive — willing to sit with a claim and unpack it, measured even when angry.`;
 
@@ -239,48 +239,51 @@ const GENERATION_MAX_TOKENS = 8000;
 
 const AUDIENCES = ["Democrat","Independent","Persuadable Republican","Disillusioned Voter","Brand New Voter"];
 
-// Style (Aug 2026 messaging-modifier revision): collapsed from 4 options to
-// 3 — "Contrast with Opponent" is gone, absorbed into "Strong Contrast".
-// Each non-neutral style now carries a real instructional block (see
-// STYLE_DEFINITIONS below) instead of just a label with nothing behind it —
-// previously "Style: Contrast with Opponent" reached Claude as a bare
-// string with zero definition, same root gap the Tone Modifiers had.
-const STYLES = [
-  { id: "neutral", label: "Neutral" },
-  { id: "pro_democrat", label: "Pro Democrat" },
-  { id: "strong_contrast", label: "Strong Contrast" },
-];
+// REMOVED Sept 13, 2026 — the Style parameter (Neutral/Pro Democrat/Strong
+// Contrast) is gone entirely, at the person's explicit direction, on the
+// reasoning that everything else already feeding the prompt (Issue/
+// Content, Focal Point, the coalition's own default framing) already
+// defines this — a separate Style selector was redundant on top of it,
+// not a distinct lever. Came up as part of the same review that found
+// Voice/Persona free-text and half the Tone Modifiers weren't reliably
+// showing up in real output either (see VOICE_PRESETS and
+// TONE_MODIFIER_DEFINITIONS below for those). If Style is ever
+// reconsidered, don't just restore the old STYLES/STYLE_DEFINITIONS pair
+// unchanged — the same "does this actually add anything the rest of the
+// prompt doesn't already establish" question applies to whatever replaces
+// it.
 
-// Real instructional text per style, injected into the prompt alongside the
-// bare label. Neutral intentionally has no entry — no additional
-// instruction beyond the label, matching prior (lack of) behavior.
-const STYLE_DEFINITIONS = {
-  pro_democrat: `PRO DEMOCRAT STYLE: Focus this post on what we stand for and the specific, concrete benefits to people — economic gains, quality of life, stronger families, better education building a stronger society and economy. Lead with what's offered, not what's opposed.`,
-  strong_contrast: `STRONG CONTRAST STYLE: Create a strong, direct contrast with opposing candidates, parties, or policies using specific, verifiable records, votes, public statements, and policy consequences. State what we support, what they support or have done, and how the difference affects people. Use assertive language. This must comply fully with the FACTUAL ACCURACY guardrail above — do not invent facts, misrepresent positions, speculate about motives, demean individuals, or target protected characteristics. Where a claim is uncertain, flag it for verification rather than presenting it as fact.`,
-};
-
-// Tone Modifiers (Aug 2026 messaging-modifier revision): previously these 11
-// labels reached Claude as bare words with NO instructional text behind any
-// of them anywhere in this file — that absence is why modifiers were
-// inconsistent and why Casual/Friendly read as nearly identical. Casual and
-// Friendly are now merged into one option, "Friendly", combining both
-// definitions. Every modifier below now carries a real, concrete
-// instruction — most with a specific required mechanical marker (a rhetorical
-// question, clipped fragments, etc.) so the model has something to actually
-// execute, not just a vibe to approximate.
-const MODIFIERS = ["Friendly","Witty","Sarcastic","Empathetic","Professional","Excited","Funny","Dramatic","Disgusted","Angry"];
+// Tone Modifiers (Aug 2026 messaging-modifier revision, trimmed and
+// re-tightened Sept 13, 2026): originally 11 labels reached Claude as bare
+// words with no instructional text at all. Aug 2026 gave every one of them
+// real definitions, but kept all 10 non-Friendly options. Real review
+// this session (comparing which modifiers actually showed up reliably in
+// generated output against which didn't) found Angry and Disgusted were
+// consistently present while several others weren't — not because those
+// two had definitions and the others didn't (all 10 did), but because
+// Angry/Disgusted happened to give concrete, checkable, sentence-level
+// rules ("fragments allowed," "no hedging language") while several others
+// gave softer, more abstract guidance a model can satisfy without
+// producing anything a reader would notice as distinct.
+//
+// Cut from 10 to 6, at the person's explicit direction: Friendly and
+// Professional dropped as redundant with the tool's own neutral default
+// register; Excited and Funny dropped as too close to Dramatic and Witty
+// respectively to reliably read as different choices. The 6 kept
+// (Sarcastic, Angry, Empathetic, Witty, Dramatic, Disgusted) were then
+// rewritten in the same concrete, mechanical register Angry/Disgusted
+// already had, rather than left at their old, softer wording — the goal
+// is that picking a modifier should mean something specific and visible in
+// the output, not just set a vibe the model may or may not act on.
+const MODIFIERS = ["Sarcastic","Angry","Empathetic","Witty","Dramatic","Disgusted"];
 
 const TONE_MODIFIER_DEFINITIONS = {
-  Friendly: "Contractions required. Conversational connectors (\"look,\" \"here's the thing,\" \"so\"). Shorter paragraphs. Warmer address terms and softer transitions. Vary sentence length — don't let every sentence run the same length or rhythm.",
-  Sarcastic: "Must include one instance of irony, exaggeration, or mock-sincerity (e.g., stating the opposite of what's meant, or restating an official's justification in a way that exposes its absurdity). Include at least one rhetorical question mocking the framing.",
-  Angry: "Shorter, clipped sentences. Fragments allowed. Direct address. No hedging language (\"might,\" \"could,\" \"seems\").",
-  Disgusted: "Visceral or contemptuous language. Physical/sensory metaphors acceptable. Shorter sentences than Friendly.",
-  Witty: "Requires wordplay, an unexpected comparison, or a punchline structure in at least one sentence. Should not read as purely declarative.",
-  Empathetic: "Recognizes people's concerns and emotions, uses compassionate language, and focuses on shared experiences and support.",
-  Professional: "Clear, polished, factual, and respectful; avoids slang, exaggeration, and overly casual phrasing.",
-  Excited: "Energetic, optimistic, and action-oriented; uses vivid language and momentum to make an opportunity or achievement feel urgent and motivating.",
-  Funny: "Light, witty, and approachable; may use playful phrasing or gentle humor without mocking people or minimizing serious issues.",
-  Dramatic: "High-stakes, emotionally resonant, and urgent; emphasizes consequences, conflict, and the importance of the moment without overstating facts.",
+  Sarcastic: "Must include at least one instance of irony, exaggeration, or mock-sincerity — stating the opposite of what's meant, or restating an official's justification in a way that exposes its absurdity. At least one rhetorical question that mocks the framing, not just asks it. No sincere praise anywhere in the post, even as a setup.",
+  Angry: "Short, clipped sentences. Fragments are allowed and encouraged. Direct address — \"you,\" \"they,\" never \"one.\" Zero hedging language — no \"might,\" \"could,\" \"seems,\" \"perhaps.\" No polite framing devices (\"with all due respect,\" \"to be fair\").",
+  Empathetic: "Open by naming the specific, concrete cost to a real person or family — not an abstract value. Use \"you\" and \"your family\" directly at least once. No policy jargon; describe consequences the way you'd describe them to a neighbor, not a committee. End on solidarity or a shared next step, not a statistic.",
+  Witty: "Requires genuine wordplay, an unexpected comparison, or a punchline structure in at least one full sentence — not just a knowing tone. The joke has to land on this post's actual facts, not read as generic snark that could apply to anything.",
+  Dramatic: "Open with a short, high-stakes sentence stating what's actually at risk — not a lead-in. At least one moment of direct conflict, stated plainly, not softened. Escalating structure: each paragraph raises the stakes higher than the last, ending on the highest-stakes line in the post.",
+  Disgusted: "Visceral, contemptuous language — treat the subject as something repellent, not just wrong. Physical or sensory metaphors encouraged (rot, stench, filth, slime). Short, blunt sentences. No academic or euphemistic phrasing.",
 };
 const VOICE_PRESETS = [
   {
@@ -389,7 +392,6 @@ const SPEAKER_PERSPECTIVES = [
 
 // Defaults used when optional fields are left blank
 const DEFAULT_AUDIENCE = "general moderate voter who is not very engaged in politics";
-const DEFAULT_STYLE    = "neutral";
 
 // Human-readable generation params captured at Push-to-Storm time (Handoff
 // #22, option A) so a Storm post pushed from here can show what settings
@@ -994,13 +996,6 @@ export default function App() {
   const buildPromptParts = (platforms) => {
     const plats = PLATFORMS.filter(p=>platforms.includes(p.id)).map(p=>`${p.name} (max ${p.maxChars} chars)`).join(", ");
     const audienceLabel = formData.audience || DEFAULT_AUDIENCE;
-    const styleObj = STYLES.find(s=>s.id===(formData.style||DEFAULT_STYLE));
-    const styleLabel = styleObj ? styleObj.label : "Neutral";
-    // Style definitions (Aug 2026 messaging-modifier revision) — see
-    // STYLE_DEFINITIONS above. Neutral has no entry, so styleDefBlock is ""
-    // and behavior is unchanged from before this revision for that case.
-    const styleDef = STYLE_DEFINITIONS[formData.style] || "";
-    const styleDefBlock = styleDef ? `${styleDef}\n` : "";
     // Tone Modifier definitions (Aug 2026 messaging-modifier revision) —
     // previously this was just "Tone: <label>" with no instructional text
     // behind the label at all. See TONE_MODIFIER_DEFINITIONS above.
@@ -1045,7 +1040,6 @@ Focal Point: ${formData.focalPoint || "Not specified"}
 ${focalPointMandatory}
 Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
-${styleDefBlock}Style: ${styleLabel}
 ${modifierLine}
 ${perspLine}
 
@@ -1076,8 +1070,7 @@ Focal Point: ${formData.focalPoint || "Not specified"}
 ${focalPointMandatory}
 Target Audience: ${audienceLabel}
 Voice/Persona: ${formData.voice || "Not specified"}
-${formData.ruralStyle ? `Rural AZ Style: enabled\n` : ""}${styleDefBlock}Style: ${styleLabel}
-${modifierLine}
+${formData.ruralStyle ? `Rural AZ Style: enabled\n` : ""}${modifierLine}
 ${perspLine}
 
 Generate compelling social media posts for: ${plats}
@@ -1143,7 +1136,6 @@ Focal Point: ${formData.focalPoint || "Not specified"}
 ${focalPointMandatory}
 Target Audience: ${audienceLabel}
 ${audienceSwapNote}Voice/Persona: ${formData.voice || "Not specified"}
-${styleDefBlock}Style: ${styleLabel}
 ${modifierLine}
 ${perspLine}
 
@@ -1212,18 +1204,14 @@ function detectArrivalSource() {
     const platform = PLATFORMS.find(p => p.id === platformId);
     const currentLen = currentText.length;
     const audienceLabel = formData.audience || DEFAULT_AUDIENCE;
-    const styleObj = STYLES.find(s=>s.id===(formData.style||DEFAULT_STYLE));
-    const styleLabel = styleObj ? styleObj.label : "Neutral";
-    // Style/Tone definitions (Aug 2026 messaging-modifier revision) — same
-    // constants buildPromptParts uses, so regen (Shorten/Expand/Rephrase)
-    // gets the same real instructional text behind Style/Tone that initial
+    // Tone definitions (Aug 2026 messaging-modifier revision) — same
+    // constant buildPromptParts uses, so regen (Shorten/Expand/Rephrase)
+    // gets the same real instructional text behind Tone that initial
     // generation now does, instead of a bare label as before. Rural AZ
     // Style is deliberately NOT added here — regen never carried county/
     // persona-layer content before this revision either (a known, flagged
     // gap — see the accompanying report's §9), and this revision doesn't
     // change that scoping.
-    const styleDef = STYLE_DEFINITIONS[formData.style] || "";
-    const styleDefLine = styleDef ? `- ${styleDef}\n` : "";
     const modifierDef = formData.modifier ? TONE_MODIFIER_DEFINITIONS[formData.modifier] : "";
     const modifierLine = formData.modifier ? `Tone modifier: ${formData.modifier} — ${modifierDef} ${TONE_CONTRAST_INSTRUCTION}` : "";
     const frameObj = NATIONAL_FRAMES.find(f => f.id === msgFrame);
@@ -1270,7 +1258,6 @@ INSTRUCTION: ${instruction}
 Context:
 - Platform: ${platform?.name} (max ${platform?.maxChars} chars)
 - Target Audience: ${audienceLabel}
-${styleDefLine}- Style: ${styleLabel}
 ${modifierLine}
 ${perspLine}
 - Original issue: ${formData.issue}
@@ -2308,7 +2295,7 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
               {(() => {
                 const proModeActiveCount = [
                   formData.audience, formData.voice, formData.ruralStyle,
-                  formData.style, formData.modifier, formData.perspective, msgFrame,
+                  formData.modifier, formData.perspective, msgFrame,
                 ].filter(Boolean).length;
                 return (
                   <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
@@ -2415,8 +2402,23 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   </fieldset>
                 </section>
                 <section style={S.card}>
-                  <label htmlFor="voice" style={S.label}>Voice / Persona<HelpTooltip text={HELP.messageMachine.voicePersona} label="Help: Voice / Persona" /></label>
-                  <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
+                  <label style={S.label}>Voice / Persona <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span><HelpTooltip text={HELP.messageMachine.voicePersona} label="Help: Voice / Persona" /></label>
+                  {/* CHANGED Sept 13, 2026 — free-text persona input removed,
+                      at the person's explicit direction. These two presets
+                      are the only options now; there's no custom field to
+                      type into. Reasoning, recorded because it's a real
+                      product decision, not an oversight: each preset carries
+                      a full paragraph of concrete instruction behind it
+                      (see VOICE_PRESETS above), which is why they reliably
+                      show up in real output. A hand-typed phrase had nothing
+                      behind it but whatever words were typed — reliable only
+                      by chance, and when it didn't come through, that read
+                      as the tool being unreliable rather than as an
+                      underspecified instruction, which is a real trust cost
+                      for something meant to feel like an add-on toggle, not
+                      a freeform prompt. */}
+                  <p style={{ ...S.hint, marginBottom:10 }}>Optional add-ons — pick one, or leave neither selected for the default voice.</p>
+                  <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
                     {VOICE_PRESETS.map(p => {
                       const on = formData.voice === p.text;
                       return (
@@ -2425,47 +2427,28 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                           type="button"
                           onClick={() => upd("voice", on ? "" : p.text)}
                           style={{
-                            padding:"6px 14px", borderRadius:20, fontSize:13, fontWeight:700,
+                            padding:"10px 18px", borderRadius:10, fontSize:14, fontWeight:700,
                             cursor:"pointer", fontFamily:"inherit",
                             background: on ? T.teal : "transparent",
                             color: on ? "#fff" : T.teal,
                             border: `1.5px solid ${T.teal}`,
                           }}
                         >
-                          {p.label}
+                          {on ? "✓ " : "+ "}{p.label}
                         </button>
                       );
                     })}
                   </div>
-                  <input id="voice" type="text" style={S.input}
-                    placeholder='e.g. "Rural AZ neighborly mom" or "GenZ activist"'
-                    value={formData.voice} onChange={e=>upd("voice",e.target.value)} />
-                  <p style={S.hint}>Who is speaking? Pick a preset to start, then edit freely — or write your own from scratch.</p>
                 </section>
               </div>
 
-              {/* Style + Modifier */}
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:18 }}>
-                <section style={S.card}>
-                  <fieldset style={{ border:"none", padding:0 }}>
-                    <legend style={S.label}>Style <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
-                    <p style={{ ...S.hint, marginBottom:10 }}>Default: Neutral</p>
-                    <div style={{ display:"flex", flexDirection:"column", gap:12, marginTop:4 }}>
-                      {STYLES.map(st => {
-                        const on = formData.style===st.id;
-                        return (
-                          <label key={st.id} style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
-                            <input type="radio" name="style" value={st.id} checked={on}
-                              onChange={()=>upd("style",on?"":st.id)}
-                              onClick={()=>{ if(on) upd("style",""); }}
-                              style={{ width:24, height:24, accentColor:T.teal, cursor:"pointer", flexShrink:0 }} />
-                            <span style={{ fontSize:18, fontWeight: on ? 700 : 400, color:T.text }}>{st.label}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </fieldset>
-                </section>
+              {/* Tone Modifier — was a 2-column "Style + Modifier" row;
+                  Style removed Sept 13, 2026 at the person's explicit
+                  direction, on the reasoning that Issue/Content, Focal
+                  Point, and the coalition's own default framing already
+                  established what Style was trying to add on top. Tone
+                  Modifier now stands alone, full width. */}
+              <div>
                 <section style={S.card}>
                   <fieldset style={{ border:"none", padding:0 }}>
                     <legend style={S.label}>Tone Modifier <span style={{ fontWeight:400, fontSize:13, textTransform:"none", letterSpacing:0, color:T.textMute }}>(optional)</span></legend>
