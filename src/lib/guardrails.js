@@ -87,12 +87,39 @@
 // every prompt that uses this guardrail (see guardrailAndVoiceBlock() in
 // message-machine.jsx), so the model always has the real current
 // officeholder and never has to fill the gap from a stale prior.
+//
+// BIOGRAPHICAL FIDELITY and FACT-TO-REFERENT BINDING added Sept 13, 2026,
+// after a real incident found and diagnosed the same day un-consolidation
+// was reverted (see message-machine.jsx's own consolidation-history
+// comment) — but these two rules address a gap that predates un-
+// consolidation entirely, not something it caused; un-consolidation only
+// increased how many independent chances there were to hit it. Two
+// related but distinct failures, confirmed against the real input data in
+// both cases, not guessed at:
+//   - BIOGRAPHICAL FIDELITY closes the DATE FIDELITY-shaped gap for
+//     non-date facts: a candidate's real input correctly described his
+//     role disputing the 2020 PRESIDENTIAL election, with no mention
+//     anywhere of his own past election history. The model filled that
+//     gap using outside/training knowledge (he did in fact separately win
+//     his own 2020 race) and merged the two into one false claim about
+//     his own election — the exact "deriving isn't the same as inventing"
+//     failure DATE FIDELITY already exists to close for dates, here
+//     showing up on biographical/historical fact instead.
+//   - FACT-TO-REFERENT BINDING closes a different failure: one real
+//     candidate's true, correctly-dated 2024 election win got reapplied
+//     as a shared, present-tense claim about her AND a different
+//     candidate in the same post — a first-time challenger with no
+//     election win anywhere in her own input section. Not an invented
+//     fact and not outside knowledge — a true fact detached from the one
+//     person it was actually about.
 export const FACTUAL_ACCURACY_GUARDRAIL = `FACTUAL ACCURACY:
 - Treat the user's input (issue, focal point, false narrative, or existing message being rewritten) as trusted source material — build on its facts, figures, and names directly instead of hedging around them.
 - NEVER invent, fabricate, estimate, or paraphrase any statistic, percentage, vote count, dollar figure, poll number, date, quote, named person, organization, study, bill, court case, or law that isn't present in the input. Quotes must be used exactly as given, never reworded.
 - DATE FIDELITY: State a specific date only if it is explicitly given — in a KEY DATES block (if one appears in this prompt) or directly in the user's own input. Never compute, derive, infer, or "correct" any date using outside knowledge, memorized precedent, or a rule you know to be generally true (e.g., a fixed number of days before an election) — even when you're confident the calculation is accurate, applying it to an unstated date is the same as inventing one. This applies to every date mentioned in this prompt — election day, an early-voting or registration window, a filing deadline, or any other date — not only whatever a KEY DATES block happens to list. If a date isn't explicitly given anywhere, write around it (e.g. "election day," "the deadline," "before voting closes") rather than naming or calculating one.
 - OFFICEHOLDER FIDELITY: If a CURRENT OFFICEHOLDERS block appears in this prompt, it is the sole authoritative source for who currently holds that office — never override, "correct," or recompute it using outside knowledge, memorized precedent, or who you believe held that office as of your own training. Write about a currently-serving officeholder in PRESENT tense (they ARE the officeholder), never as a past or former one, even if your own training data suggests otherwise. If no CURRENT OFFICEHOLDERS block or explicit user input states who holds a given office, don't assume — write around it rather than asserting a status you can't confirm.
+- BIOGRAPHICAL FIDELITY: Do not add any fact about a person's history, actions, votes, races, or outcomes using outside or training knowledge, even when it is true and even when it relates to a topic the input does mention. This applies whether the fact would come from general political knowledge or from what you already know about this specific person — a true fact you recall from training is not the same as a fact given in the input, and filling a gap with it is deriving, not inventing from nothing, which is exactly the distinction DATE FIDELITY already draws for dates. If the input doesn't state a fact, write around it, the same way DATE FIDELITY instructs for an unstated date. Real incident this closes: an input's Vulnerability section correctly described a candidate's role disputing a DIFFERENT election (the 2020 presidential race) with no mention anywhere of that candidate's own past election history; the model filled that gap from outside knowledge and merged the two into one false claim about his own race.
 - CANDIDATE STATUS: never contradict a given status (Incumbent, Challenger, Open Seat). A Challenger or Open Seat candidate must never be framed as already holding the office ("came to Congress," "in the Senate," "as your Representative"). If no status is given, don't assume incumbency — write about their record and candidacy without asserting they currently hold the seat.
+- FACT-TO-REFERENT BINDING: Every fact in the input — a date, an outcome, a vote, a status, an event, a quote — is true only of the specific person, race, or event it is attached to. Never transfer it to a different person, race, or event, even a closely related one (same district, same election cycle, the same person's other actions, another candidate named in the same post). When a post covers more than one candidate together, each candidate's facts must trace back to their own section of the input independently — never generalized into a shared claim ("both just won," "these two are already serving," "Arizona just elected them") unless the input states that exact fact for each person individually. A true fact about one person or event is never evidence for a same-sounding claim about a different person or event, even within the same post. Real incident this closes: one candidate's true, correctly-dated 2024 election win was reapplied as a shared, present-tense claim about her and a different candidate — a first-time challenger with no election win anywhere in her own input — in the same post.
 - TENSE: match verb tense to the input's timing. Don't describe a past event in urgent present tense ("is voting against," "is taking away") when it already happened ("voted against," "took away"), and don't describe a pending or proposed action as if it already occurred. With no clear timing signal, default to present tense for ongoing conditions.
 - NAMED-PERSON WRONGDOING: any accusation of wrongdoing, criminal conduct, or scandal against a real, named individual must trace to confirmed public-record sourcing already in the input — don't embellish or extend it. Applies only when a named individual and a wrongdoing claim appear together.
 - Where the input doesn't give a specific fact, write around it using general, non-falsifiable framing ("experts have documented," "public records show") rather than inventing what those records say.
