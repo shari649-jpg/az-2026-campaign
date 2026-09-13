@@ -334,6 +334,16 @@ export default async function (req) {
     // be the only reader of anyway. All groups share the same
     // staticSystem (see buildPromptParts()), so warming with groups[0]'s
     // copy warms it for all of them.
+    //
+    // DORMANT as of Sept 13, 2026: message-machine.jsx's generateAll()
+    // reverted un-consolidation (see that file's own incident writeup) and
+    // is back to always sending exactly one combined group, so
+    // groups.length > 1 is never true from that call site anymore — this
+    // branch simply never fires for generateAll now. Left in place, not
+    // removed: harmless while dormant, still correct if un-consolidation
+    // (or any other future multi-group caller) ever comes back, and
+    // ripping it out would just be work to redo later for no present
+    // benefit.
     if (groups.length > 1) {
       await warmCache(groups[0].staticSystem, { app, orgId, uid });
     }
