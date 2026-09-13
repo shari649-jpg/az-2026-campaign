@@ -30,26 +30,19 @@
 import admin from "firebase-admin";
 
 const LIMITS = {
-  // ×6 (Sept 2026, un-consolidation) — was {200,100,50}. Message Machine's
-  // generateAll now increments this shared daily-call count once PER
-  // PLATFORM instead of once per click (see generate-message-background.mjs's
-  // "Platform-call un-consolidation, take two" comment) — deliberately kept
-  // per-platform granular rather than counted once per job, on request, for
-  // future usage analysis. ×6 matches the worst case (all 6 platforms
-  // selected every time) so no one's effective daily capacity regresses
-  // versus before this change. This limit is shared across every AI tool in
-  // the app, not just Message Machine (Storm, Sandbox, Rebuttal, Rapid
-  // Response, bill lookup, transcription, etc. all call
-  // checkAndIncrementRateLimit too) — loosening it here loosens it
-  // everywhere, not just for generateAll. Accepted as the simpler, lower-
-  // risk trade for now: the real cost backstop is checkGenerationBalance
-  // (credits), not this count, which exists mainly as a fairness/abuse
-  // guard rather than the primary cost control. Revisit with real
-  // platforms-per-click data once available — this is a "definitely won't
-  // regress anyone" number, not a tuned one.
-  administrator: 1200,
-  manager:       600,
-  user:          300,
+  // REVERTED Sept 13, 2026 — back to {200,100,50}. Was raised ×6 to
+  // compensate for Message Machine's generateAll incrementing this shared
+  // daily-call count once per platform instead of once per click, after
+  // un-consolidation went to one group per platform. Un-consolidation
+  // itself was reverted the same day (see message-machine.jsx's
+  // consolidation-history comment for the real incidents that caused
+  // that), so generateAll is back to incrementing this once per click —
+  // the ×6 compensation is no longer needed and would just be an
+  // unjustified loosening of a shared fairness/abuse limit used by every
+  // AI tool in the app, not just Message Machine.
+  administrator: 200,
+  manager:       100,
+  user:          50,
 };
 
 const WARNING_THRESHOLD = 0.75;
