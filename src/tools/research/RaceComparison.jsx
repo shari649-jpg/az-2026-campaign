@@ -391,8 +391,17 @@ export default function RaceComparison() {
       ? [...new Map([...selectedList, ...selectedFactList.map(({ candidate }) => candidate)].map(c => [c.candidate_name, c])).values()]
       : (races || []).flatMap(r => r.candidates);
 
+    // District/county data in Race_Demographics comes from a Google Sheet
+    // that has no state column at all (AZ-only tab) — district_id values
+    // like "CD01" collide across states. Only attach it when every active
+    // candidate is confirmed AZ (state === "AZ"); a blank/unknown state is
+    // treated as "not confirmed AZ", not as "assume AZ". (Sept 2026 fix —
+    // previously every out-of-state CD01/LD04/etc. candidate silently
+    // inherited Arizona's district profile.)
+    const allConfirmedAZ = activeCandidates.length > 0 &&
+      activeCandidates.every(c => (c.state || '').trim().toUpperCase() === 'AZ');
     const districts = [...new Set(activeCandidates.map(c => c.district).filter(Boolean))];
-    const singleDistrict = districts.length === 1 ? districtMap[districts[0]] : null;
+    const singleDistrict = (allConfirmedAZ && districts.length === 1) ? districtMap[districts[0]] : null;
 
     if (singleDistrict) {
       setDistrictPrompt({ district: singleDistrict, candidateIssueText });
@@ -597,7 +606,12 @@ export default function RaceComparison() {
 
             {/* District strip — one per race group */}
             {(() => {
-              const raceDistrict = race.district ? districtMap[race.district] : null;
+              // Same AZ-only-sheet caveat as pushToMessageMachine() above —
+              // don't show/attach district data unless this race is
+              // confirmed AZ; a blank/other state must not silently match
+              // an AZ district_id.
+              const raceIsConfirmedAZ = (race.state || '').trim().toUpperCase() === 'AZ';
+              const raceDistrict = (raceIsConfirmedAZ && race.district) ? districtMap[race.district] : null;
               if (!raceDistrict) return null;
               const stripKey = race.district;
               const isOpen = districtExpanded[stripKey];
