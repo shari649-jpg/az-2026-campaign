@@ -43,6 +43,11 @@ export default function VoterLookupPage() {
   const [state, setState] = useState("idle");
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
+  // propsExpanded (Sept 2026) — ballot measure summaries run long and were
+  // pushing the actual candidate races below the fold on mobile. Collapsed
+  // by default; clicking the gold banner toggles the list open, same
+  // collapse pattern as CandidateRow's "View details" below.
+  const [propsExpanded, setPropsExpanded] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -132,27 +137,47 @@ export default function VoterLookupPage() {
         <div style={{ width: "100%", maxWidth: 520, display: "flex", flexDirection: "column", gap: 20 }}>
           {(data.results.ballotMeasures || []).length > 0 && (
             <div>
-              <div style={{
-                background: `linear-gradient(135deg, ${GOLD}, #c9a227)`,
-                borderRadius: "12px 12px 0 0", padding: "16px 20px",
-              }}>
-                <div style={{ fontFamily: "var(--font-display)", fontSize: 19, color: "#3a2e00", marginBottom: 4 }}>
-                  🗳️ Ballot Measures
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5a4200" }}>
-                  Statewide propositions
-                </div>
-              </div>
-              <div style={{ background: "#fff", borderRadius: "0 0 12px 12px", boxShadow: "0 16px 48px rgba(0,0,0,0.15)" }}>
-                {data.results.ballotMeasures.map((m, i) => (
-                  <div key={i} style={{ padding: "18px 20px", borderBottom: i === data.results.ballotMeasures.length - 1 ? "none" : "1px solid #eee" }}>
-                    <h3 style={{ fontFamily: "var(--font-display)", fontSize: 16, color: TEAL, margin: "0 0 6px" }}>{m.name}</h3>
-                    {m.summary && (
-                      <p style={{ fontSize: 13.5, color: CHARCOAL, lineHeight: 1.6, margin: 0 }}>{m.summary}</p>
-                    )}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setPropsExpanded(o => !o)}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPropsExpanded(o => !o); } }}
+                aria-expanded={propsExpanded}
+                style={{
+                  background: `linear-gradient(135deg, ${GOLD}, #c9a227)`,
+                  borderRadius: propsExpanded ? "12px 12px 0 0" : "12px",
+                  padding: "16px 20px", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                }}
+              >
+                <div>
+                  <div style={{ fontFamily: "var(--font-display)", fontSize: 19, color: "#3a2e00", marginBottom: 4 }}>
+                    🗳️ Ballot Measures
                   </div>
-                ))}
+                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5a4200" }}>
+                    Statewide propositions · {data.results.ballotMeasures.length}
+                  </div>
+                </div>
+                <div style={{
+                  flexShrink: 0, fontSize: 18, color: "#3a2e00",
+                  transform: propsExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                  transition: "transform 0.15s ease",
+                }}>
+                  ▾
+                </div>
               </div>
+              {propsExpanded && (
+                <div style={{ background: "#fff", borderRadius: "0 0 12px 12px", boxShadow: "0 16px 48px rgba(0,0,0,0.15)" }}>
+                  {data.results.ballotMeasures.map((m, i) => (
+                    <div key={i} style={{ padding: "18px 20px", borderBottom: i === data.results.ballotMeasures.length - 1 ? "none" : "1px solid #eee" }}>
+                      <h3 style={{ fontFamily: "var(--font-display)", fontSize: 16, color: TEAL, margin: "0 0 6px" }}>{m.name}</h3>
+                      {m.summary && (
+                        <p style={{ fontSize: 13.5, color: CHARCOAL, lineHeight: 1.6, margin: 0 }}>{m.summary}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {RACE_SECTIONS.map(section => {
