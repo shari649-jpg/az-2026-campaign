@@ -27,6 +27,7 @@ import StormsHubPage from "./tools/storms/StormsHubPage";
 import PublicStormPage from "./pages/PublicStormPage";
 import PublicStormsListPage from "./pages/PublicStormsListPage";
 import VoterLookupPage from "./pages/VoterLookupPage";
+import VoteSitesPage from "./pages/VoteSitesPage";
 import PromptSandboxPage from "./tools/sandbox/PromptSandboxPage";
 
 export default function App() {
@@ -66,6 +67,13 @@ export default function App() {
           <Route path="/storm/:token" element={<PublicStormPage />} />
           <Route path="/storms/public" element={<PublicStormsListPage />} />
           <Route path="/voter-lookup" element={<VoterLookupPage />} />
+          {/* Sept 2026 — Maricopa County publishes its 2026 General vote
+              center / drop box schedule only as a 57-column spreadsheet
+              (one column pair per date). VoteSitesPage.jsx renders the
+              same data (bundled as static JSON, src/data/mcVoteSites2026.json,
+              extracted from that county export) as a searchable,
+              filterable mobile page — no spreadsheet software required. */}
+          <Route path="/vote-sites"   element={<VoteSitesPage />} />
 
           {/* Protected routes */}
           <Route element={
