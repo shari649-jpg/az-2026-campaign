@@ -127,6 +127,8 @@ export default function VoterLookupPage() {
         </p>
       </div>
 
+      <VoterResourcesCard />
+
       {state === "error" && (
         <div style={{ ...cardStyle, textAlign: "center", padding: "28px" }}>
           <p style={{ fontSize: 14.5, color: "#991b1b", lineHeight: 1.6, margin: 0 }}>{error}</p>
@@ -209,6 +211,109 @@ export default function VoterLookupPage() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// VoterResourcesCard (Sept 2026) — added at the person's request: links to
+// arizona.vote (registration / ballot tracking / polling places — real,
+// active AZ voter-info site, confirmed via search), the AZ Dems' Take
+// Action page, and Arizona Coalition's own site, plus the voter protection
+// hotline as a tap-to-call link. Shown on every visit (not gated behind a
+// lookup result), since it's useful whether or not someone has searched
+// yet.
+function VoterResourcesCard() {
+  const links = [
+    {
+      label: "Check registration, track your ballot & find your polling place",
+      href: "https://arizona.vote/",
+    },
+    {
+      label: "Take action with Arizona Democrats",
+      href: "https://azdems.org/take-action/",
+    },
+    {
+      label: "Arizona Coalition",
+      href: "https://arizonacoalition.net",
+    },
+    {
+      label: "Voting from abroad (military & overseas citizens)",
+      href: "https://www.votefromabroad.org/",
+    },
+  ];
+
+  // 2026 general election key dates — confirmed against azsos.gov's own
+  // 2026 election info page (Sept 2026): Nov 3 general election, Oct 5
+  // registration deadline, Oct 7 early voting start / ballots mailed.
+  // Early-voting close (Oct 30) is AZ's standard rule — the Friday before
+  // Election Day — not separately stated on that page, so it's inferred
+  // from the statutory formula rather than pulled from an explicit line.
+  const KEY_DATES = [
+    { date: "Oct 5", label: "Voter registration deadline" },
+    { date: "Oct 7", label: "Early ballots mailed / early voting begins" },
+    { date: "Oct 30", label: "Early voting ends" },
+    { date: "Nov 3", label: "Election Day" },
+  ];
+
+  return (
+    <div style={{ ...cardStyle, marginBottom: 20 }}>
+      <h2 style={{ fontFamily: "var(--font-display)", fontSize: 17, color: TEAL, margin: "0 0 14px" }}>
+        Voter Resources
+      </h2>
+
+      <div style={{
+        display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8,
+        marginBottom: 16,
+      }}>
+        {KEY_DATES.map(d => (
+          <div key={d.date} style={{
+            background: `${GOLD}14`, border: `1.5px solid ${GOLD}55`, borderRadius: 10,
+            padding: "10px 12px",
+          }}>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 900, color: "#5a4200" }}>
+              {d.date}
+            </div>
+            <div style={{ fontSize: 11.5, color: CHARCOAL, lineHeight: 1.4, marginTop: 2 }}>
+              {d.label}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+        {links.map(l => (
+          <a
+            key={l.href}
+            href={l.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "block", fontSize: 14.5, fontWeight: 700, color: TEAL,
+              textDecoration: "none", padding: "12px 14px",
+              border: `1.5px solid ${TEAL}`, borderRadius: 10,
+            }}
+          >
+            {l.label} →
+          </a>
+        ))}
+      </div>
+      <div style={{
+        background: `${TEAL}0d`, border: `1.5px solid ${TEAL}30`, borderRadius: 10,
+        padding: "14px 16px",
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: TURQUOISE, marginBottom: 6 }}>
+          Voter Protection Hotline
+        </div>
+        <a
+          href="tel:8338683429"
+          style={{ fontSize: 20, fontWeight: 900, color: TEAL, textDecoration: "none", fontFamily: "var(--font-display)" }}
+        >
+          833-VOTE-4-AZ
+        </a>
+        <p style={{ fontSize: 12.5, color: CHARCOAL, lineHeight: 1.5, margin: "6px 0 0" }}>
+          Call if you have trouble registering, voting, or if you witness voter intimidation.
+        </p>
+      </div>
     </div>
   );
 }
