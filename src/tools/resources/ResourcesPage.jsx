@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import ToolPage from "../../components/ToolPage";
 
 const RESOURCE_GROUPS = [
@@ -65,6 +66,11 @@ const RESOURCE_GROUPS = [
     title: "Election Resources",
     color: "var(--terracotta)",
     items: [
+      // Our own public-facing tools (Sept 2026) — internal routes, not
+      // external links, so ResourceCard renders these with React Router's
+      // Link (same-app navigation) instead of an <a target="_blank">.
+      { label: "Voter Lookup Tool", desc: "Public tool — voters enter their address to see their candidates, statewide", href: "/voter-lookup", tag: "Our Site", internal: true },
+      { label: "Maricopa Vote Center & Drop Box Finder", desc: "Public tool — searchable version of Maricopa County's vote site schedule, Maricopa County only", href: "/vote-sites", tag: "Our Site", internal: true },
       { label: "AZ SOS — Elections", desc: "Official Arizona election information", href: "https://azsos.gov/elections", tag: "Gov" },
       { label: "My Arizona Vote", desc: "Voter registration, ballot status, polling locations", href: "https://my.arizona.vote", tag: "Gov" },
       { label: "E-Qual — Candidate Petitions", desc: "Sign candidate nominating petitions and Clean Elections contributions", href: "https://apps.arizona.vote/equal", tag: "Gov" },
@@ -146,10 +152,15 @@ function ResourceGroup({ group }) {
 
 function ResourceCard({ item, color }) {
   const isLinked = !!item.href;
-  const El = isLinked ? "a" : "div";
-  const linkProps = isLinked
-    ? { href: item.href, target: "_blank", rel: "noreferrer" }
-    : {};
+  // Internal routes (our own tool pages) navigate in-app via React
+  // Router's Link — no target="_blank", no external-page assumptions.
+  // External links keep the existing <a target="_blank"> behavior.
+  const El = !isLinked ? "div" : item.internal ? Link : "a";
+  const linkProps = !isLinked
+    ? {}
+    : item.internal
+      ? { to: item.href }
+      : { href: item.href, target: "_blank", rel: "noreferrer" };
 
   return (
     <El
@@ -170,7 +181,7 @@ function ResourceCard({ item, color }) {
     >
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", lineHeight: 1.3 }}>
-          {item.label}{isLinked ? " ↗" : ""}
+          {item.label}{isLinked && !item.internal ? " ↗" : ""}
         </span>
         <span style={{
           flexShrink: 0,
