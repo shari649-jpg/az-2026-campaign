@@ -14,6 +14,7 @@
 // than blocking the whole results render.
 
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { ref, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebase";
 
@@ -128,6 +129,8 @@ export default function VoterLookupPage() {
       </div>
 
       <VoterResourcesCard />
+
+      <MaricopaVoteSitesCard />
 
       {state === "error" && (
         <div style={{ ...cardStyle, textAlign: "center", padding: "28px" }}>
@@ -314,6 +317,36 @@ function VoterResourcesCard() {
           Call if you have trouble registering, voting, or if you witness voter intimidation.
         </p>
       </div>
+    </div>
+  );
+}
+
+// MaricopaVoteSitesCard (Sept 2026) — links to the new /vote-sites page
+// (VoteSitesPage.jsx), which turns Maricopa County's spreadsheet-only vote
+// center / drop box schedule into a searchable mobile page. Explicitly
+// scoped to Maricopa County in the copy — this candidate lookup above is
+// statewide (public-voter-lookup.mjs has no county restriction), but the
+// underlying vote-sites data is Maricopa-only, so the card must not imply
+// it works for every county.
+function MaricopaVoteSitesCard() {
+  return (
+    <div style={{ ...cardStyle, marginBottom: 20 }}>
+      <h2 style={{ fontFamily: "var(--font-display)", fontSize: 17, color: TEAL, margin: "0 0 8px" }}>
+        🗺️ Maricopa County Voters
+      </h2>
+      <p style={{ fontSize: 13.5, color: CHARCOAL, lineHeight: 1.6, margin: "0 0 14px" }}>
+        Find a vote center or ballot drop box near you, with hours for every day through Election Day.
+      </p>
+      <Link
+        to="/vote-sites"
+        style={{
+          display: "block", textAlign: "center", fontSize: 14.5, fontWeight: 700, color: "#fff",
+          textDecoration: "none", padding: "12px 14px", borderRadius: 10,
+          background: `linear-gradient(135deg, ${TEAL}, ${TEAL_DARK})`,
+        }}
+      >
+        Find a vote center or drop box →
+      </Link>
     </div>
   );
 }
