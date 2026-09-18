@@ -1,0 +1,322 @@
+// src/pages/VoteSitesPage.jsx
+//
+// Fully public — no login, no AppShell. Reached via /vote-sites (see
+// App.jsx's public routes section, alongside /voter-lookup).
+//
+// WHY THIS EXISTS (Sept 2026): Maricopa County publishes its 2026 General
+// vote-center / drop-box schedule as a single wide spreadsheet — one row
+// per site, one column pair per date across 28 dates (Oct 7 – Nov 3),
+// hours as free-text strings ("9:00A-5:00P", "CLOSED", "24 HOURS", or a
+// blank cell). That's unusable for anyone without a computer and Excel,
+// on a phone, or in a hurry. This page renders the same underlying data —
+// bundled at build time as static JSON (src/data/mcVoteSites2026.json,
+// extracted from the county's xlsx export) — as a searchable, filterable,
+// one-day-at-a-time mobile page: type a city/zip/site name, pick a
+// category, see who's open right now with today selected by default.
+//
+// This is STATIC data from a point-in-time county export (report run
+// 9/15/2026 2:23:09 PM, per the source file), not a live feed — the
+// county's own instructions say to confirm at Locations.Maricopa.Vote
+// before heading out, and this page repeats that caveat prominently
+// rather than implying it's authoritative or live.
+//
+// Mobile-first, matching VoterLookupPage.jsx's pattern.
+
+import { useMemo, useState } from "react";
+import voteSitesData from "../data/mcVoteSites2026.json";
+
+const TEAL      = "var(--teal)";
+const TEAL_DARK = "var(--teal-mid)";
+const GOLD      = "var(--gold)";
+const CHARCOAL  = "var(--charcoal)";
+const TURQUOISE = "var(--turquoise)";
+
+const CATEGORY_LABEL = {
+  vote_center:    "Vote Center",
+  drop_box:       "Drop Box Only",
+  drop_box_24hr:  "24-Hour Drop Box",
+};
+
+const CATEGORY_BADGE = {
+  vote_center:    { bg: "#e8f0fe", text: "#1a56cc", border: "#93b4f5" },
+  drop_box:       { bg: "#fef3c7", text: "#92400e", border: "#fcd34d" },
+  drop_box_24hr:  { bg: "#ecfdf5", text: "#065f46", border: "#6ee7b7" },
+};
+
+const FILTERS = [
+  { key: "all",           label: "All Sites" },
+  { key: "vote_center",   label: "Vote Centers" },
+  { key: "drop_box",      label: "Drop Boxes" },
+  { key: "drop_box_24hr", label: "24-Hour" },
+];
+
+// Today's date, clamped into the schedule's actual range so a visit
+// before Oct 7 or after Nov 3 still lands on a real, selectable date
+// instead of silently showing nothing.
+function defaultDateIndex(dates) {
+  const todayIso = new Date().toLocaleDateString("en-CA", { timeZone: "America/Phoenix" }); // YYYY-MM-DD
+  const idx = dates.findIndex(d => d.date === todayIso);
+  if (idx !== -1) return idx;
+  if (todayIso < dates[0].date) return 0;
+  return dates.length - 1;
+}
+
+function statusForHours(raw) {
+  if (raw == null) return { open: false, display: "Closed", isSpecial: false };
+  const s = String(raw).trim().toUpperCase();
+  if (s === "CLOSED" || s === "") return { open: false, display: "Closed", isSpecial: false };
+  if (s === "24 HOURS") return { open: true, display: "Open 24 Hours", isSpecial: true };
+  // Normal "9:00A-5:00P" style range — display as county published it,
+  // lightly spaced for readability.
+  return { open: true, display: String(raw).replace("-", " – "), isSpecial: false };
+}
+
+export default function VoteSitesPage() {
+  const { dates, sites, sourceNote } = voteSitesData;
+  const [dateIdx, setDateIdx] = useState(() => defaultDateIndex(dates));
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [openOnly, setOpenOnly] = useState(false);
+  const [expanded, setExpanded] = useState({});
+
+  const selectedDate = dates[dateIdx];
+
+  function toggleExpand(key) {
+    setExpanded(p => ({ ...p, [key]: !p[key] }));
+  }
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return sites
+      .map(s => ({ ...s, status: statusForHours(s.hours[selectedDate.date]) }))
+      .filter(s => {
+        if (filter !== "all" && s.category !== filter) return false;
+        if (openOnly && !s.status.open) return false;
+        if (!q) return true;
+        return [s.name, s.street, s.city, s.zip].join(" ").toLowerCase().includes(q);
+      })
+      .sort((a, b) => {
+        // Open sites first on the selected day, then alphabetical by city, then name —
+        // the most useful ordering when someone's trying to find somewhere open *today*.
+        if (a.status.open !== b.status.open) return a.status.open ? -1 : 1;
+        const cityCompare = a.city.localeCompare(b.city);
+        if (cityCompare !== 0) return cityCompare;
+        return a.name.localeCompare(b.name);
+      });
+  }, [sites, selectedDate, query, filter, openOnly]);
+
+  const openCount = filtered.filter(s => s.status.open).length;
+
+  return (
+    <div style={pageStyle}>
+      <LogoBlock />
+
+      <div style={{ ...cardStyle, marginBottom: 20 }}>
+        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 22, color: TEAL, margin: "0 0 8px" }}>
+          Find a place to vote
+        </h1>
+        <p style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.6, margin: "0 0 14px" }}>
+          Search Maricopa County's {sites.length} vote centers and ballot drop boxes for the 2026 General Election. Pick a day to see who's open.
+        </p>
+
+        <input
+          type="text"
+          inputMode="text"
+          placeholder="Search by city, zip, or site name"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          style={{
+            width: "100%", boxSizing: "border-box", padding: "14px 16px", fontSize: 16,
+            border: "2px solid #ddd", borderRadius: 10, fontFamily: "inherit", color: CHARCOAL,
+            marginBottom: 12,
+          }}
+        />
+
+        {/* Date picker — horizontal scroll of day pills, today selected by default */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#999", marginBottom: 8 }}>
+            Day
+          </label>
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
+            {dates.map((d, i) => {
+              const isSelected = i === dateIdx;
+              return (
+                <button
+                  key={d.date}
+                  type="button"
+                  onClick={() => setDateIdx(i)}
+                  style={{
+                    flexShrink: 0, padding: "10px 14px", borderRadius: 10, fontFamily: "inherit",
+                    fontSize: 13, fontWeight: 700, cursor: "pointer",
+                    background: isSelected ? TEAL : "#f3f4f6",
+                    color: isSelected ? "#fff" : CHARCOAL,
+                    border: isSelected ? `2px solid ${TEAL}` : "2px solid #f3f4f6",
+                  }}
+                >
+                  <div>{d.dow}</div>
+                  <div style={{ fontSize: 12, fontWeight: 900, marginTop: 2 }}>{d.label}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Category filter pills */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          {FILTERS.map(f => {
+            const isSelected = filter === f.key;
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                style={{
+                  padding: "8px 14px", borderRadius: 20, fontFamily: "inherit",
+                  fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+                  background: isSelected ? TURQUOISE : "#f3f4f6",
+                  color: isSelected ? "#fff" : CHARCOAL,
+                  border: "none",
+                }}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: CHARCOAL, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={openOnly}
+            onChange={e => setOpenOnly(e.target.checked)}
+            style={{ width: 18, height: 18, accentColor: TEAL, cursor: "pointer" }}
+          />
+          Only show sites open on {selectedDate.dow} {selectedDate.label}
+        </label>
+      </div>
+
+      {/* Results count + freshness caveat */}
+      <div style={{ width: "100%", maxWidth: 520, marginBottom: 12 }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: "#fff", margin: "0 0 6px" }}>
+          {filtered.length} site{filtered.length !== 1 ? "s" : ""} · {openCount} open {selectedDate.dow} {selectedDate.label}
+        </p>
+        <p style={{ fontSize: 11.5, color: "rgba(255,255,255,0.85)", lineHeight: 1.5, margin: 0 }}>
+          {sourceNote}
+        </p>
+      </div>
+
+      {/* Site cards */}
+      <div style={{ width: "100%", maxWidth: 520, display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+        {filtered.length === 0 && (
+          <div style={{ ...cardStyle, textAlign: "center", padding: 28 }}>
+            <p style={{ fontSize: 14.5, color: CHARCOAL, margin: 0 }}>No sites match your search.</p>
+          </div>
+        )}
+        {filtered.map(s => {
+          const key = `${s.name}|${s.address}`;
+          const isExpanded = expanded[key];
+          const badge = CATEGORY_BADGE[s.category];
+          const mapHref = `https://maps.google.com/?q=${encodeURIComponent(s.address)}`;
+          return (
+            <div key={key} style={{ background: "#fff", borderRadius: 12, boxShadow: "0 12px 32px rgba(0,0,0,0.15)", overflow: "hidden" }}>
+              <div style={{ padding: "16px 18px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+                  <h3 style={{ fontFamily: "var(--font-display)", fontSize: 16.5, color: TEAL, margin: 0, lineHeight: 1.3 }}>
+                    {s.name}
+                  </h3>
+                  <span style={{
+                    flexShrink: 0, fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6,
+                    background: badge.bg, color: badge.text, border: `1px solid ${badge.border}`, whiteSpace: "nowrap",
+                  }}>
+                    {CATEGORY_LABEL[s.category]}
+                  </span>
+                </div>
+
+                <a
+                  href={mapHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: 13.5, color: CHARCOAL, textDecoration: "none", display: "block", marginBottom: 10 }}
+                >
+                  📍 {s.street}, {s.city} {s.zip} <span style={{ color: TEAL, fontWeight: 700 }}>Directions →</span>
+                </a>
+
+                <div style={{
+                  display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8,
+                  background: s.status.open ? "#ecfdf5" : "#f3f4f6",
+                  border: `1.5px solid ${s.status.open ? "#6ee7b7" : "#ddd"}`,
+                }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: "50%",
+                    background: s.status.open ? "#059669" : "#999",
+                  }} />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: s.status.open ? "#065f46" : "#666" }}>
+                    {s.status.display}
+                  </span>
+                </div>
+
+                {s.nonElectioneering && (
+                  <p style={{ fontSize: 11.5, color: "#999", margin: "8px 0 0", fontStyle: "italic" }}>
+                    Non-electioneering site — no campaigning within the legal limit of this location.
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(key)}
+                  style={{
+                    marginTop: 10, fontSize: 12.5, fontWeight: 700, color: TEAL, background: "none",
+                    border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline",
+                  }}
+                >
+                  {isExpanded ? "Hide full schedule" : "View full schedule (all days) →"}
+                </button>
+              </div>
+
+              {isExpanded && (
+                <div style={{ borderTop: "1px solid #eee", background: "#fafafa", padding: "12px 18px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px" }}>
+                    {dates.map(d => {
+                      const st = statusForHours(s.hours[d.date]);
+                      return (
+                        <div key={d.date} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0" }}>
+                          <span style={{ color: "#777" }}>{d.dow} {d.label}</span>
+                          <span style={{ fontWeight: 700, color: st.open ? "#065f46" : "#aaa" }}>{st.display}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function LogoBlock() {
+  return (
+    <div style={{ textAlign: "center", marginBottom: 28 }}>
+      <img src="/azc-logo-teal.png" alt="Arizona Coalition" style={{ height: 64, marginBottom: 12 }} />
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 24, color: "#fff", letterSpacing: "-0.01em" }}>Arizona Coalition</div>
+      <div style={{ fontFamily: "var(--font-body)", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: GOLD, marginTop: 4 }}>
+        Vote Center &amp; Drop Box Finder · Maricopa County · 2026
+      </div>
+    </div>
+  );
+}
+
+const pageStyle = {
+  minHeight: "100vh",
+  background: `linear-gradient(160deg, ${TEAL} 0%, ${TEAL_DARK} 100%)`,
+  display: "flex", flexDirection: "column",
+  alignItems: "center", padding: "32px 16px 48px",
+};
+
+const cardStyle = {
+  background: "#fff", borderRadius: 16, padding: "24px 22px",
+  width: "100%", maxWidth: 520,
+  boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
+};
