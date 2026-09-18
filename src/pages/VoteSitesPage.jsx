@@ -79,11 +79,22 @@ export default function VoteSitesPage() {
   const [filter, setFilter] = useState("all");
   const [openOnly, setOpenOnly] = useState(false);
   const [expanded, setExpanded] = useState({});
+  // groupByCity (Sept 2026) — 282 sites in one flat list was too long to
+  // scan on a phone. Grouping by city (33 cities vs. 282 sites) turns it
+  // into a scannable index instead. Collapsible per-city; defaults to
+  // collapsed except when the person is actively searching/filtering,
+  // where auto-expanding narrowed-down groups saves an extra tap.
+  const [groupByCity, setGroupByCity] = useState(true);
+  const [expandedCities, setExpandedCities] = useState({});
 
   const selectedDate = dates[dateIdx];
 
   function toggleExpand(key) {
     setExpanded(p => ({ ...p, [key]: !p[key] }));
+  }
+
+  function toggleCity(city) {
+    setExpandedCities(p => ({ ...p, [city]: !p[city] }));
   }
 
   const filtered = useMemo(() => {
@@ -107,6 +118,27 @@ export default function VoteSitesPage() {
   }, [sites, selectedDate, query, filter, openOnly]);
 
   const openCount = filtered.filter(s => s.status.open).length;
+
+  // Actively narrowing (typed a search, picked a category, or checked
+  // "open only") means the result set is already small — auto-expand
+  // every matching city group instead of making someone tap through an
+  // index to find the one match they already searched for.
+  const isNarrowed = query.trim() !== "" || filter !== "all" || openOnly;
+
+  const groupedByCity = useMemo(() => {
+    const map = new Map();
+    for (const s of filtered) {
+      if (!map.has(s.city)) map.set(s.city, []);
+      map.get(s.city).push(s);
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([city, citySites]) => ({
+        city,
+        sites: citySites,
+        openCount: citySites.filter(s => s.status.open).length,
+      }));
+  }, [filtered]);
 
   return (
     <div style={pageStyle}>
@@ -190,7 +222,7 @@ export default function VoteSitesPage() {
           })}
         </div>
 
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: CHARCOAL, cursor: "pointer" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: CHARCOAL, cursor: "pointer", marginBottom: 10 }}>
           <input
             type="checkbox"
             checked={openOnly}
@@ -199,105 +231,200 @@ export default function VoteSitesPage() {
           />
           Only show sites open on {selectedDate.dow} {selectedDate.label}
         </label>
+
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: CHARCOAL, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={groupByCity}
+            onChange={e => setGroupByCity(e.target.checked)}
+            style={{ width: 18, height: 18, accentColor: TEAL, cursor: "pointer" }}
+          />
+          Group by city
+        </label>
       </div>
 
       {/* Results count + freshness caveat */}
       <div style={{ width: "100%", maxWidth: 520, marginBottom: 12 }}>
-        <p style={{ fontSize: 14, fontWeight: 700, color: "#fff", margin: "0 0 6px" }}>
-          {filtered.length} site{filtered.length !== 1 ? "s" : ""} · {openCount} open {selectedDate.dow} {selectedDate.label}
-        </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 10, marginBottom: 6 }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: "#fff", margin: 0 }}>
+            {filtered.length} site{filtered.length !== 1 ? "s" : ""} · {openCount} open {selectedDate.dow} {selectedDate.label}
+            {groupByCity && ` · ${groupedByCity.length} cit${groupedByCity.length !== 1 ? "ies" : "y"}`}
+          </p>
+          {groupByCity && groupedByCity.length > 1 && !isNarrowed && (
+            <button
+              type="button"
+              onClick={() => {
+                const allOpen = groupedByCity.every(g => expandedCities[g.city]);
+                const next = {};
+                if (!allOpen) groupedByCity.forEach(g => { next[g.city] = true; });
+                setExpandedCities(next);
+              }}
+              style={{
+                flexShrink: 0, fontSize: 12, fontWeight: 700, color: "#fff", background: "none",
+                border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline",
+              }}
+            >
+              {groupedByCity.every(g => expandedCities[g.city]) ? "Collapse all" : "Expand all"}
+            </button>
+          )}
+        </div>
         <p style={{ fontSize: 11.5, color: "rgba(255,255,255,0.85)", lineHeight: 1.5, margin: 0 }}>
           {sourceNote}
         </p>
       </div>
 
-      {/* Site cards */}
+      {/* Site cards — grouped by city (collapsible index) or flat, per the toggle above */}
       <div style={{ width: "100%", maxWidth: 520, display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
         {filtered.length === 0 && (
           <div style={{ ...cardStyle, textAlign: "center", padding: 28 }}>
             <p style={{ fontSize: 14.5, color: CHARCOAL, margin: 0 }}>No sites match your search.</p>
           </div>
         )}
-        {filtered.map(s => {
-          const key = `${s.name}|${s.address}`;
-          const isExpanded = expanded[key];
-          const badge = CATEGORY_BADGE[s.category];
-          const mapHref = `https://maps.google.com/?q=${encodeURIComponent(s.address)}`;
-          return (
-            <div key={key} style={{ background: "#fff", borderRadius: 12, boxShadow: "0 12px 32px rgba(0,0,0,0.15)", overflow: "hidden" }}>
-              <div style={{ padding: "16px 18px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
-                  <h3 style={{ fontFamily: "var(--font-display)", fontSize: 16.5, color: TEAL, margin: 0, lineHeight: 1.3 }}>
-                    {s.name}
-                  </h3>
-                  <span style={{
-                    flexShrink: 0, fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6,
-                    background: badge.bg, color: badge.text, border: `1px solid ${badge.border}`, whiteSpace: "nowrap",
-                  }}>
-                    {CATEGORY_LABEL[s.category]}
-                  </span>
-                </div>
 
-                <a
-                  href={mapHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ fontSize: 13.5, color: CHARCOAL, textDecoration: "none", display: "block", marginBottom: 10 }}
-                >
-                  📍 {s.street}, {s.city} {s.zip} <span style={{ color: TEAL, fontWeight: 700 }}>Directions →</span>
-                </a>
-
-                <div style={{
-                  display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8,
-                  background: s.status.open ? "#ecfdf5" : "#f3f4f6",
-                  border: `1.5px solid ${s.status.open ? "#6ee7b7" : "#ddd"}`,
-                }}>
-                  <span style={{
-                    width: 8, height: 8, borderRadius: "50%",
-                    background: s.status.open ? "#059669" : "#999",
-                  }} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: s.status.open ? "#065f46" : "#666" }}>
-                    {s.status.display}
-                  </span>
-                </div>
-
-                {s.nonElectioneering && (
-                  <p style={{ fontSize: 11.5, color: "#999", margin: "8px 0 0", fontStyle: "italic" }}>
-                    Non-electioneering site — no campaigning within the legal limit of this location.
-                  </p>
-                )}
-
+        {groupByCity ? (
+          groupedByCity.map(g => {
+            const isCityOpen = isNarrowed || !!expandedCities[g.city];
+            return (
+              <div key={g.city} style={{ borderRadius: 12, overflow: "hidden", boxShadow: "0 12px 32px rgba(0,0,0,0.15)" }}>
                 <button
                   type="button"
-                  onClick={() => toggleExpand(key)}
+                  onClick={() => toggleCity(g.city)}
+                  aria-expanded={isCityOpen}
                   style={{
-                    marginTop: 10, fontSize: 12.5, fontWeight: 700, color: TEAL, background: "none",
-                    border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline",
+                    width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                    gap: 10, padding: "14px 18px", cursor: "pointer", border: "none", fontFamily: "inherit",
+                    background: `linear-gradient(135deg, ${TEAL}, ${TEAL_DARK})`,
                   }}
                 >
-                  {isExpanded ? "Hide full schedule" : "View full schedule (all days) →"}
+                  <span style={{ fontFamily: "var(--font-display)", fontSize: 16, color: "#fff", textAlign: "left" }}>
+                    {titleCase(g.city)}
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: GOLD, whiteSpace: "nowrap" }}>
+                      {g.openCount}/{g.sites.length} open
+                    </span>
+                    <span style={{
+                      fontSize: 16, color: "#fff",
+                      transform: isCityOpen ? "rotate(180deg)" : "rotate(0deg)",
+                      transition: "transform 0.15s ease",
+                    }}>
+                      ▾
+                    </span>
+                  </span>
                 </button>
-              </div>
-
-              {isExpanded && (
-                <div style={{ borderTop: "1px solid #eee", background: "#fafafa", padding: "12px 18px" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px" }}>
-                    {dates.map(d => {
-                      const st = statusForHours(s.hours[d.date]);
-                      return (
-                        <div key={d.date} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0" }}>
-                          <span style={{ color: "#777" }}>{d.dow} {d.label}</span>
-                          <span style={{ fontWeight: 700, color: st.open ? "#065f46" : "#aaa" }}>{st.display}</span>
-                        </div>
-                      );
-                    })}
+                {isCityOpen && (
+                  <div style={{ background: "#f3f4f6", padding: "10px", display: "flex", flexDirection: "column", gap: 10 }}>
+                    {g.sites.map(s => (
+                      <SiteCard
+                        key={`${s.name}|${s.address}`}
+                        site={s}
+                        dates={dates}
+                        isExpanded={!!expanded[`${s.name}|${s.address}`]}
+                        onToggle={() => toggleExpand(`${s.name}|${s.address}`)}
+                      />
+                    ))}
                   </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+                )}
+              </div>
+            );
+          })
+        ) : (
+          filtered.map(s => (
+            <SiteCard
+              key={`${s.name}|${s.address}`}
+              site={s}
+              dates={dates}
+              isExpanded={!!expanded[`${s.name}|${s.address}`]}
+              onToggle={() => toggleExpand(`${s.name}|${s.address}`)}
+            />
+          ))
+        )}
       </div>
+    </div>
+  );
+}
+
+// County export has city names in ALL CAPS (e.g. "FOUNTAIN HILLS") — this
+// is display-only formatting for the grouped city headers; the underlying
+// data/search still matches on the raw county-cased strings.
+function titleCase(s) {
+  return s.replace(/\w\S*/g, w => w.charAt(0) + w.slice(1).toLowerCase());
+}
+
+function SiteCard({ site: s, dates, isExpanded, onToggle }) {
+  const badge = CATEGORY_BADGE[s.category];
+  const mapHref = `https://maps.google.com/?q=${encodeURIComponent(s.address)}`;
+  return (
+    <div style={{ background: "#fff", borderRadius: 12, boxShadow: "0 8px 20px rgba(0,0,0,0.1)", overflow: "hidden" }}>
+      <div style={{ padding: "16px 18px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+          <h3 style={{ fontFamily: "var(--font-display)", fontSize: 16.5, color: TEAL, margin: 0, lineHeight: 1.3 }}>
+            {s.name}
+          </h3>
+          <span style={{
+            flexShrink: 0, fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6,
+            background: badge.bg, color: badge.text, border: `1px solid ${badge.border}`, whiteSpace: "nowrap",
+          }}>
+            {CATEGORY_LABEL[s.category]}
+          </span>
+        </div>
+
+        <a
+          href={mapHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ fontSize: 13.5, color: CHARCOAL, textDecoration: "none", display: "block", marginBottom: 10 }}
+        >
+          📍 {s.street}, {s.city} {s.zip} <span style={{ color: TEAL, fontWeight: 700 }}>Directions →</span>
+        </a>
+
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8,
+          background: s.status.open ? "#ecfdf5" : "#f3f4f6",
+          border: `1.5px solid ${s.status.open ? "#6ee7b7" : "#ddd"}`,
+        }}>
+          <span style={{
+            width: 8, height: 8, borderRadius: "50%",
+            background: s.status.open ? "#059669" : "#999",
+          }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: s.status.open ? "#065f46" : "#666" }}>
+            {s.status.display}
+          </span>
+        </div>
+
+        {s.nonElectioneering && (
+          <p style={{ fontSize: 11.5, color: "#999", margin: "8px 0 0", fontStyle: "italic" }}>
+            Non-electioneering site — no campaigning within the legal limit of this location.
+          </p>
+        )}
+
+        <button
+          type="button"
+          onClick={onToggle}
+          style={{
+            marginTop: 10, fontSize: 12.5, fontWeight: 700, color: TEAL, background: "none",
+            border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline",
+          }}
+        >
+          {isExpanded ? "Hide full schedule" : "View full schedule (all days) →"}
+        </button>
+      </div>
+
+      {isExpanded && (
+        <div style={{ borderTop: "1px solid #eee", background: "#fafafa", padding: "12px 18px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px" }}>
+            {dates.map(d => {
+              const st = statusForHours(s.hours[d.date]);
+              return (
+                <div key={d.date} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0" }}>
+                  <span style={{ color: "#777" }}>{d.dow} {d.label}</span>
+                  <span style={{ fontWeight: 700, color: st.open ? "#065f46" : "#aaa" }}>{st.display}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
