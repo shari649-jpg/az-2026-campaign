@@ -93,8 +93,19 @@ export default function VoteSitesPage() {
     setExpanded(p => ({ ...p, [key]: !p[key] }));
   }
 
+  // isCityOpen: a group with no explicit click yet (undefined) falls back
+  // to the "auto-expand while narrowed" default; once the person clicks
+  // the arrow, that's an explicit override and wins regardless of
+  // isNarrowed — otherwise the arrow visibly flips but the section can
+  // never actually close while a search/filter is active, which is the
+  // bug this replaces.
+  function isCityOpen(city) {
+    const explicit = expandedCities[city];
+    return explicit !== undefined ? explicit : isNarrowed;
+  }
+
   function toggleCity(city) {
-    setExpandedCities(p => ({ ...p, [city]: !p[city] }));
+    setExpandedCities(p => ({ ...p, [city]: !isCityOpen(city) }));
   }
 
   const filtered = useMemo(() => {
@@ -254,9 +265,9 @@ export default function VoteSitesPage() {
             <button
               type="button"
               onClick={() => {
-                const allOpen = groupedByCity.every(g => expandedCities[g.city]);
-                const next = {};
-                if (!allOpen) groupedByCity.forEach(g => { next[g.city] = true; });
+                const allOpen = groupedByCity.every(g => isCityOpen(g.city));
+                const next = { ...expandedCities };
+                groupedByCity.forEach(g => { next[g.city] = !allOpen; });
                 setExpandedCities(next);
               }}
               style={{
@@ -264,7 +275,7 @@ export default function VoteSitesPage() {
                 border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline",
               }}
             >
-              {groupedByCity.every(g => expandedCities[g.city]) ? "Collapse all" : "Expand all"}
+              {groupedByCity.every(g => isCityOpen(g.city)) ? "Collapse all" : "Expand all"}
             </button>
           )}
         </div>
@@ -283,13 +294,13 @@ export default function VoteSitesPage() {
 
         {groupByCity ? (
           groupedByCity.map(g => {
-            const isCityOpen = isNarrowed || !!expandedCities[g.city];
+            const cityOpen = isCityOpen(g.city);
             return (
               <div key={g.city} style={{ borderRadius: 12, overflow: "hidden", boxShadow: "0 12px 32px rgba(0,0,0,0.15)" }}>
                 <button
                   type="button"
                   onClick={() => toggleCity(g.city)}
-                  aria-expanded={isCityOpen}
+                  aria-expanded={cityOpen}
                   style={{
                     width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
                     gap: 10, padding: "14px 18px", cursor: "pointer", border: "none", fontFamily: "inherit",
@@ -305,14 +316,14 @@ export default function VoteSitesPage() {
                     </span>
                     <span style={{
                       fontSize: 16, color: "#fff",
-                      transform: isCityOpen ? "rotate(180deg)" : "rotate(0deg)",
+                      transform: cityOpen ? "rotate(180deg)" : "rotate(0deg)",
                       transition: "transform 0.15s ease",
                     }}>
                       ▾
                     </span>
                   </span>
                 </button>
-                {isCityOpen && (
+                {cityOpen && (
                   <div style={{ background: "#f3f4f6", padding: "10px", display: "flex", flexDirection: "column", gap: 10 }}>
                     {g.sites.map(s => (
                       <SiteCard
