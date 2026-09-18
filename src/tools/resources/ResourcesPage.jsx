@@ -1,67 +1,12 @@
 import { Link } from "react-router-dom";
 import ToolPage from "../../components/ToolPage";
 
+// Strategy Documents and Google Drive groups removed (Sept 2026, at the
+// person's request) — this page is no longer internal-only, and both
+// groups held nothing but placeholder cards with href: null ("Link not
+// yet configured"). Same reasoning removed Canva/Linktree/Signal Group
+// below: every remaining item across every group is a real, live link.
 const RESOURCE_GROUPS = [
-  {
-    title: "Strategy Documents",
-    color: "var(--teal)",
-    items: [
-      {
-        label: "AZ 2026 Messaging Strategy",
-        desc: "District-by-district playbook, messaging frames, GOTV strategy",
-        href: null,
-        tag: "PDF",
-      },
-      {
-        label: "Arizona Coalition Organizing Doc",
-        desc: "Member types, target groups, county-by-county plans",
-        href: null,
-        tag: "PDF",
-      },
-      {
-        label: "County Voices Style Sheets",
-        desc: "Demographic snapshots and messaging guidance per county",
-        href: null,
-        tag: "PDF",
-      },
-      {
-        label: "AZ Battleground District Report",
-        desc: "Current candidate rosters, district splits, strategy notes",
-        href: null,
-        tag: "Doc",
-      },
-    ],
-  },
-  {
-    title: "Google Drive",
-    color: "var(--charcoal)",
-    items: [
-      {
-        label: "Main Coalition Drive",
-        desc: "All shared documents, templates, and assets",
-        href: null,
-        tag: "Drive",
-      },
-      {
-        label: "County Message Sheets",
-        desc: "Individual county messaging and talking points",
-        href: null,
-        tag: "Drive",
-      },
-      {
-        label: "Media Library",
-        desc: "Images, graphics, video assets for campaigns",
-        href: null,
-        tag: "Drive",
-      },
-      {
-        label: "Volunteer Tracking Sheet",
-        desc: "Volunteer roster and task tracking spreadsheet",
-        href: null,
-        tag: "Sheet",
-      },
-    ],
-  },
   {
     title: "Election Resources",
     color: "var(--terracotta)",
@@ -93,9 +38,6 @@ const RESOURCE_GROUPS = [
     items: [
       { label: "SocialPilot", desc: "Scheduled posting and analytics across all platforms", href: "https://socialpilot.co", tag: "Tool" },
       { label: "Social Searcher", desc: "Real-time social media search and monitoring", href: "https://www.social-searcher.com/", tag: "Tool" },
-      { label: "Canva — AZ Coalition", desc: "Coalition graphics and design templates", href: null, tag: "Tool" },
-      { label: "AZ Coalition Linktree", desc: "Public-facing action hub", href: null, tag: "Link" },
-      { label: "Signal Group", desc: "Secure coalition communications", href: null, tag: "Secure" },
     ],
   },
 ];
@@ -105,7 +47,7 @@ export default function ResourcesPage() {
     <ToolPage
       eyebrow="Library"
       title="Resources Hub"
-      desc="Centralized links to strategy documents, Google Drive folders, election resources, and coalition tools."
+      desc="Centralized links to election resources and coalition tools."
       >
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "36px 24px 64px" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
