@@ -718,7 +718,7 @@ function UserView({ role, uid }) {
       // just checking role in isolation. Real Administrator/Manager
       // callers are unaffected — canReview(role) already short-circuits
       // before either value is even looked at for them.
-      await setStormStatus(storm.id, status, role, storm, user?.uid);
+      await setStormStatus(storm.id, status, role, storm, uid);
       notify(status === STORM_STATUS.PENDING_REVIEW ? "Submitted for review." : "Moved to Draft.");
       await load();
     } catch (e) { notify(e.message || "Couldn't update status.", "error"); }
