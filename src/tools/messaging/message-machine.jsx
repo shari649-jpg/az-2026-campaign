@@ -759,8 +759,16 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
 
 /* ── Main App ── */
 export default function App() {
-  const { role } = useAuth();
-  const canPushToStorm = role === "administrator" || role === "manager";
+  const { role, user } = useAuth();
+  // Sept 2026: opened to every signed-in role. Plain Users (role "user") can
+  // start a NEW draft storm from a push, or add to one of THEIR OWN storms that
+  // is still a draft — firestore.rules forces non-staff creates to status
+  // "draft" and only lets a storm's creator write its posts while it is still a
+  // draft, so a User can never push into someone else's storm or an
+  // Active/Pending one. openPushModal() therefore filters the list to the
+  // User's own drafts (isStaffPusher = Manager/Admin see every non-archived storm).
+  const isStaffPusher = role === "administrator" || role === "manager";
+  const canPushToStorm = true;
   const [view, setView]             = useState("form");
   const [msgMode, setMsgMode]       = useState("");   // "" (neutral, default) | "az" | "national"
   const [msgFrame, setMsgFrame]     = useState("");      // NATIONAL_FRAMES id or ""
@@ -1784,7 +1792,13 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
     setPushError(""); setPushModal(true); setPushLoading(true);
     try {
       const all = await loadAllStorms();
-      setPushStorms(all.filter(s => s.status !== STORM_STATUS.ARCHIVED));
+      setPushStorms(
+        isStaffPusher
+          ? all.filter(s => s.status !== STORM_STATUS.ARCHIVED)
+          // Users: only storms they created that are still drafts — the only
+          // ones firestore.rules will let them write posts into.
+          : all.filter(s => s.createdBy?.uid === user?.uid && s.status === STORM_STATUS.DRAFT)
+      );
     } catch {
       setPushError("Couldn't load storms — check your connection and try again.");
     }
@@ -2764,7 +2778,9 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
           <div style={{ background:T.surface, border:`3px solid ${T.borderStrong}`, borderRadius:16, padding:36, maxWidth:520, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,0.35)", maxHeight:"80vh", overflowY:"auto" }}>
             <h3 style={{ fontSize:28, fontWeight:900, color:T.text, marginBottom:10 }}>⛈️ Push to Storm</h3>
             <p style={{ color:T.textMid, fontSize:16, marginBottom:22 }}>
-              Sends these platform texts straight into a Storm post as a starting point. Media isn't included — add that afterward in Storm Posts.
+              {isStaffPusher
+                ? "Sends these platform texts straight into a Storm post as a starting point. Media isn't included — add that afterward in Storm Posts."
+                : "Adds these platform texts to a draft storm of yours as a new post, or starts a new draft storm with them. Media isn't included — add that afterward in Storm Posts. A Manager or Administrator reviews your storm before it goes live."}
             </p>
 
             {pushError && (
@@ -2781,13 +2797,13 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
             </button>
 
             <p style={{ fontSize:13, fontWeight:800, color:T.textMid, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:10 }}>
-              Or add to an existing storm
+              {isStaffPusher ? "Or add to an existing storm" : "Or add to one of your draft storms"}
             </p>
 
             {pushLoading && pushStorms.length === 0 ? (
               <p style={{ color:T.textMute, fontSize:15, textAlign:"center", padding:"20px 0" }}>Loading storms…</p>
             ) : pushStorms.length === 0 ? (
-              <p style={{ color:T.textMute, fontSize:15, textAlign:"center", padding:"10px 0" }}>No storms yet — create one above.</p>
+              <p style={{ color:T.textMute, fontSize:15, textAlign:"center", padding:"10px 0" }}>{isStaffPusher ? "No storms yet — create one above." : "You don't have any draft storms yet — create one above."}</p>
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:22 }}>
                 {pushStorms.map(storm => (
