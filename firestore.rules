@@ -36,6 +36,17 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgAdmin == true;
     }
+    // Sept 2026 — "org of one" (matches ProfilePage.jsx/AdminPage.jsx's
+    // established convention: an individual-tier account's own orgId IS
+    // its own uid, since provision-account.mjs gives each one a real
+    // orgs/{uid} doc so the existing credit/rate-limit code works
+    // unmodified). Not a flag, not a role — computed the same way every
+    // other caller already checks it.
+    function isOrgOfOne() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgId == request.auth.uid;
+    }
     // ── NEW — org identity (August 2026) ─────────────────────────────────
     // Matches AuthContext.jsx's future orgId reads: checked via a
     // Firestore doc lookup, the exact same pattern as isAdmin()/isManager()
@@ -447,6 +458,71 @@ service cloud.firestore {
             || request.resource.data.status == "pending_review"
           )
         )
+        ||
+        // ORG-OF-ONE (Sept 2026, round 2 adds "archived" to the reachable
+        // statuses): the account IS its own org — full control over their
+        // own storm at EVERY stage (draft/pending_review/active/archived),
+        // since there is nobody else in that org to hand review to. Still
+        // requires the storm to actually be theirs (createdBy match) and to
+        // carry a real orgId equal to their own — defense in depth, since
+        // create() already guarantees this, but never trust that alone.
+        // Content fields + status all in one allow-list; delete is still
+        // Administrator-only (see the delete rule below) — this only ever
+        // reaches "archived" via a status update, never a real delete.
+        (
+          isOrgOfOne()
+          && "orgId" in resource.data
+          && isSameOrg(resource.data.orgId)
+          && resource.data.createdBy.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(["status", "updatedAt", "reviewedBy", "reviewedAt",
+                         "title", "summary", "description", "subjectType",
+                         "subjectName", "hashtag", "alarmLevel", "startAt", "expiresAt"])
+          && request.resource.data.status in ["draft", "pending_review", "active", "archived"]
+        )
+        ||
+        // ORG ADMIN CO-EDIT + REVIEW (Sept 2026, revised from the original
+        // status-only version): an org admin (the orgAdmin flag, NOT a role —
+        // still never grants Manager permissions anywhere else) may co-edit a
+        // SAME-ORG storm's content while it is Draft or Pending Review —
+        // collaborating with the creator before or during review — but may
+        // only reach "active" FROM Pending Review: co-editing doesn't skip
+        // the review gate the way org-of-one's own unsupervised storm does.
+        // Same content-field allow-list as the org-of-one branch above.
+        // Deliberately narrower than the Manager branch above in one way
+        // Manager isn't: NO fail-open for a legacy storm with no orgId yet —
+        // an org admin can never touch an untagged/legacy storm this way.
+        (
+          isOrgAdmin()
+          && "orgId" in resource.data
+          && isSameOrg(resource.data.orgId)
+          && resource.data.status in ["draft", "pending_review"]
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(["status", "updatedAt", "reviewedBy", "reviewedAt",
+                         "title", "summary", "description", "subjectType",
+                         "subjectName", "hashtag", "alarmLevel", "startAt", "expiresAt"])
+          && (
+               request.resource.data.status in ["draft", "pending_review", "archived"]
+               || (resource.data.status == "pending_review" && request.resource.data.status == "active")
+             )
+        )
+        ||
+        // ORG ADMIN ARCHIVE (Sept 2026, round 2): reachable from ANY
+        // non-archived status of a same-org storm, including Active — this
+        // is deliberately separate from the co-edit branch above, which is
+        // gated to draft/pending_review only. A pure status transition, no
+        // content fields, so archiving a live storm never doubles as a
+        // content edit. One-directional: this branch can only ever move a
+        // storm TO "archived", never out of it (un-archiving, like every
+        // other Active-storm content edit, stays Manager/Admin-only).
+        (
+          isOrgAdmin()
+          && "orgId" in resource.data
+          && isSameOrg(resource.data.orgId)
+          && resource.data.status != "archived"
+          && request.resource.data.status == "archived"
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"])
+        )
       );
       // Delete: administrators only. Managers archive instead of deleting
       // (matches canDelete in stormLibrary.js).
@@ -479,7 +555,74 @@ service cloud.firestore {
           get(/databases/$(database)/documents/storms/$(stormId)).data.createdBy.uid == request.auth.uid
           && get(/databases/$(database)/documents/storms/$(stormId)).data.status == "draft"
         )
+        // ORG-OF-ONE (Sept 2026): full post control at every stage of their
+        // own storm, matching the storms/{stormId} branch above — an
+        // org-of-one storm is never "locked once submitted" the way a
+        // regular Member's is, since there's no separate reviewer waiting
+        // on a frozen draft.
+        || (
+          isOrgOfOne()
+          && "orgId" in get(/databases/$(database)/documents/storms/$(stormId)).data
+          && isSameOrg(get(/databases/$(database)/documents/storms/$(stormId)).data.orgId)
+          && get(/databases/$(database)/documents/storms/$(stormId)).data.createdBy.uid == request.auth.uid
+        )
+        // ORG ADMIN CO-EDIT (Sept 2026): same-org post editing while the
+        // parent storm is Draft or Pending Review, matching the co-edit
+        // window on the storm doc itself. No fail-open for a legacy
+        // storm with no orgId.
+        || (
+          isOrgAdmin()
+          && "orgId" in get(/databases/$(database)/documents/storms/$(stormId)).data
+          && isSameOrg(get(/databases/$(database)/documents/storms/$(stormId)).data.orgId)
+          && get(/databases/$(database)/documents/storms/$(stormId)).data.status in ["draft", "pending_review"]
+        )
       );
+    }
+    // ── storms/{stormId}/notes/{noteId} (Sept 2026) ──────────────────────
+    // A running, append-only thread attached to a storm — the originator
+    // and whoever can review/co-edit it (Admin/Manager/org admin/org-of-one)
+    // leaving each other notes as a storm moves through Draft/Pending
+    // Review/Active (e.g. a reviewer explaining why they sent it back, or
+    // the creator flagging something for the reviewer at submission time).
+    // Deliberately a subcollection of small immutable documents rather than
+    // an array field on the storm doc itself — appending a note is then a
+    // plain create, with no diff/array-membership gymnastics in the rule,
+    // and the thread can never be edited or deleted after the fact (an
+    // honest audit trail, same spirit as reviewedBy/reviewedAt never being
+    // rewritable elsewhere in this file).
+    match /storms/{stormId}/notes/{noteId} {
+      // Same openness as the storm/posts themselves — any signed-in
+      // coalition member can read all storms today, so a note thread
+      // attached to one isn't a new information boundary.
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(["text", "byUid", "byName", "byRole", "at"])
+        && request.resource.data.byUid == request.auth.uid
+        && request.resource.data.byRole in ["originator", "reviewer"]
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && (
+             // The storm's own creator may always leave a note (any status)
+             get(/databases/$(database)/documents/storms/$(stormId)).data.createdBy.uid == request.auth.uid
+             || isAdmin()
+             || (
+                  isManager()
+                  && (
+                       !("orgId" in get(/databases/$(database)/documents/storms/$(stormId)).data)
+                       || isSameOrg(get(/databases/$(database)/documents/storms/$(stormId)).data.orgId)
+                     )
+                )
+             || (
+                  (isOrgAdmin() || isOrgOfOne())
+                  && "orgId" in get(/databases/$(database)/documents/storms/$(stormId)).data
+                  && isSameOrg(get(/databases/$(database)/documents/storms/$(stormId)).data.orgId)
+                )
+           );
+      // Immutable once written — no update or delete for anyone but an
+      // Administrator, matching the storm doc's own delete boundary.
+      allow update: if false;
+      allow delete: if isAdmin();
     }
     // ══════════════════════════════════════════════════════════════════
     // ▲▲▲  END new storms block  ▲▲▲
