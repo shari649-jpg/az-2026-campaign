@@ -20,6 +20,7 @@ import { useAuth } from "../../context/AuthContext";
 import {
   loadAllStorms, loadActiveStorms, loadPosts, createStorm, updateStorm,
   setStormStatus, deleteStorm, canReview, canDelete, canManagePosts, backfillPostCount,
+  orgCoEditAccess, isOrgOfOneAccount, noteRoleFor, loadStormNotes, addStormNote,
   alarmLabel, isStormExpired, STORM_STATUS, SUBJECT_TYPES, MEDIA_TYPES, PLATFORMS,
   PUSH_TO_STORM_KEY, PUSH_TO_STORM_TTL_MS,
 } from "../../lib/stormLibrary";
@@ -118,11 +119,17 @@ function PostCountBadge({ storm }) {
   );
 }
 
-function StatusControl({ storm, role, onChange }) {
+// orgCoEdit (Sept 2026): the object orgCoEditAccess() returns for this
+// viewer/storm pair, or null. Its statusOptions list overrides the plain
+// memberOptions when present — org-of-one gets every stage, an org admin
+// gets whatever orgCoEditAccess() decided is reachable from the storm's
+// CURRENT status (see that function for the full reasoning).
+function StatusControl({ storm, role, onChange, orgCoEdit = null }) {
   const meta = STATUS_META[storm.status] || STATUS_META[STORM_STATUS.DRAFT];
   const staffOptions = [STORM_STATUS.DRAFT, STORM_STATUS.PENDING_REVIEW, STORM_STATUS.ACTIVE, STORM_STATUS.ARCHIVED];
   const memberOptions = [STORM_STATUS.DRAFT, STORM_STATUS.PENDING_REVIEW];
-  const options = canReview(role) ? staffOptions : memberOptions;
+  const isReviewer = canReview(role) || !!orgCoEdit;
+  const options = canReview(role) ? staffOptions : orgCoEdit ? orgCoEdit.statusOptions : memberOptions;
 
   function handleChange(e) {
     const next = e.target.value;
@@ -141,7 +148,7 @@ function StatusControl({ storm, role, onChange }) {
     }}>
       {options.map(s => (
         <option key={s} value={s}>
-          {s === STORM_STATUS.PENDING_REVIEW ? (canReview(role) ? "Pending Review" : "Submit for Review") : STATUS_META[s].label}
+          {s === STORM_STATUS.PENDING_REVIEW ? (isReviewer ? "Pending Review" : "Submit for Review") : STATUS_META[s].label}
         </option>
       ))}
     </select>
@@ -322,12 +329,44 @@ function AlarmRailGroup({ level, storms, onOpen, actionsFor }) {
 function StormDetailModal({ storm, onClose }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Notes thread (Sept 2026) — reads useAuth() itself rather than taking
+  // props, so both ManagerView and UserView's call sites needed no changes.
+  const { role, user, profile, isOrgAdmin } = useAuth();
+  const uid = user?.uid;
+  const orgId = profile?.orgId;
+  const myNoteRole = noteRoleFor(role, isOrgAdmin, uid, orgId, storm);
+  const [notes, setNotes] = useState([]);
+  const [notesLoading, setNotesLoading] = useState(true);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     loadPosts(storm.id).then(p => { if (!cancelled) { setPosts(p); setLoading(false); } });
     return () => { cancelled = true; };
   }, [storm.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setNotesLoading(true);
+    loadStormNotes(storm.id).then(n => { if (!cancelled) { setNotes(n); setNotesLoading(false); } });
+    return () => { cancelled = true; };
+  }, [storm.id]);
+
+  async function submitNote() {
+    if (!noteDraft.trim() || !myNoteRole) return;
+    setNoteSaving(true);
+    try {
+      await addStormNote(storm.id, noteDraft, myNoteRole);
+      setNoteDraft("");
+      setNotes(await loadStormNotes(storm.id));
+    } catch {
+      // Silent on purpose — the thread box itself has no error banner slot;
+      // the draft text staying in the box is signal enough that it didn't send.
+    } finally {
+      setNoteSaving(false);
+    }
+  }
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "24px 16px", overflowY: "auto" }}>
@@ -352,6 +391,55 @@ function StormDetailModal({ storm, onClose }) {
             {posts.map(post => <PostDisplayCard key={post.id} post={post} hashtag={storm.hashtag} storm={storm} />)}
           </div>
         )}
+
+        {/* Notes thread (Sept 2026) — running back-and-forth between the
+            creator and whoever reviews/co-edits this storm. Read is open to
+            any signed-in member (same as the storm/posts themselves); only
+            the two eligible parties (myNoteRole non-null) get the compose box. */}
+        <div style={{ marginTop: 22, paddingTop: 18, borderTop: `1.5px solid ${BORDER}` }}>
+          <h3 style={{ fontSize: 15, fontWeight: 800, color: TEAL, margin: "0 0 10px", fontFamily: "var(--font-display)" }}>Notes</h3>
+          {notesLoading ? (
+            <p style={{ color: "#999", fontSize: 13 }}>Loading notes…</p>
+          ) : notes.length === 0 ? (
+            <p style={{ color: "#999", fontSize: 13, marginBottom: myNoteRole ? 12 : 0 }}>No notes yet.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: myNoteRole ? 14 : 0 }}>
+              {notes.map(n => (
+                <div key={n.id} style={{
+                  background: n.byRole === "reviewer" ? "rgba(62,207,178,0.10)" : SURFACE_ALT,
+                  border: `1.5px solid ${n.byRole === "reviewer" ? TURQUOISE : BORDER}`,
+                  borderRadius: 8, padding: "8px 12px",
+                }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: n.byRole === "reviewer" ? TEAL : "#888", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    {n.byName || "Someone"} · {n.byRole === "reviewer" ? "Reviewer" : "Originator"}
+                  </div>
+                  <div style={{ fontSize: 14, color: CHARCOAL, whiteSpace: "pre-wrap" }}>{n.text}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {myNoteRole && (
+            <div>
+              <textarea
+                value={noteDraft}
+                onChange={e => setNoteDraft(e.target.value)}
+                rows={2}
+                maxLength={2000}
+                placeholder={myNoteRole === "reviewer" ? "Note to the person who created this storm…" : "Note to whoever reviews this…"}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${BORDER}`, fontSize: 14, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+              />
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+                <button onClick={submitNote} disabled={noteSaving || !noteDraft.trim()} style={{
+                  background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px",
+                  fontSize: 13, fontWeight: 700, cursor: noteSaving || !noteDraft.trim() ? "default" : "pointer",
+                  opacity: noteSaving || !noteDraft.trim() ? 0.6 : 1,
+                }}>
+                  {noteSaving ? "Sending…" : "Add note"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -360,7 +448,8 @@ function StormDetailModal({ storm, onClose }) {
 // ── Shared create/edit form, used by both Manager View and a Member's
 // "My Storms" section in User View. ──
 function StormFormModal({ storm, role, onClose, onSaved }) {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
+  const isOrgOfOne = isOrgOfOneAccount(user?.uid, profile?.orgId);
   const isEdit = !!storm;
   const [form, setForm] = useState(storm ? {
     title: storm.title || "", summary: storm.summary || "", description: storm.description || "",
@@ -405,7 +494,9 @@ function StormFormModal({ storm, role, onClose, onSaved }) {
 
         {role === "user" && !isEdit && (
           <div style={{ background: SURFACE_ALT, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#666" }}>
-            This will be created as a <strong>draft</strong>. A Manager or Administrator will review it before it goes live.
+            {isOrgOfOne
+              ? <>This will be created as a <strong>draft</strong>. Since you're the only member of your organization, you can move it straight to Active whenever it's ready — no separate reviewer needed.</>
+              : <>This will be created as a <strong>draft</strong>. A Manager, Administrator, or your organization's admin will review it before it goes live.</>}
           </div>
         )}
 
@@ -472,12 +563,19 @@ function StormFormModal({ storm, role, onClose, onSaved }) {
 }
 
 export default function StormsHubPage() {
-  const { profile, user } = useAuth();
+  const { profile, user, isOrgAdmin } = useAuth();
   const role = profile?.role || "user";
   const uid = user?.uid;
+  const orgId = profile?.orgId;
   const isStaff = role === "administrator" || role === "manager";
+  // Round 2 (Sept 2026): an Org Admin now gets the same Manager View/User
+  // View toggle real staff get — "basically the same screen within their
+  // org that a site admin gets for the whole site." ManagerView is passed
+  // scopeOrgId so it's scoped to their own org's storms only; real staff
+  // are unaffected (scopeOrgId stays null for them).
+  const showManagerToggle = isStaff || isOrgAdmin;
 
-  const [viewMode, setViewMode] = useState(isStaff ? "manager" : "user");
+  const [viewMode, setViewMode] = useState(showManagerToggle ? "manager" : "user");
 
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "32px 20px 64px", fontFamily: "var(--font-body)" }}>
@@ -491,7 +589,7 @@ export default function StormsHubPage() {
           </p>
         </div>
 
-        {isStaff && (
+        {showManagerToggle && (
           <div style={{ display: "flex", background: SURFACE_ALT, borderRadius: 999, padding: 4, flexShrink: 0 }}>
             {["manager", "user"].map(mode => (
               <button key={mode} onClick={() => setViewMode(mode)} style={{
@@ -505,15 +603,31 @@ export default function StormsHubPage() {
         )}
       </div>
 
-      {viewMode === "manager" ? <ManagerView role={role} uid={uid} /> : <UserView role={role} uid={uid} />}
+      {viewMode === "manager"
+        ? <ManagerView role={role} uid={uid} scopeOrgId={isStaff ? null : orgId} />
+        : <UserView role={role} uid={uid} isOrgAdmin={isOrgAdmin} orgId={orgId} />}
     </div>
   );
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// Manager View — every storm, Manage Storm dropdown, Status dropdown, Delete
+// Manager View — every storm, Manage Storm dropdown, Status dropdown, Delete.
+//
+// scopeOrgId (Sept 2026, round 2): when set, this is an Org Admin viewing
+// the SAME screen a site Manager/Administrator gets, scoped to their own
+// org — "basically the same screen within their org that a site admin
+// gets for the whole site," per the person's own framing. Real staff
+// always pass scopeOrgId=null and are completely unaffected: canReview()
+// short-circuits the Status control, canDelete() already hides the Delete
+// button for a non-Administrator, and the load()/filter below is a no-op
+// when there's no org to scope to.
+//
+// An Org Admin's per-row capability is whatever orgCoEditAccess() decides
+// for THAT storm's current status (draft/pending_review: full content
+// co-edit; active: archive-only, no content edit; archived: null — no
+// standing left, shown as a plain read-only badge, no un-archive path here).
 // ══════════════════════════════════════════════════════════════════════
-function ManagerView({ role, uid }) {
+function ManagerView({ role, uid, scopeOrgId = null }) {
   const [storms, setStorms]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
@@ -540,7 +654,12 @@ function ManagerView({ role, uid }) {
 
   async function load() {
     setLoading(true); setError("");
-    try { setStorms(await loadAllStorms()); }
+    try {
+      const all = await loadAllStorms();
+      // scopeOrgId (round 2): Org Admin only ever sees their own org's
+      // storms here — real staff pass null and see everything, unchanged.
+      setStorms(scopeOrgId ? all.filter(s => s.orgId === scopeOrgId) : all);
+    }
     catch (e) { setError("Couldn't load storms. Check your connection and try again."); }
     finally { setLoading(false); }
   }
@@ -552,7 +671,11 @@ function ManagerView({ role, uid }) {
       // storm and uid passed through (Sept 2026) — see UserView's matching
       // handleStatusChange comment. No-op for a real Manager/Admin caller
       // here; passed for consistency with setStormStatus()'s real contract.
-      await setStormStatus(storm.id, status, role, storm, uid);
+      // orgCoEdit (round 2): only meaningful when this is a scoped Org
+      // Admin view — null for real staff, who don't need it (canReview()
+      // already covers them).
+      const orgCoEdit = scopeOrgId ? orgCoEditAccess(true, uid, scopeOrgId, storm) : null;
+      await setStormStatus(storm.id, status, role, storm, uid, orgCoEdit);
       notify(
         status === STORM_STATUS.ACTIVE ? "Storm activated." :
         status === STORM_STATUS.ARCHIVED ? "Storm archived." :
@@ -622,7 +745,18 @@ function ManagerView({ role, uid }) {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {visibleStorms.map(storm => (
+          {visibleStorms.map(storm => {
+            // Round 2: for a scoped Org Admin view, orgCoEdit decides both
+            // whether a live Status control is even offered (null once a
+            // storm is Archived — nothing left to do here, so it's shown as
+            // a plain read-only badge) and whether content editing (Manage
+            // Storm) is on the table right now (false for an Active storm —
+            // archive-only, no content edit). Real staff (scopeOrgId=null)
+            // always get both — orgCoEdit stays null and isn't consulted.
+            const orgCoEdit = scopeOrgId ? orgCoEditAccess(true, uid, scopeOrgId, storm) : null;
+            const canShowStatusControl = !scopeOrgId || !!orgCoEdit;
+            const canEditContentHere = !scopeOrgId || !!orgCoEdit?.canEditContent;
+            return (
             <div key={storm.id} style={{ background: "#fff", border: `1.5px solid ${BORDER}`, borderRadius: 12, padding: "18px 22px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ flex: 1, minWidth: 240 }}>
@@ -643,13 +777,27 @@ function ManagerView({ role, uid }) {
 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <PostCountBadge storm={storm} />
-                  <StatusControl storm={storm} role={role} onChange={(status) => handleStatusChange(storm, status)} />
-                  <ManageStormMenu onCard={() => setFormStorm(storm)} onPosts={() => { setPostsJustCreated(false); setPostsStorm(storm); }} />
+                  {canShowStatusControl ? (
+                    <StatusControl storm={storm} role={role} orgCoEdit={orgCoEdit} onChange={(status) => handleStatusChange(storm, status)} />
+                  ) : (
+                    <span style={{
+                      fontSize: 12.5, fontWeight: 800, letterSpacing: "0.03em",
+                      color: (STATUS_META[storm.status] || STATUS_META[STORM_STATUS.DRAFT]).color,
+                      background: (STATUS_META[storm.status] || STATUS_META[STORM_STATUS.DRAFT]).bg,
+                      border: `1.5px solid ${(STATUS_META[storm.status] || STATUS_META[STORM_STATUS.DRAFT]).color}`,
+                      borderRadius: 999, padding: "5px 10px",
+                    }}>
+                      {(STATUS_META[storm.status] || STATUS_META[STORM_STATUS.DRAFT]).label}
+                    </span>
+                  )}
+                  {canEditContentHere && (
+                    <ManageStormMenu onCard={() => setFormStorm(storm)} onPosts={() => { setPostsJustCreated(false); setPostsStorm(storm); }} />
+                  )}
                   {canDelete(role) && <ActionBtn onClick={() => handleDelete(storm)} label="Delete" danger />}
                 </div>
               </div>
             </div>
-          ))}
+          );})}
         </div>
       )}
 
@@ -681,7 +829,7 @@ function ManagerView({ role, uid }) {
 // User View — browse Active storms, download posts, copy platform texts,
 // PLUS "My Storms": the only place a plain Member can create/manage a draft.
 // ══════════════════════════════════════════════════════════════════════
-function UserView({ role, uid }) {
+function UserView({ role, uid, isOrgAdmin = false, orgId = null }) {
   const [allStorms, setAllStorms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [detailStorm, setDetailStorm] = useState(null);
@@ -713,13 +861,22 @@ function UserView({ role, uid }) {
 
   async function handleStatusChange(storm, status) {
     try {
-      // storm and user.uid passed through (Sept 2026) — setStormStatus()
-      // needs both to verify a Member is submitting their OWN draft, not
-      // just checking role in isolation. Real Administrator/Manager
-      // callers are unaffected — canReview(role) already short-circuits
-      // before either value is even looked at for them.
-      await setStormStatus(storm.id, status, role, storm, uid);
-      notify(status === STORM_STATUS.PENDING_REVIEW ? "Submitted for review." : "Moved to Draft.");
+      // storm and uid passed through (Sept 2026) — setStormStatus() needs
+      // both to verify a Member is submitting their OWN draft, not just
+      // checking role in isolation. Real Administrator/Manager callers are
+      // unaffected — canReview(role) already short-circuits before either
+      // value is even looked at for them.
+      // Sixth arg (Sept 2026): orgCoEditAccess() for THIS storm — null
+      // unless this caller is an org admin or org-of-one with standing on
+      // it (see that function for exactly which targets it then allows).
+      const orgCoEdit = orgCoEditAccess(isOrgAdmin, uid, orgId, storm);
+      await setStormStatus(storm.id, status, role, storm, uid, orgCoEdit);
+      notify(
+        status === STORM_STATUS.ACTIVE ? "Approved — the storm is now live."
+        : status === STORM_STATUS.PENDING_REVIEW ? "Submitted for review."
+        : orgCoEdit && storm.createdBy?.uid !== uid ? "Sent back to draft."
+        : "Moved to Draft."
+      );
       await load();
     } catch (e) { notify(e.message || "Couldn't update status.", "error"); }
   }
@@ -729,6 +886,12 @@ function UserView({ role, uid }) {
   // Active to members for up to an hour until the next cron run catches it.
   const activeStorms = allStorms.filter(s => s.status === STORM_STATUS.ACTIVE && !isStormExpired(s.expiresAt));
   const myStormsAll = uid ? allStorms.filter(s => s.createdBy?.uid === uid && s.status !== STORM_STATUS.ACTIVE) : [];
+  // Round 2 (Sept 2026): the org-admin "Awaiting Your Approval" and "Your
+  // Organization's Drafts" queues that used to live here have moved into
+  // the scoped Manager View instead (see StormsHubPage's own toggle and
+  // ManagerView's scopeOrgId) — an Org Admin now reviews/co-edits their
+  // org's other-member storms from that same screen a site admin gets,
+  // rather than a bespoke section here. My Storms below is unaffected.
   const myArchivedCount = myStormsAll.filter(s => s.status === STORM_STATUS.ARCHIVED).length;
   const myStorms = showArchived ? myStormsAll : myStormsAll.filter(s => s.status !== STORM_STATUS.ARCHIVED);
 
@@ -787,7 +950,12 @@ function UserView({ role, uid }) {
               onOpen={setDetailStorm}
               actionsFor={storm => (
                 <>
-                  <StatusControl storm={storm} role={role} onChange={(status) => handleStatusChange(storm, status)} />
+                  {/* Org-of-one (Sept 2026): orgCoEditAccess() gives THEIR OWN
+                      storm the full draft/pending_review/active option set
+                      here in My Storms, instead of the plain member's
+                      draft/pending_review-only default. A regular Member's
+                      own storm gets orgCoEdit === null, unchanged from before. */}
+                  <StatusControl storm={storm} role={role} orgCoEdit={orgCoEditAccess(isOrgAdmin, uid, orgId, storm)} onChange={(status) => handleStatusChange(storm, status)} />
                   <ManageStormMenu onCard={() => setFormStorm(storm)} onPosts={() => { setPostsJustCreated(false); setPostsStorm(storm); }} />
                 </>
               )}
