@@ -101,6 +101,67 @@ export const STORM_TO_MM_TTL_MS = 10 * 60 * 1000; // 10 minutes — matches the 
 export function canReview(role)  { return role === "administrator" || role === "manager"; }
 export function canArchive(role) { return role === "administrator" || role === "manager"; }
 export function canDelete(role)  { return role === "administrator"; }
+
+// ── Org co-editing (Sept 2026) ─────────────────────────────────────────
+// "Org of one" (matches ProfilePage.jsx/AdminPage.jsx's established
+// convention): an individual-tier account's own orgId IS its own uid.
+// Not a flag, not a role — computed the same way every other caller
+// already checks it.
+export function isOrgOfOneAccount(uid, orgId) {
+  return !!uid && !!orgId && orgId === uid;
+}
+
+// orgCoEditAccess() is the single source of truth for "can this viewer
+// co-edit THIS storm's content/posts right now, and which statuses can
+// they set it to" — mirrors firestore.rules' storms/{stormId} update
+// branches exactly (see that file for the full reasoning):
+//   • org-of-one: every stage (draft/pending_review/active/archived) of
+//     their OWN storm — there's nobody else in that org to hand review to.
+//   • org admin: CONTENT edits during draft OR pending_review of any
+//     SAME-ORG storm — may only reach "active" FROM pending_review, so
+//     co-editing doesn't skip the review gate the way org-of-one's own
+//     storm does. Separately (round 2, Sept 2026): an ARCHIVE-ONLY
+//     capability reachable from ANY non-archived status (Active included)
+//     — a pure status transition, no content fields, so this doesn't
+//     reopen editing on a storm that's already live.
+// `canEditContent` tells callers (StormsHubPage.jsx) whether the
+// content-editing UI (Manage Storm menu, StormFormModal, post editor)
+// should be offered at all, vs. only a status control that can reach
+// "archived" and nothing else.
+// Returns null when the viewer has no co-edit access to this storm at all
+// (different org, storm still lacks an orgId, already archived, etc.) —
+// callers treat null as "fall back to whatever this viewer's role would
+// normally get."
+export function orgCoEditAccess(isOrgAdmin, uid, orgId, storm) {
+  if (!orgId || !storm?.orgId || storm.orgId !== orgId) return null;
+  if (isOrgOfOneAccount(uid, orgId)) {
+    if (storm.createdBy?.uid !== uid) return null; // defense in depth — should never happen
+    if (storm.status === STORM_STATUS.ARCHIVED) {
+      return { kind: "org-of-one", canEditContent: false, statusOptions: [STORM_STATUS.ARCHIVED] };
+    }
+    return {
+      kind: "org-of-one",
+      canEditContent: true,
+      statusOptions: [STORM_STATUS.DRAFT, STORM_STATUS.PENDING_REVIEW, STORM_STATUS.ACTIVE, STORM_STATUS.ARCHIVED],
+    };
+  }
+  if (isOrgAdmin && storm.status !== STORM_STATUS.ARCHIVED) {
+    const canEditContent = storm.status === STORM_STATUS.DRAFT || storm.status === STORM_STATUS.PENDING_REVIEW;
+    if (canEditContent) {
+      return {
+        kind: "org-admin",
+        canEditContent: true,
+        statusOptions: storm.status === STORM_STATUS.DRAFT
+          ? [STORM_STATUS.DRAFT, STORM_STATUS.PENDING_REVIEW, STORM_STATUS.ARCHIVED]
+          : [STORM_STATUS.DRAFT, STORM_STATUS.PENDING_REVIEW, STORM_STATUS.ACTIVE, STORM_STATUS.ARCHIVED],
+      };
+    }
+    // Active (or any other non-archived, non-draft/pending_review status):
+    // archive-only — status transition alone, no content editing offered.
+    return { kind: "org-admin-archive-only", canEditContent: false, statusOptions: [storm.status, STORM_STATUS.ARCHIVED] };
+  }
+  return null;
+}
 export function canEdit(role, storm, uid) {
   if (role === "administrator" || role === "manager") return true;
   return storm.createdBy?.uid === uid && storm.status === STORM_STATUS.DRAFT;
@@ -224,14 +285,22 @@ export async function updateStorm(id, data) {
 // other status, or a non-reviewer targeting a storm they don't own) is
 // still blocked exactly as before — this doesn't touch canReview()'s
 // existing authority over Active/Archived at all.
-export async function setStormStatus(id, status, role, storm = null, uid = null) {
+export async function setStormStatus(id, status, role, storm = null, uid = null, orgCoEdit = null) {
   const isOwnDraftSubmission = status === STORM_STATUS.PENDING_REVIEW
     && storm?.status === STORM_STATUS.DRAFT
     && !!storm?.createdBy?.uid
     && !!uid
     && storm.createdBy.uid === uid;
 
-  if (!canReview(role) && status !== STORM_STATUS.DRAFT && !isOwnDraftSubmission) {
+  // orgCoEdit (Sept 2026): caller passes orgCoEditAccess(isOrgAdmin, uid,
+  // orgId, storm) for THIS storm/target pair. This is a client-side
+  // convenience check only (a faster, friendlier error than waiting on
+  // Firestore's own rejection) — firestore.rules is what actually
+  // enforces which targets are reachable; this must stay a mirror of it,
+  // never a looser gate.
+  const isOrgCoEditTransition = !!orgCoEdit?.statusOptions?.includes(status);
+
+  if (!canReview(role) && status !== STORM_STATUS.DRAFT && !isOwnDraftSubmission && !isOrgCoEditTransition) {
     throw new Error("Only Managers and Administrators can change a storm's review status.");
   }
   const patch = { status, updatedAt: serverTimestamp() };
@@ -320,6 +389,51 @@ export function alarmLabel(level) {
 
 function postsCol(stormId) {
   return collection(db, COL, stormId, "posts");
+}
+
+// ── Notes thread (Sept 2026) ────────────────────────────────────────────
+// storms/{stormId}/notes/{noteId} — an append-only running thread between
+// the storm's creator ("originator") and whoever reviews/co-edits it
+// ("reviewer": Admin/Manager/org admin/org-of-one). See firestore.rules
+// for the write boundary; this file just reads/writes within it.
+function notesCol(stormId) {
+  return collection(db, COL, stormId, "notes");
+}
+
+export async function loadStormNotes(stormId) {
+  const q = query(notesCol(stormId), orderBy("at", "asc"));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// byRole: "originator" | "reviewer" — caller decides which side this
+// viewer is on for THIS storm (see StormsHubPage.jsx's noteRoleFor()).
+// Which side of the thread is this viewer on for THIS storm, if any?
+// Mirrors the notes/{noteId} create rule's own author-eligibility check —
+// broader than orgCoEditAccess() above on purpose: a note can be left at
+// ANY stage (draft/pending_review/active), by the creator or by anyone
+// who can review/co-edit this org's storms, not just while content edits
+// are open. Returns null when this viewer has no standing to post here
+// (can still read the thread — read is open to any signed-in member).
+export function noteRoleFor(role, isOrgAdmin, uid, orgId, storm) {
+  if (!storm) return null;
+  if (storm.createdBy?.uid && uid && storm.createdBy.uid === uid) return "originator";
+  if (canReview(role)) return "reviewer";
+  if (orgId && storm.orgId === orgId && (isOrgAdmin || isOrgOfOneAccount(uid, orgId))) return "reviewer";
+  return null;
+}
+
+export async function addStormNote(stormId, text, byRole) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return;
+  const u = auth.currentUser;
+  await addDoc(notesCol(stormId), {
+    text: trimmed,
+    byUid: u?.uid || null,
+    byName: u?.displayName || u?.email || "Someone",
+    byRole,
+    at: serverTimestamp(),
+  });
 }
 
 export async function loadPosts(stormId) {
