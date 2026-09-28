@@ -1,4 +1,4 @@
-// src/tools/storms/StormsHubPage.jsx
+\// src/tools/storms/StormsHubPage.jsx
 //
 // Storm Chaser's Hub — ONE page for everyone.
 //
@@ -156,22 +156,53 @@ function StatusControl({ storm, role, onChange, orgCoEdit = null }) {
 }
 
 // ── "Manage Storm" dropdown — Storm Card / Storm Posts, staff only. ──
+//
+// CONFIRMED BUG (Sept 2026) closed here: this dropdown used to be
+// `position: "absolute"` inside its own `position: "relative"` wrapper —
+// meaning its containing block was whatever card it was rendered in. Any
+// card rendered inside a StormRail (AlarmRailGroup's horizontal-scroll
+// rail — this is exactly how "My Storms" renders every card, not just the
+// browse rails) sits inside a container with `overflowX: "auto"`. Per the
+// CSS overflow spec, setting overflow-x to anything other than "visible"
+// forces overflow-y to compute as "auto" too when it isn't set explicitly
+// — so that rail was ALSO clipping vertical overflow, silently cutting off
+// this dropdown every time it opened below a card near the bottom of its
+// row (exactly the "Manage Storm" button in a "My Storms" card). The
+// button's own onClick still fired and flipped `open` to true — nothing
+// was broken in the state — the menu was just rendered off in clipped
+// space where no one could see or click it, which reads as "does nothing."
+// Fixed by computing the menu's position from the button's own
+// getBoundingClientRect() and rendering it `position: "fixed"` instead —
+// fixed positioning's containing block is the viewport (unless an
+// ancestor sets transform/filter/perspective, which none here do), so it
+// now escapes the rail's clipping entirely, wherever this menu is used.
 function ManageStormMenu({ onCard, onPosts }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+
+  function toggle() {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 6, right: window.innerWidth - r.right });
+    }
+    setOpen(o => !o);
+  }
+
   return (
     <div style={{ position: "relative" }}>
-      <button onClick={() => setOpen(o => !o)} style={{
+      <button ref={btnRef} onClick={toggle} style={{
         background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px",
         fontSize: 12.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
       }}>
         Manage Storm ▾
       </button>
-      {open && (
+      {open && pos && (
         <>
-          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 10 }} />
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 1000 }} />
           <div style={{
-            position: "absolute", top: "110%", right: 0, background: "#fff", border: `1.5px solid ${BORDER}`,
-            borderRadius: 10, boxShadow: "0 4px 16px rgba(0,0,0,0.12)", zIndex: 11, minWidth: 160, overflow: "hidden",
+            position: "fixed", top: pos.top, right: pos.right, background: "#fff", border: `1.5px solid ${BORDER}`,
+            borderRadius: 10, boxShadow: "0 4px 16px rgba(0,0,0,0.12)", zIndex: 1001, minWidth: 160, overflow: "hidden",
           }}>
             <button onClick={() => { setOpen(false); onCard(); }} style={menuItemStyle}>📋 Storm Card</button>
             <button onClick={() => { setOpen(false); onPosts(); }} style={menuItemStyle}>🖼️ Storm Posts</button>
@@ -636,6 +667,13 @@ function ManagerView({ role, uid, scopeOrgId = null }) {
   const [formStorm, setFormStorm] = useState(undefined); // undefined = closed, null = new, object = editing
   const [postsStorm, setPostsStorm] = useState(null);
   const [postsJustCreated, setPostsJustCreated] = useState(false);
+  // CONFIRMED BUG (Sept 2026) closed here: StormDetailModal — the only
+  // place the Notes thread renders — was only ever wired up in UserView
+  // (its rail cards' onOpen={setDetailStorm}). ManagerView never declared
+  // a detailStorm state and never rendered the modal, so there was no way
+  // to reach Notes from this screen at all — not for real staff before
+  // this session, and not for the scoped Org Admin view added this round.
+  const [detailStorm, setDetailStorm] = useState(null);
   const [filter, setFilter] = useState("all");
 
   useEffect(() => { load(); }, []);
@@ -759,7 +797,15 @@ function ManagerView({ role, uid, scopeOrgId = null }) {
             return (
             <div key={storm.id} style={{ background: "#fff", border: `1.5px solid ${BORDER}`, borderRadius: 12, padding: "18px 22px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                <div style={{ flex: 1, minWidth: 240 }}>
+                {/* Click-to-open detail (Sept 2026 fix, see detailStorm's own
+                    comment above) — a plain <button> so the clickable region
+                    reaches the whole title/summary/meta block, same pattern
+                    StormBrowseCard already uses for the browse rails. Opens
+                    StormDetailModal, which is also where the Notes thread
+                    lives — previously unreachable anywhere in Manager View. */}
+                <button onClick={() => setDetailStorm(storm)} style={{
+                  flex: 1, minWidth: 240, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer",
+                }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
                     <h3 style={{ margin: 0, fontSize: 19, color: TEAL, fontFamily: "var(--font-display)" }}>{storm.title}</h3>
                     <AlarmBadge level={storm.alarmLevel || 1} />
@@ -773,9 +819,9 @@ function ManagerView({ role, uid, scopeOrgId = null }) {
                     {storm.expiresAt && <span>Expires {fmtDateTime(storm.expiresAt)}</span>}
                     {storm.hashtag && <span style={{ color: TURQUOISE, fontWeight: 700 }}>#{storm.hashtag}</span>}
                   </div>
-                </div>
+                </button>
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <div onClick={e => e.stopPropagation()} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <PostCountBadge storm={storm} />
                   {canShowStatusControl ? (
                     <StatusControl storm={storm} role={role} orgCoEdit={orgCoEdit} onChange={(status) => handleStatusChange(storm, status)} />
@@ -809,7 +855,13 @@ function ManagerView({ role, uid, scopeOrgId = null }) {
           onSaved={async (newStormId) => {
             const wasNew = formStorm === null;
             setFormStorm(undefined);
-            const fresh = await loadAllStorms();
+            // scopeOrgId fix (Sept 2026): this used to call loadAllStorms()
+            // and setStorms() directly, bypassing the scopeOrgId filter —
+            // after any save, a scoped Org Admin's list would silently
+            // refill with every org's storms instead of just their own.
+            // Reusing load() keeps this in one place with the initial load.
+            const all = await loadAllStorms();
+            const fresh = scopeOrgId ? all.filter(s => s.orgId === scopeOrgId) : all;
             setStorms(fresh);
             // First save of a brand-new storm — jump straight into building
             // its posts rather than leaving the admin to hunt for the button.
@@ -821,6 +873,7 @@ function ManagerView({ role, uid, scopeOrgId = null }) {
         />
       )}
       {postsStorm && <StormPostsPanel storm={postsStorm} justCreated={postsJustCreated} onClose={() => { setPostsStorm(null); setPostsJustCreated(false); }} />}
+      {detailStorm && <StormDetailModal storm={detailStorm} onClose={() => setDetailStorm(null)} />}
     </>
   );
 }
