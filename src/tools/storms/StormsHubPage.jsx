@@ -899,7 +899,7 @@ function ManagerView({ role, uid, scopeOrgId = null }) {
       )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "20px 0 24px" }}>
-        {["all", STORM_STATUS.PENDING_REVIEW, STORM_STATUS.ACTIVE, STORM_STATUS.DRAFT, STORM_STATUS.ARCHIVED].map(f => (
+        {["all", STORM_STATUS.DRAFT, STORM_STATUS.PENDING_REVIEW, STORM_STATUS.ACTIVE, STORM_STATUS.ARCHIVED].map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{
             background: filter === f ? TEAL : "#fff", color: filter === f ? "#fff" : CHARCOAL,
             border: `1.5px solid ${filter === f ? TEAL : BORDER}`, borderRadius: 999,
