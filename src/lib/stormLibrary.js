@@ -365,11 +365,25 @@ export async function uploadPublicCardImage(stormId, file) {
 // files. This is the only delete path that fully cleans up — deleting a
 // post individually (deletePost, below) also cleans its own files, but
 // this sweeps everything in one go for a full storm teardown.
+// CONFIRMED GAP closed here (Sept 2026, round 3): this only ever cleaned up
+// the posts subcollection (+ their Storage files) before deleting the storm
+// doc itself — Firestore never cascade-deletes a subcollection when its
+// parent document is deleted, so storms/{stormId}/notes was left behind as
+// permanently orphaned docs: invisible to the app (nothing lists a deleted
+// storm's id anymore) but still real rows in the database, still readable
+// by anyone signed in (the notes read rule never checked the parent storm's
+// existence), and still editable by their original author via
+// updateStormNote(). The posts loop predates notes existing at all, and
+// nobody extended it when notes were added. Mirrors that same loop now.
 export async function deleteStorm(id) {
   const posts = await loadPosts(id);
   for (const post of posts) {
     await deletePostFiles(post);
     await deleteDoc(doc(db, COL, id, "posts", post.id));
+  }
+  const notes = await loadStormNotes(id);
+  for (const note of notes) {
+    await deleteDoc(doc(db, COL, id, "notes", note.id));
   }
   await deleteDoc(doc(db, COL, id));
 }
