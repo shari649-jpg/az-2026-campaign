@@ -157,8 +157,14 @@ export function orgCoEditAccess(isOrgAdmin, uid, orgId, storm) {
       };
     }
     // Active (or any other non-archived, non-draft/pending_review status):
-    // archive-only — status transition alone, no content editing offered.
-    return { kind: "org-admin-archive-only", canEditContent: false, statusOptions: [storm.status, STORM_STATUS.ARCHIVED] };
+    // no content editing offered directly here — but org admin CAN send it
+    // back to Draft (Sept 2026, round 3: this was the only route to let an
+    // org admin add more posts to an already-Active storm, since posts
+    // co-editing is itself gated to draft/pending_review — see the
+    // storms/{stormId}/posts rule) or straight to Archived. Both are pure
+    // status transitions, no content fields touched here; re-entering
+    // Draft is what reopens the co-edit branch above on the next call.
+    return { kind: "org-admin-reopen-or-archive", canEditContent: false, statusOptions: [storm.status, STORM_STATUS.DRAFT, STORM_STATUS.ARCHIVED] };
   }
   return null;
 }
