@@ -563,7 +563,17 @@ function StormDetailModal({ storm, onClose }) {
                 placeholder={myNoteRole === "reviewer" ? "Note to the person who created this storm…" : "Note to whoever reviews this…"}
                 style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${BORDER}`, fontSize: 14, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
               />
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+              {/* Close button down here too (Sept 2026) — a long thread meant
+                  scrolling all the way back up to the × at the top to leave
+                  the pop-up; this is a second, always-reachable way out
+                  right next to where you'd naturally finish up. */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+                <button onClick={onClose} style={{
+                  background: "none", border: `1.5px solid ${BORDER}`, borderRadius: 8, padding: "7px 16px",
+                  fontSize: 13, fontWeight: 700, cursor: "pointer", color: "#666",
+                }}>
+                  Close
+                </button>
                 <button onClick={submitNote} disabled={noteSaving || !noteDraft.trim()} style={{
                   background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px",
                   fontSize: 13, fontWeight: 700, cursor: noteSaving || !noteDraft.trim() ? "default" : "pointer",
@@ -572,6 +582,19 @@ function StormDetailModal({ storm, onClose }) {
                   {noteSaving ? "Sending…" : "Add note"}
                 </button>
               </div>
+            </div>
+          )}
+          {/* No compose box for this viewer (read-only on this thread) —
+              still give them a Close button down here rather than only the
+              × at the very top, same reasoning as the compose-box case above. */}
+          {!myNoteRole && (
+            <div style={{ display: "flex", justifyContent: "flex-start" }}>
+              <button onClick={onClose} style={{
+                background: "none", border: `1.5px solid ${BORDER}`, borderRadius: 8, padding: "7px 16px",
+                fontSize: 13, fontWeight: 700, cursor: "pointer", color: "#666",
+              }}>
+                Close
+              </button>
             </div>
           )}
         </div>
