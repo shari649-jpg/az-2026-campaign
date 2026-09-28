@@ -20,7 +20,7 @@ import { useAuth } from "../../context/AuthContext";
 import {
   loadAllStorms, loadActiveStorms, loadPosts, createStorm, updateStorm,
   setStormStatus, deleteStorm, canReview, canDelete, canManagePosts, backfillPostCount,
-  orgCoEditAccess, isOrgOfOneAccount, noteRoleFor, loadStormNotes, addStormNote,
+  orgCoEditAccess, isOrgOfOneAccount, noteRoleFor, loadStormNotes, addStormNote, updateStormNote,
   alarmLabel, isStormExpired, STORM_STATUS, SUBJECT_TYPES, MEDIA_TYPES, PLATFORMS,
   PUSH_TO_STORM_KEY, PUSH_TO_STORM_TTL_MS,
 } from "../../lib/stormLibrary";
@@ -115,6 +115,40 @@ function PostCountBadge({ storm }) {
   return (
     <span style={{ fontSize: 12, fontWeight: 700, color: CHARCOAL, background: SURFACE_ALT, border: `1px solid ${BORDER}`, borderRadius: 999, padding: "3px 10px" }}>
       {count === undefined ? "…" : count} post{count === 1 ? "" : "s"}
+    </span>
+  );
+}
+
+// ── Note count badge (Sept 2026, round 3) — Manager View only, so a site
+// Admin/Manager or a scoped Org Admin can see whether a storm has notes
+// waiting without opening the detail pop-up.
+//
+// Deliberately NOT a denormalized storm.noteCount field the way
+// PostCountBadge uses storm.postCount: notes get written from several
+// different call sites (originator, reviewer, org admin, org-of-one) that
+// don't all hold write access to the PARENT storm doc's other fields at
+// every storm status — the org-of-one/org-admin co-edit branches in
+// firestore.rules only allow a specific field list, and a plain Member
+// leaving a note on their own storm once it's past Draft has no update
+// access to the storm doc at all. Keeping a counter in sync from every one
+// of those paths would be fragile and could silently drift. A direct read
+// of the notes subcollection is simpler and always correct — read access
+// there is already open to any signed-in member, same as the storm itself.
+function NoteCountBadge({ storm }) {
+  const [count, setCount] = useState(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    loadStormNotes(storm.id)
+      .then(notes => { if (!cancelled) setCount(notes.length); })
+      .catch(() => { if (!cancelled) setCount(0); });
+    return () => { cancelled = true; };
+  }, [storm.id]);
+  // Nothing to flag when there are no notes — keeps rows with an empty
+  // thread as uncluttered as they were before this badge existed.
+  if (count === 0) return null;
+  return (
+    <span style={{ fontSize: 12, fontWeight: 700, color: TEAL, background: "rgba(62,207,178,0.12)", border: `1px solid ${TURQUOISE}`, borderRadius: 999, padding: "3px 10px" }}>
+      💬 {count === undefined ? "…" : count} note{count === 1 ? "" : "s"}
     </span>
   );
 }
@@ -370,6 +404,13 @@ function StormDetailModal({ storm, onClose }) {
   const [notesLoading, setNotesLoading] = useState(true);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
+  // Edit-own-note (Sept 2026, round 3) — editingNoteId tracks which note (if
+  // any) is currently swapped into its inline edit form; editDraft is that
+  // form's own text, separate from noteDraft (the new-note compose box)
+  // so editing an old note never clobbers whatever's half-typed below.
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -396,6 +437,26 @@ function StormDetailModal({ storm, onClose }) {
       // the draft text staying in the box is signal enough that it didn't send.
     } finally {
       setNoteSaving(false);
+    }
+  }
+
+  function startEditingNote(n) {
+    setEditingNoteId(n.id);
+    setEditDraft(n.text);
+  }
+
+  async function saveEditedNote(noteId) {
+    if (!editDraft.trim()) return;
+    setEditSaving(true);
+    try {
+      await updateStormNote(storm.id, noteId, editDraft);
+      setEditingNoteId(null);
+      setNotes(await loadStormNotes(storm.id));
+    } catch {
+      // Silent on purpose, same as submitNote() above — the edit form
+      // staying open with the typed text is signal enough that it failed.
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -435,18 +496,61 @@ function StormDetailModal({ storm, onClose }) {
             <p style={{ color: "#999", fontSize: 13, marginBottom: myNoteRole ? 12 : 0 }}>No notes yet.</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: myNoteRole ? 14 : 0 }}>
-              {notes.map(n => (
+              {notes.map(n => {
+                const isMine = !!uid && n.byUid === uid;
+                const isEditingThis = editingNoteId === n.id;
+                return (
                 <div key={n.id} style={{
                   background: n.byRole === "reviewer" ? "rgba(62,207,178,0.10)" : SURFACE_ALT,
                   border: `1.5px solid ${n.byRole === "reviewer" ? TURQUOISE : BORDER}`,
                   borderRadius: 8, padding: "8px 12px",
                 }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, color: n.byRole === "reviewer" ? TEAL : "#888", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                    {n.byName || "Someone"} · {n.byRole === "reviewer" ? "Reviewer" : "Originator"}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 800, color: n.byRole === "reviewer" ? TEAL : "#888", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                      {n.byName || "Someone"} · {n.byRole === "reviewer" ? "Reviewer" : "Originator"}{n.editedAt && !isEditingThis && <span style={{ textTransform: "none", fontWeight: 600, letterSpacing: 0 }}> · edited</span>}
+                    </div>
+                    {/* Edit-own-note (Sept 2026, round 3): only the note's own
+                        author sees this, and only ever on their own bubbles —
+                        matches the firestore.rules boundary exactly (author's
+                        own text only, never the byUid/byRole/at fields). */}
+                    {isMine && !isEditingThis && (
+                      <button onClick={() => startEditingNote(n)} style={{
+                        background: "none", border: "none", padding: 0, fontSize: 11.5, fontWeight: 700,
+                        color: n.byRole === "reviewer" ? TEAL : "#888", cursor: "pointer", flexShrink: 0,
+                      }}>
+                        Edit
+                      </button>
+                    )}
                   </div>
-                  <div style={{ fontSize: 14, color: CHARCOAL, whiteSpace: "pre-wrap" }}>{n.text}</div>
+                  {isEditingThis ? (
+                    <div>
+                      <textarea
+                        value={editDraft}
+                        onChange={e => setEditDraft(e.target.value)}
+                        rows={2}
+                        maxLength={2000}
+                        autoFocus
+                        style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: `1.5px solid ${BORDER}`, fontSize: 14, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+                      />
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+                        <button onClick={() => setEditingNoteId(null)} style={{ background: "none", border: "none", fontSize: 12.5, fontWeight: 700, color: "#888", cursor: "pointer", padding: "4px 8px" }}>
+                          Cancel
+                        </button>
+                        <button onClick={() => saveEditedNote(n.id)} disabled={editSaving || !editDraft.trim()} style={{
+                          background: TEAL, color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px",
+                          fontSize: 12.5, fontWeight: 700, cursor: editSaving || !editDraft.trim() ? "default" : "pointer",
+                          opacity: editSaving || !editDraft.trim() ? 0.6 : 1,
+                        }}>
+                          {editSaving ? "Saving…" : "Save"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 14, color: CHARCOAL, whiteSpace: "pre-wrap" }}>{n.text}</div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
           {myNoteRole && (
@@ -823,6 +927,11 @@ function ManagerView({ role, uid, scopeOrgId = null }) {
 
                 <div onClick={e => e.stopPropagation()} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <PostCountBadge storm={storm} />
+                  {/* Note count (Sept 2026, round 3) — Manager View only, per
+                      the request: visible to site Admin, site Manager, and a
+                      scoped Org Admin alike, since this row is exactly the
+                      one all three of them share. */}
+                  <NoteCountBadge storm={storm} />
                   {canShowStatusControl ? (
                     <StatusControl storm={storm} role={role} orgCoEdit={orgCoEdit} onChange={(status) => handleStatusChange(storm, status)} />
                   ) : (
