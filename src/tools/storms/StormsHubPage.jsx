@@ -1,4 +1,4 @@
-\// src/tools/storms/StormsHubPage.jsx
+// src/tools/storms/StormsHubPage.jsx
 //
 // Storm Chaser's Hub — ONE page for everyone.
 //
