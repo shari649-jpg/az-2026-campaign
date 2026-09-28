@@ -949,7 +949,7 @@ function ManagerView({ role, uid, scopeOrgId = null }) {
                   </div>
                   {storm.summary && <p style={{ margin: "0 0 8px", fontSize: 14.5, color: "#444", lineHeight: 1.5 }}>{storm.summary}</p>}
                   <div style={{ fontSize: 12.5, color: "#888", display: "flex", gap: 14, flexWrap: "wrap" }}>
-                    <span>By {storm.createdBy?.displayName || storm.createdBy?.email || "Unknown"}</span>
+                    <span>By {storm.orgName || storm.createdBy?.displayName || storm.createdBy?.email || "Unknown"}</span>
                     <span>Created {fmtDateTime(storm.createdAt)}</span>
                     {storm.subjectType && storm.subjectType !== "Coalition-wide" && <span>{storm.subjectType}: {storm.subjectName || "—"}</span>}
                     {storm.startAt && <span>Starts {fmtDateTime(storm.startAt)}</span>}
