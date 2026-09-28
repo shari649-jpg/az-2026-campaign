@@ -619,9 +619,22 @@ service cloud.firestore {
                   && isSameOrg(get(/databases/$(database)/documents/storms/$(stormId)).data.orgId)
                 )
            );
-      // Immutable once written — no update or delete for anyone but an
-      // Administrator, matching the storm doc's own delete boundary.
-      allow update: if false;
+      // UPDATE (Sept 2026, round 3): notes were originally fully immutable
+      // once written — CONFIRMED real gap: a writer/reviewer had no way to
+      // fix a typo or reword their own note at all, and the client had no
+      // edit UI to even attempt it. Opened a narrow exception: only the
+      // note's OWN author (byUid match against the stored doc, never the
+      // incoming one — an editor can't reassign authorship) may update it,
+      // and only its `text` (+ a new `editedAt` stamp, added here so the
+      // UI can show "(edited)" and keep the thread honest about what
+      // changed) — byUid/byName/byRole/at (the original post time) stay
+      // fixed forever, same as a delete still being Administrator-only.
+      allow update: if isSignedIn()
+        && resource.data.byUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["text", "editedAt"])
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000;
       allow delete: if isAdmin();
     }
     // ══════════════════════════════════════════════════════════════════
