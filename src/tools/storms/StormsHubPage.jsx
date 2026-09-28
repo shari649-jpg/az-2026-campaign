@@ -134,7 +134,12 @@ function PostCountBadge({ storm }) {
 // of those paths would be fragile and could silently drift. A direct read
 // of the notes subcollection is simpler and always correct — read access
 // there is already open to any signed-in member, same as the storm itself.
-function NoteCountBadge({ storm }) {
+// onOpen (Sept 2026, round 4): the whole reason anyone clicks this badge is
+// to read/add notes, so it opens the detail pop-up directly — no reason to
+// make someone go click the title instead. Renders as a real <button> only
+// when onOpen is passed; still a plain <span> for any future call site that
+// doesn't have a detail view to jump to.
+function NoteCountBadge({ storm, onOpen }) {
   const [count, setCount] = useState(undefined);
   useEffect(() => {
     let cancelled = false;
@@ -146,10 +151,15 @@ function NoteCountBadge({ storm }) {
   // Nothing to flag when there are no notes — keeps rows with an empty
   // thread as uncluttered as they were before this badge existed.
   if (count === 0) return null;
+  const badgeStyle = {
+    fontSize: 12, fontWeight: 700, color: TEAL, background: "rgba(62,207,178,0.12)",
+    border: `1px solid ${TURQUOISE}`, borderRadius: 999, padding: "3px 10px",
+  };
+  if (!onOpen) return <span style={badgeStyle}>💬 {count === undefined ? "…" : count} note{count === 1 ? "" : "s"}</span>;
   return (
-    <span style={{ fontSize: 12, fontWeight: 700, color: TEAL, background: "rgba(62,207,178,0.12)", border: `1px solid ${TURQUOISE}`, borderRadius: 999, padding: "3px 10px" }}>
+    <button onClick={onOpen} title="View notes" style={{ ...badgeStyle, cursor: "pointer", fontFamily: "inherit" }}>
       💬 {count === undefined ? "…" : count} note{count === 1 ? "" : "s"}
-    </span>
+    </button>
   );
 }
 
@@ -238,7 +248,7 @@ function ManageStormMenu({ onCard, onPosts }) {
             position: "fixed", top: pos.top, right: pos.right, background: "#fff", border: `1.5px solid ${BORDER}`,
             borderRadius: 10, boxShadow: "0 4px 16px rgba(0,0,0,0.12)", zIndex: 1001, minWidth: 160, overflow: "hidden",
           }}>
-            <button onClick={() => { setOpen(false); onCard(); }} style={menuItemStyle}>📋 Storm Card</button>
+            <button onClick={() => { setOpen(false); onCard(); }} style={menuItemStyle}>📋 Storm Info</button>
             <button onClick={() => { setOpen(false); onPosts(); }} style={menuItemStyle}>🖼️ Storm Posts</button>
           </div>
         </>
@@ -954,7 +964,7 @@ function ManagerView({ role, uid, scopeOrgId = null }) {
                       the request: visible to site Admin, site Manager, and a
                       scoped Org Admin alike, since this row is exactly the
                       one all three of them share. */}
-                  <NoteCountBadge storm={storm} />
+                  <NoteCountBadge storm={storm} onOpen={() => setDetailStorm(storm)} />
                   {canShowStatusControl ? (
                     <StatusControl storm={storm} role={role} orgCoEdit={orgCoEdit} onChange={(status) => handleStatusChange(storm, status)} />
                   ) : (
