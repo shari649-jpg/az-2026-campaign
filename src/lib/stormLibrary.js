@@ -207,6 +207,31 @@ export async function createStorm(data, role, orgId = null) {
       ? data.status
       : STORM_STATUS.DRAFT;
 
+  // orgName (Sept 2026) — denormalized onto the storm at creation time so
+  // Manager View can show "By <org name>" instead of always showing the
+  // creator's own name. Fetched here (not stored elsewhere yet) because
+  // orgs/{orgId} is readable to the creator via isSameOrg(orgId) — they're
+  // always reading their OWN org's doc, never someone else's — which
+  // avoids widening firestore.rules' orgs/{orgId} read (isSameOrg() ||
+  // isAdmin()) to cover every Manager reading every org's billing-adjacent
+  // doc just to label a storm card. For an "org of one" account,
+  // provision-account.mjs already seeds orgs/{uid}.name with that
+  // person's own name, so this naturally satisfies "org of one → just
+  // show the person's name" with no special-casing needed here. Best
+  // effort: a failed/missing read just leaves orgName unset and the UI
+  // falls back to createdBy's name, same as before this change. Real
+  // staff (administrator/manager) creating a coalition-wide storm pass no
+  // orgId, so this is skipped for them entirely.
+  let orgName = null;
+  if (orgId) {
+    try {
+      const orgSnap = await getDoc(doc(db, "orgs", orgId));
+      orgName = orgSnap.exists() ? (orgSnap.data().name || null) : null;
+    } catch {
+      orgName = null;
+    }
+  }
+
   const docRef = await addDoc(collection(db, COL), {
     title: data.title || "",
     summary: data.summary || "",
@@ -219,6 +244,7 @@ export async function createStorm(data, role, orgId = null) {
     expiresAt: data.expiresAt || null,
     status: initialStatus,
     orgId: orgId || null,
+    orgName,
     createdBy,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
