@@ -436,6 +436,22 @@ export async function addStormNote(stormId, text, byRole) {
   });
 }
 
+// updateStormNote (Sept 2026, round 3) — CONFIRMED gap closed: notes were
+// write-once with no edit path at all (no client function, no rules
+// allowance). Mirrors firestore.rules' notes/{noteId} update branch
+// exactly: only the note's own author may call this on their own note id,
+// and it only ever touches `text` + a new `editedAt` stamp — the
+// author/role/original-timestamp fields are never part of this write, so
+// there's nothing here that could let a caller reassign whose note it is.
+export async function updateStormNote(stormId, noteId, text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return;
+  await updateDoc(doc(db, COL, stormId, "notes", noteId), {
+    text: trimmed,
+    editedAt: serverTimestamp(),
+  });
+}
+
 export async function loadPosts(stormId) {
   const q = query(postsCol(stormId), orderBy("order", "asc"));
   const snap = await getDocs(q);
