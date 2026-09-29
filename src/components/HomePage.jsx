@@ -206,8 +206,7 @@ export default function HomePage() {
               { label: "AZ SOS Elections", href: "https://azsos.gov/elections" },
               { label: "AZ Legislature", href: "https://www.azleg.gov" },
               { label: "Ballotpedia AZ", href: "https://ballotpedia.org/Arizona" },
-              { label: "My Arizona Vote", href: "https://my.arizona.vote" },
-              { label: "E-Qual Petitions", href: "https://apps.arizona.vote/equal" },
+              { label: "My Arizona Vote", href: "https://arizona.vote" },
               { label: "All Resources →", path: "/resources" },
             ].map(link => (
               link.href
