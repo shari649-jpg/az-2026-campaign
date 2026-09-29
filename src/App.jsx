@@ -28,6 +28,7 @@ import PublicStormPage from "./pages/PublicStormPage";
 import PublicStormsListPage from "./pages/PublicStormsListPage";
 import VoterLookupPage from "./pages/VoterLookupPage";
 import VoteSitesPage from "./pages/VoteSitesPage";
+import CountyPagesPage from "./pages/CountyPagesPage";
 import PromptSandboxPage from "./tools/sandbox/PromptSandboxPage";
 
 export default function App() {
@@ -74,6 +75,10 @@ export default function App() {
               extracted from that county export) as a searchable,
               filterable mobile page — no spreadsheet software required. */}
           <Route path="/vote-sites"   element={<VoteSitesPage />} />
+          {/* Sept 29 2026 — public directory of the 15 county Democratic
+              Party websites (replaces the standalone Canva page). Linked
+              from the Resources Hub's Election Resources group. */}
+          <Route path="/county-pages" element={<CountyPagesPage />} />
 
           {/* Protected routes */}
           <Route element={
