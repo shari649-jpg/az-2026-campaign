@@ -85,6 +85,18 @@ export default function AboutPage() {
               Sign In
             </Link>
           </div>
+          {/* Sept 29 2026 — public county party directory, deliberately a
+              quieter text link (not a third button) so Get Involved and
+              Sign In stay the two primary actions. */}
+          <div style={{ marginTop: 18 }}>
+            <Link to="/county-pages" style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              color: "#fff", fontSize: 15, fontWeight: 700, fontFamily: "var(--font-body)",
+              letterSpacing: "0.02em", textDecoration: "underline", textUnderlineOffset: 4,
+            }}>
+              Find your county Democratic Party →
+            </Link>
+          </div>
         </div>
       </div>
 
