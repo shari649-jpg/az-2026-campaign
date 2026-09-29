@@ -28,6 +28,7 @@ import PublicStormPage from "./pages/PublicStormPage";
 import PublicStormsListPage from "./pages/PublicStormsListPage";
 import VoterLookupPage from "./pages/VoterLookupPage";
 import CountyPagesPage from "./pages/CountyPagesPage";
+import CountySlateCardPage from "./pages/CountySlateCardPage";
 import PromptSandboxPage from "./tools/sandbox/PromptSandboxPage";
 
 export default function App() {
@@ -71,6 +72,11 @@ export default function App() {
               Party websites (replaces the standalone Canva page). Linked
               from the Resources Hub's Election Resources group. */}
           <Route path="/county-pages" element={<CountyPagesPage />} />
+          {/* Sept 29 2026 — one county's slate card, phone-friendly, with
+              a shareable link + QR. Only counties listed in
+              src/data/countyMaterials.js have one; others show a friendly
+              "no slate card here yet" page. */}
+          <Route path="/county-pages/:slug" element={<CountySlateCardPage />} />
 
           {/* Protected routes */}
           <Route element={
