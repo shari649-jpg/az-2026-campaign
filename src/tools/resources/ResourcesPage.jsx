@@ -6,6 +6,11 @@ import ToolPage from "../../components/ToolPage";
 // groups held nothing but placeholder cards with href: null ("Link not
 // yet configured"). Same reasoning removed Canva/Linktree/Signal Group
 // below: every remaining item across every group is a real, live link.
+//
+// Also removed (Sept 29, 2026, at the person's request): Maricopa Vote
+// Center & Drop Box Finder card, E-Qual, AZ Independent Redistricting, and
+// SocialPilot. My Arizona Vote now points to https://arizona.vote. Note the
+// /vote-sites route itself is untouched — only its card here was removed.
 const RESOURCE_GROUPS = [
   {
     title: "Election Resources",
@@ -15,10 +20,9 @@ const RESOURCE_GROUPS = [
       // external links, so ResourceCard renders these with React Router's
       // Link (same-app navigation) instead of an <a target="_blank">.
       { label: "Voter Lookup Tool", desc: "Public tool — voters enter their address to see their candidates, statewide", href: "/voter-lookup", tag: "Our Site", internal: true },
-      { label: "Maricopa Vote Center & Drop Box Finder", desc: "Public tool — searchable version of Maricopa County's vote site schedule, Maricopa County only", href: "/vote-sites", tag: "Our Site", internal: true },
+      { label: "County Party Websites", desc: "Public page — links to all 15 Arizona county Democratic Party websites", href: "/county-pages", tag: "Our Site", internal: true },
       { label: "AZ SOS — Elections", desc: "Official Arizona election information", href: "https://azsos.gov/elections", tag: "Gov" },
-      { label: "My Arizona Vote", desc: "Voter registration, ballot status, polling locations", href: "https://my.arizona.vote", tag: "Gov" },
-      { label: "E-Qual — Candidate Petitions", desc: "Sign candidate nominating petitions and Clean Elections contributions", href: "https://apps.arizona.vote/equal", tag: "Gov" },
+      { label: "My Arizona Vote", desc: "Voter registration, ballot status, polling locations", href: "https://arizona.vote", tag: "Gov" },
       { label: "ServiceArizona — Register to Vote", desc: "Register or update voter registration", href: "https://servicearizona.com", tag: "Gov" },
     ],
   },
@@ -28,7 +32,6 @@ const RESOURCE_GROUPS = [
     items: [
       { label: "Ballotpedia — Arizona", desc: "Candidates, races, ballot measures statewide", href: "https://ballotpedia.org/Arizona", tag: "Ext" },
       { label: "Arizona Legislature", desc: "Bill tracking, member roster, session calendar", href: "https://www.azleg.gov", tag: "Gov" },
-      { label: "AZ Independent Redistricting", desc: "Official district maps and lookup", href: "https://irc.az.gov", tag: "Gov" },
       { label: "Civic Engagement Beyond Voting", desc: "Legislative tracking and civic education", href: "https://cebv.org", tag: "Ext" },
     ],
   },
@@ -36,7 +39,6 @@ const RESOURCE_GROUPS = [
     title: "Tools & Platforms",
     color: "var(--turquoise)",
     items: [
-      { label: "SocialPilot", desc: "Scheduled posting and analytics across all platforms", href: "https://socialpilot.co", tag: "Tool" },
       { label: "Social Searcher", desc: "Real-time social media search and monitoring", href: "https://www.social-searcher.com/", tag: "Tool" },
     ],
   },
