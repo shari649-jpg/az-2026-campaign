@@ -1,7 +1,7 @@
 // src/pages/CountyPagesPage.jsx
 //
 // Fully public — no login, no AppShell. Reached via /county-pages (see
-// App.jsx's public routes section, alongside /voter-lookup and /vote-sites).
+// App.jsx's public routes section, alongside /voter-lookup).
 //
 // WHY THIS EXISTS (Sept 29, 2026): replaces the standalone Canva page
 // "AZ Dem County Pages" (az-county-dems.my.canva.site). The 15 county
@@ -20,6 +20,7 @@
 // white-background rule instead.)
 
 import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 // Alphabetical by county. `display` is the bare domain shown under the name.
 const COUNTIES = [
@@ -41,19 +42,46 @@ const COUNTIES = [
 ];
 
 export default function CountyPagesPage() {
+  // This page is public (no AppShell, so no built-in nav). Header links
+  // depend on whether the visitor is signed in: members get a way back to
+  // the app (Home, Resources — both behind AuthGuard); everyone else gets
+  // the public pages instead, since "/" and "/resources" would just bounce
+  // them to the login/about screen.
+  const { user } = useAuth();
+  const navLinks = user
+    ? [{ to: "/", label: "← Home" }, { to: "/resources", label: "Resources" }]
+    : [{ to: "/about", label: "About" }, { to: "/voter-lookup", label: "Voter Lookup" }];
+
   return (
     <div style={{ minHeight: "100vh", background: "#fff", color: "var(--text)", fontFamily: "var(--font-body)" }}>
       <header style={{ background: "var(--surface-alt)", borderBottom: "4px solid var(--purple)" }}>
-        <div style={{ maxWidth: 960, margin: "0 auto", padding: "18px 16px", display: "flex", alignItems: "center", gap: 14 }}>
-          <img src="/azc-logo-teal.png" alt="Arizona Coalition" style={{ height: 56, width: "auto", flexShrink: 0 }} />
-          <div>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--purple)", lineHeight: 1.15 }}>
-              Arizona Coalition
+        <div style={{ maxWidth: 960, margin: "0 auto", padding: "18px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14 }}>
+          <Link to={user ? "/" : "/about"} style={{ display: "flex", alignItems: "center", gap: 14, textDecoration: "none" }}>
+            <img src="/azc-logo-teal.png" alt="Arizona Coalition" style={{ height: 56, width: "auto", flexShrink: 0 }} />
+            <div>
+              <div style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--purple)", lineHeight: 1.15 }}>
+                Arizona Coalition
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--teal)", marginTop: 3 }}>
+                County Pages
+              </div>
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--teal)", marginTop: 3 }}>
-              County Pages
-            </div>
-          </div>
+          </Link>
+          <nav aria-label="Site navigation" style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {navLinks.map(l => (
+              <Link
+                key={l.to}
+                to={l.to}
+                style={{
+                  fontSize: 14, fontWeight: 700, color: "var(--purple)", textDecoration: "none",
+                  padding: "10px 16px", background: "#fff",
+                  border: "2px solid var(--purple)", borderRadius: "var(--radius)",
+                }}
+              >
+                {l.label}
+              </Link>
+            ))}
+          </nav>
         </div>
       </header>
 
