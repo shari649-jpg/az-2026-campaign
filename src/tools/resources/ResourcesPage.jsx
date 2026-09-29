@@ -9,8 +9,8 @@ import ToolPage from "../../components/ToolPage";
 //
 // Also removed (Sept 29, 2026, at the person's request): Maricopa Vote
 // Center & Drop Box Finder card, E-Qual, AZ Independent Redistricting, and
-// SocialPilot. My Arizona Vote now points to https://arizona.vote. Note the
-// /vote-sites route itself is untouched — only its card here was removed.
+// SocialPilot. My Arizona Vote now points to https://arizona.vote. The
+// /vote-sites page itself was removed from the app the same day.
 const RESOURCE_GROUPS = [
   {
     title: "Election Resources",
