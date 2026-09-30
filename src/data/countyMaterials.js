@@ -53,6 +53,42 @@ export const KNOW_YOUR_RIGHTS = {
 };
 
 export const COUNTY_MATERIALS = {
+  apache: {
+    countyName: "Apache",
+    committee: "Apache County Democratic Party",
+    slateCard: {
+      year: 2026,
+      // No PDF on file for this card (only the two page images were supplied),
+      // so the viewer hides its "Open PDF" button. Add `pdf: "/county-materials/apache/slate-card-2026.pdf"` if the committee sends one.
+      //
+      // Two sides of one card, not two languages: `id` is what the URL
+      // carries (?side=back) and `param` names that URL parameter. Mohave's
+      // pages omit both and keep using ?lang= exactly as before.
+      param: "side",
+      pages: [
+        {
+          id: "front",
+          lang: "en",
+          label: "Front: Candidates",
+          image: "/county-materials/apache/slate-card-2026-front.jpg",
+          width: 800,
+          height: 1303,
+          alt:
+            "Front of the 2026 Apache County Democratic Party Ballot Guide for the November 3, 2026 general election. Recommended Democratic candidates: Jonathan Nez for U.S. Representative, CD02; Katie Hobbs and Giles John for Governor and Lieutenant Governor; Jamescita Peshlakai for State Senate, District 6; Mae Peshlakai and Ian Teller for State Representative, District 6 (vote for two); Adrian Fontes for Secretary of State; Kris Mayes for Attorney General; Nick Mansour for State Treasurer; Teresa Leyba Ruiz for Superintendent of Public Instruction; Brian Matlock for State Mine Inspector; Clara Pratte and Jonathon Hill for Arizona Corporation Commission (vote for two); Samecita Begay for Clerk of the Superior Court; Jasmine Blackwater-Nygren for County Attorney; Jay Yellowhorse for Justice of the Peace, North Star Precinct 3; Sam Wood for Constable, North Star Precinct 3; Mike Latham for Judge of the Superior Court. For ballot propositions, see the back. Paid for by the Apache County Democratic Party, www.apachecountydems.org.",
+        },
+        {
+          id: "back",
+          lang: "en",
+          label: "Back: Propositions",
+          image: "/county-materials/apache/slate-card-2026-back.jpg",
+          width: 800,
+          height: 1303,
+          alt:
+            "Back of the 2026 Apache County Democratic Party Ballot Guide. Recommends NO on every ballot proposition: 141, 142, 144, 316, 317, 318, 319 and 320. Election facts: October 5 is the last day to register to vote; October 7 early voting begins and early ballots are mailed; October 23 is the last day to request an early ballot by mail; October 27 is the recommended last day to mail your ballot, and after that date return it to an official drop box or voting location; October 30 is the last day to vote early in person; November 3 is Election Day, polls open 6 a.m. to 7 p.m. Track your ballot at trackmyballot.azsos.gov. Apache County has adopted Vote Centers for 2026. Voter Protection Hotline 833-VOTE-4-AZ. Paid for by the Apache County Democratic Party, www.apachecountydems.org.",
+        },
+      ],
+    },
+  },
   mohave: {
     countyName: "Mohave",
     committee: "Mohave County Democratic Central Committee",
