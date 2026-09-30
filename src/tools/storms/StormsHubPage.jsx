@@ -21,7 +21,7 @@ import {
   loadAllStorms, loadActiveStorms, loadPosts, createStorm, updateStorm,
   setStormStatus, deleteStorm, canReview, canDelete, canManagePosts, backfillPostCount,
   orgCoEditAccess, isOrgOfOneAccount, noteRoleFor, loadStormNotes, addStormNote, updateStormNote,
-  alarmLabel, isStormExpired, STORM_STATUS, SUBJECT_TYPES, MEDIA_TYPES, PLATFORMS,
+  alarmLabel, isStormExpired, isStormNotStarted, STORM_STATUS, SUBJECT_TYPES, MEDIA_TYPES, PLATFORMS,
   PUSH_TO_STORM_KEY, PUSH_TO_STORM_TTL_MS,
 } from "../../lib/stormLibrary";
 import StormPostsPanel from "./StormPostsPanel";
@@ -1079,7 +1079,8 @@ function UserView({ role, uid, isOrgAdmin = false, orgId = null }) {
   // Defensive check alongside the hourly scheduled-archive-storms.mjs sweep:
   // without this, a storm sitting past its expiresAt would still show as
   // Active to members for up to an hour until the next cron run catches it.
-  const activeStorms = allStorms.filter(s => s.status === STORM_STATUS.ACTIVE && !isStormExpired(s.expiresAt));
+  // Also hides Active storms whose Start Date & Time hasn't arrived yet.
+  const activeStorms = allStorms.filter(s => s.status === STORM_STATUS.ACTIVE && !isStormNotStarted(s.startAt) && !isStormExpired(s.expiresAt));
   const myStormsAll = uid ? allStorms.filter(s => s.createdBy?.uid === uid && s.status !== STORM_STATUS.ACTIVE) : [];
   // Round 2 (Sept 2026): the org-admin "Awaiting Your Approval" and "Your
   // Organization's Drafts" queues that used to live here have moved into
