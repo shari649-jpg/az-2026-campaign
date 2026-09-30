@@ -285,12 +285,22 @@ export function isStormExpired(expiresAt) {
   return !isNaN(t) && t <= Date.now();
 }
 
+// Mirror of isStormExpired for the START side. A storm can be status "active"
+// while its Start Date & Time is still in the future (staff activate it ahead
+// of time); members must not see it until that moment arrives. Same
+// browser-local-time assumption as isStormExpired. No startAt = live at once.
+export function isStormNotStarted(startAt) {
+  if (!startAt) return false;
+  const t = new Date(startAt).getTime();
+  return !isNaN(t) && t > Date.now();
+}
+
 export async function loadActiveStorms() {
   // Filtered client-side rather than a where() clause so this stays a
   // single simple index-free query; storm counts are small (~tens, not
   // thousands), so this is cheap.
   const all = await loadAllStorms();
-  return all.filter(s => s.status === STORM_STATUS.ACTIVE && !isStormExpired(s.expiresAt));
+  return all.filter(s => s.status === STORM_STATUS.ACTIVE && !isStormNotStarted(s.startAt) && !isStormExpired(s.expiresAt));
 }
 
 export async function loadStorm(id) {
