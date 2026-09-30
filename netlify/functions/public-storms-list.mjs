@@ -55,6 +55,16 @@ function isExpired(expiresAt) {
   return !isNaN(t) && t <= Date.now();
 }
 
+// Start-side counterpart of isExpired: an "active" storm whose startAt is still
+// in the future must not be public yet. Same Arizona-offset handling.
+function isNotStarted(startAt) {
+  if (!startAt) return false;
+  const hasExplicitOffset = /[zZ]|[+-]\d\d:\d\d$/.test(startAt);
+  const asArizonaTime = hasExplicitOffset ? startAt : `${startAt}${ARIZONA_UTC_OFFSET}`;
+  const t = new Date(asArizonaTime).getTime();
+  return !isNaN(t) && t > Date.now();
+}
+
 const EMPTY = { available: true, storms: [] };
 
 export default async function (req) {
@@ -85,7 +95,7 @@ export default async function (req) {
 
     const storms = snap.docs
       .map(d => d.data())
-      .filter(storm => storm.publicToken && !isExpired(storm.expiresAt))
+      .filter(storm => storm.publicToken && !isNotStarted(storm.startAt) && !isExpired(storm.expiresAt))
       .map(storm => ({
         token: storm.publicToken,
         title: storm.title || "",
