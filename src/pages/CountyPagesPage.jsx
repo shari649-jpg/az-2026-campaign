@@ -177,14 +177,17 @@ function CountyCard({ county: c, materials }) {
             to={`/county-pages/${c.slug}`}
             aria-label={`${c.name} County ${materials.slateCard.year} slate card`}
             style={{
-              display: "block", padding: "11px 18px", ...linkReset,
-              borderTop: "2px solid var(--surface-alt)",
-              fontSize: 14, fontWeight: 700, color: "var(--purple)",
+              // Filled button (Sept 30 2026) so the slate card reads as an
+              // action, not a footnote. Deep plum fill, white text.
+              display: "block", textAlign: "center", ...linkReset,
+              margin: "0 14px 14px", padding: "12px 16px",
+              background: "var(--purple)", borderRadius: 10,
+              fontSize: 15, fontWeight: 700, color: "#fff",
             }}
-            onFocus={e => { e.currentTarget.style.outline = "3px solid var(--gold)"; e.currentTarget.style.outlineOffset = "-3px"; }}
+            onFocus={e => { e.currentTarget.style.outline = "3px solid var(--gold)"; e.currentTarget.style.outlineOffset = "2px"; }}
             onBlur={e => { e.currentTarget.style.outline = "none"; }}
           >
-            {materials.slateCard.year} Slate Card →
+            View {materials.slateCard.year} Slate Card →
           </Link>
         )}
       </div>
