@@ -29,7 +29,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { COUNTY_MATERIALS, KNOW_YOUR_RIGHTS } from "../data/countyMaterials";
+import { COUNTY_MATERIALS, COUNTY_GUIDE_LINKS, KNOW_YOUR_RIGHTS } from "../data/countyMaterials";
 
 // Alphabetical by county. `slug` matches the keys in COUNTY_MATERIALS.
 // `display` is the bare domain shown under the name.
@@ -121,7 +121,7 @@ export default function CountyPagesPage() {
           display: "grid", gap: 12,
           gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
         }}>
-          {COUNTIES.map(c => <CountyCard key={c.slug} county={c} materials={COUNTY_MATERIALS[c.slug]} />)}
+          {COUNTIES.map(c => <CountyCard key={c.slug} county={c} materials={COUNTY_MATERIALS[c.slug]} guide={COUNTY_GUIDE_LINKS[c.slug]} />)}
         </ul>
 
         <KnowYourRights />
@@ -138,7 +138,7 @@ export default function CountyPagesPage() {
   );
 }
 
-function CountyCard({ county: c, materials }) {
+function CountyCard({ county: c, materials, guide }) {
   const hasCard = !!materials?.slateCard;
   const [hover, setHover] = useState(false);
   return (
@@ -189,6 +189,24 @@ function CountyCard({ county: c, materials }) {
           >
             View {materials.slateCard.year} Slate Card →
           </Link>
+        )}
+        {!hasCard && guide && (
+          <a
+            href={guide.url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`${c.name} County ${guide.label} (opens in a new tab)`}
+            style={{
+              display: "block", textAlign: "center", ...linkReset,
+              margin: "0 14px 14px", padding: "12px 16px",
+              background: "var(--purple)", borderRadius: 10,
+              fontSize: 15, fontWeight: 700, color: "#fff",
+            }}
+            onFocus={e => { e.currentTarget.style.outline = "3px solid var(--gold)"; e.currentTarget.style.outlineOffset = "2px"; }}
+            onBlur={e => { e.currentTarget.style.outline = "none"; }}
+          >
+            {guide.label} ↗
+          </a>
         )}
       </div>
     </li>
