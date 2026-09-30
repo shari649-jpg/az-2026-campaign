@@ -89,6 +89,70 @@ export const COUNTY_MATERIALS = {
       ],
     },
   },
+  cochise: {
+    countyName: "Cochise",
+    committee: "Cochise County Democratic Party",
+    slateCard: {
+      year: 2026,
+      param: "page",
+      pages: [
+        {
+          id: "congress-legislature", lang: "en", label: "Congress & Legislature",
+          image: "/county-materials/cochise/slate-card-2026-congress-legislature.jpg", width: 1280, height: 2048,
+          alt: "Cochise County Democratic Party 2026 midterm candidates, congress and legislature. Jo Mendoza for Congressional District 6; Adelita Grijalva for Congressional District 7; Bob Karp for LD19 State Senate; Aiden Swallow and Jackie Anderson for LD19 House of Representatives (vote for both); Rosanna Gabaldon for LD21 State Senate; Miranda Lopez and Consuelo Hernandez for LD21 House of Representatives (vote for both). More on the candidates and voting at www.cochisecodems.org.",
+        },
+        {
+          id: "statewide", lang: "en", label: "Statewide",
+          image: "/county-materials/cochise/slate-card-2026-statewide.jpg", width: 1276, height: 2048,
+          alt: "Cochise County Democratic Party 2026 midterm candidates, statewide. Kris Mayes for Attorney General; Katie Hobbs and Giles for Governor and Lieutenant Governor; Adrian Fontes for Secretary of State; Nick Mansour for State Treasurer; Teresa Leyba Ruiz for Superintendent of Public Instruction; Brian Matlock for Mine Inspector; Clara Pratte and Jonathon Hill for Corporation Commission (vote for both). Vote blue up and down ballot. Paid for and authorized by the Cochise County Democrats.",
+        },
+      ],
+    },
+  },
+  gila: {
+    countyName: "Gila",
+    committee: "Gila County Democratic Party",
+    slateCard: {
+      year: 2026,
+      pages: [
+        {
+          lang: "en", label: "English",
+          image: "/county-materials/gila/slate-card-2026.png", width: 1280, height: 812,
+          alt: "Gila County Democratic Party 2026 Election Information and Recommendations. Federal: Jonathan Nez for U.S. House CD2; Joanna Mendoza for U.S. House CD6. State Senate: Jamescita Peshlakai, LD6; Michiel Montiel, LD7. State House: Mae Peshlakai and Ian Teller, LD6 (vote for two); Samuel Martin, LD7. Statewide: Katie Hobbs for Governor and Lieutenant Governor, Kris Mayes for Attorney General, Adrian Fontes for Secretary of State, Teresa Leyba Ruiz for Superintendent of Public Instruction, Brian Matlock for Mine Inspector, Nick Mansour for Treasurer, and Clara Pratte and Jonathon Hill for Corporation Commission (vote for two). Propositions: vote yes on Gila Community College expenditure limitation expansion (Question 425), and on the PUSD 10 bond election (Question 426); ESA voucher accountability Prop 212 was removed from the ballot by Republicans, so vote accordingly; vote no on all other statewide propositions. Check your voter status, request or track a mail-in ballot, or find your polling place at iwillvote.com. Mail by October 27; Election Day is November 3. Paid for by the Arizona Democratic Party, www.azdem.org.",
+        },
+      ],
+    },
+  },
+  navajo: {
+    countyName: "Navajo",
+    committee: "Navajo County Democratic Committee",
+    slateCard: {
+      year: 2026,
+      param: "page",
+      pages: [
+        {
+          id: "ld6", lang: "en", label: "Candidates: LD 6",
+          image: "/county-materials/navajo/slate-card-2026-ld6.jpg", width: 1200, height: 1800,
+          alt: "Navajo County Democrats 2026 candidates for Legislative District 6. Jonathan Nez for U.S. Congress; Jamescita Peshlakai for District 6 State Senator; Mae Peshlakai and Ian Teller for District 6 State Representative (vote for both). Katie Hobbs for Governor, Adrian Fontes for Secretary of State, Kris Mayes for Attorney General, Nick Mansour for Treasurer, Teresa Leyba Ruiz for Superintendent of Public Instruction, Brian Matlock for Mine Inspector, and Clara Pratte and Jonathon Hill for Corporation Commission (vote for both). More races: vote for the Democrat on your ballot for Justice of the Peace (Krista R. Wilkinson, B.J. Little, Suzie Nelson or Michael Caruth) and Constable (Phyllis Romo, Suzanne Smith or Robert Black Jr.). Do not retain Justice John Lopez IV. Paid for by Navajo County Democratic Committee, navajocountydemocrats.org. Not authorized by any candidate or candidate's committee.",
+        },
+        {
+          id: "ld7", lang: "en", label: "Candidates: LD 7",
+          image: "/county-materials/navajo/slate-card-2026-ld7.jpg", width: 1200, height: 1800,
+          alt: "Navajo County Democrats 2026 candidates for Legislative District 7. Jonathan Nez for U.S. Congress; Mike Montiel for District 7 State Senator; Sam Martin for District 7 State Representative. Katie Hobbs for Governor, Adrian Fontes for Secretary of State, Kris Mayes for Attorney General, Nick Mansour for Treasurer, Teresa Leyba Ruiz for Superintendent of Public Instruction, Brian Matlock for Mine Inspector, and Clara Pratte and Jonathon Hill for Corporation Commission (vote for both). More races: vote for the Democrat on your ballot for Justice of the Peace (Krista R. Wilkinson, B.J. Little, Suzie Nelson or Michael Caruth) and Constable (Phyllis Romo, Suzanne Smith or Robert Black Jr.). Do not retain Justice John Lopez IV. Paid for by Navajo County Democratic Committee, navajocountydemocrats.org. Not authorized by any candidate or candidate's committee.",
+        },
+        {
+          id: "propositions", lang: "en", label: "Propositions",
+          image: "/county-materials/navajo/slate-card-2026-propositions.jpg", width: 1163, height: 1800,
+          alt: "Navajo County Democrats 2026 propositions. Vote NO on Props 141, 142, 144, 316, 317, 318, 319 and 320. Election dates: October 23 is the recommended last day to mail your completed ballot, after which take it to a drop box, elections office, or on November 3 a polling place; October 30 is the last day to vote early in person; November 3, vote at Vote Centers and precinct polling places 6 a.m. to 7 p.m., and all mail-in ballots must be received by 7 p.m. Paid for by Navajo County Democratic Committee, navajocountydemocrats.org. Not authorized by any candidate or candidate's committee.",
+        },
+        {
+          id: "propositions-local", lang: "en", label: "Propositions + local",
+          image: "/county-materials/navajo/slate-card-2026-propositions-local.jpg", width: 1200, height: 1800,
+          alt: "Navajo County Democrats 2026 propositions including local measures. Vote NO on Props 141, 142, 144, 316, 317, 318, 319 and 320. Vote YES on Prop 455 (funds Timber Mesa Fire), Prop 456 (allows Pinetop-Lakeside to control local finances), Blue Ridge Question 1 and Blue Ridge Question 2. Election dates: October 23 is the recommended last day to mail your completed ballot; October 30 is the last day to vote early in person; November 3, vote at Vote Centers and precinct polling places 6 a.m. to 7 p.m., and all mail-in ballots must be received by 7 p.m.",
+        },
+      ],
+    },
+  },
   mohave: {
     countyName: "Mohave",
     committee: "Mohave County Democratic Central Committee",
@@ -117,4 +181,14 @@ export const COUNTY_MATERIALS = {
       ],
     },
   },
+};
+
+// Counties whose committee publishes its own online voter / candidate guide.
+// No images are hosted here: the County Pages card just links out (new tab).
+// Keyed by the same slug as COUNTY_MATERIALS / CountyPagesPage.jsx.
+export const COUNTY_GUIDE_LINKS = {
+  maricopa:    { label: "Voter Guide",          url: "https://www.maricopadems.org/voter-guide" },
+  pima:        { label: "Voter Guide",          url: "https://www.pimadems.org/voter-guide" },
+  pinal:       { label: "2026 General Candidates", url: "https://www.pinaldemocrats.org/voter-hub/2026-general-candidates" },
+  "santa-cruz": { label: "2026 Candidates",     url: "https://www.azsantacruzdems.org/2026-primary-elections/candidates" },
 };
