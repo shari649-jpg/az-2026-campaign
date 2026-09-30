@@ -60,21 +60,28 @@ function NotFound() {
 
 function CardViewer({ slug, entry, card }) {
   const [params, setParams] = useSearchParams();
-  const lang = useMemo(() => {
-    const langs = card.pages.map(p => p.lang);
-    const fromUrl = params.get("lang");
-    if (fromUrl && langs.includes(fromUrl)) return fromUrl;
+  // Each page has an `id` (defaults to its lang, so Mohave is unchanged).
+  // `card.param` is the URL parameter that selects a page: "lang" by default,
+  // "side" for a card whose pages are front/back rather than languages.
+  const param = card.param || "lang";
+  const isLangToggle = param === "lang";
+  const idOf = p => p.id || p.lang;
+  const pageId = useMemo(() => {
+    const ids = card.pages.map(idOf);
+    const fromUrl = params.get(param);
+    if (fromUrl && ids.includes(fromUrl)) return fromUrl;
     const phone = (typeof navigator !== "undefined" && navigator.language) || "en";
-    if (phone.toLowerCase().startsWith("es") && langs.includes("es")) return "es";
-    return langs[0];
-  }, [params, card]);
+    if (isLangToggle && phone.toLowerCase().startsWith("es") && ids.includes("es")) return "es";
+    return ids[0];
+  }, [params, card, param, isLangToggle]);
 
-  const page = card.pages.find(p => p.lang === lang) || card.pages[0];
+  const page = card.pages.find(p => idOf(p) === pageId) || card.pages[0];
+  const lang = page.lang;
   const [zoomed, setZoomed] = useState(false);
 
   function chooseLang(next) {
     const p = new URLSearchParams(params);
-    p.set("lang", next);
+    p.set(param, next);
     setParams(p, { replace: true });
   }
 
@@ -90,19 +97,19 @@ function CardViewer({ slug, entry, card }) {
           ← {t.back}
         </Link>
         {card.pages.length > 1 && (
-          <div role="group" aria-label="Language" style={{ display: "inline-flex", border: "2px solid var(--purple)", borderRadius: 10, overflow: "hidden" }}>
+          <div role="group" aria-label={isLangToggle ? "Language" : "Card side"} style={{ display: "inline-flex", border: "2px solid var(--purple)", borderRadius: 10, overflow: "hidden" }}>
             {card.pages.map(p => (
               <button
-                key={p.lang}
+                key={idOf(p)}
                 type="button"
-                onClick={() => chooseLang(p.lang)}
-                aria-pressed={p.lang === lang}
+                onClick={() => chooseLang(idOf(p))}
+                aria-pressed={idOf(p) === pageId}
                 lang={p.lang}
                 style={{
                   fontFamily: "inherit", fontSize: 14, fontWeight: 700, cursor: "pointer",
                   padding: "8px 16px", border: "none",
-                  background: p.lang === lang ? "var(--purple)" : "#fff",
-                  color: p.lang === lang ? "#fff" : "var(--purple)",
+                  background: idOf(p) === pageId ? "var(--purple)" : "#fff",
+                  color: idOf(p) === pageId ? "#fff" : "var(--purple)",
                 }}
               >
                 {p.label}
@@ -136,19 +143,21 @@ function CardViewer({ slug, entry, card }) {
         <button type="button" onClick={() => setZoomed(z => !z)} aria-pressed={zoomed} style={secondaryBtn}>
           {zoomed ? t.zoomOut : t.zoomIn}
         </button>
-        <a href={card.pdf} target="_blank" rel="noreferrer" style={secondaryBtn}>
-          {t.pdf} ↗
-        </a>
+        {card.pdf && (
+          <a href={card.pdf} target="_blank" rel="noreferrer" style={secondaryBtn}>
+            {t.pdf} ↗
+          </a>
+        )}
       </div>
       <p style={{ fontSize: 12.5, color: "var(--text-mute)", margin: "0 0 22px" }}>{t.hint}</p>
 
-      <SharePanel slug={slug} lang={lang} label={t.share} isEs={isEs} />
+      <SharePanel slug={slug} param={param} pageId={pageId} label={t.share} isEs={isEs} />
     </Shell>
   );
 }
 
-function SharePanel({ slug, lang, label, isEs }) {
-  const url = typeof window !== "undefined" ? `${window.location.origin}/county-pages/${slug}?lang=${lang}` : "";
+function SharePanel({ slug, param, pageId, label, isEs }) {
+  const url = typeof window !== "undefined" ? `${window.location.origin}/county-pages/${slug}?${param}=${pageId}` : "";
   const [qr, setQr] = useState(null);
   const [copied, setCopied] = useState(false);
   const inputRef = useRef(null);
@@ -179,7 +188,9 @@ function SharePanel({ slug, lang, label, isEs }) {
 
   const words = isEs
     ? { link: "Enlace a esta tarjeta", copy: "Copiar enlace", copied: "Copiado ✓", share: "Compartir…", qr: "Código QR", dl: "Descargar código QR", note: "El enlace y el código QR abren la tarjeta en el idioma que se muestra arriba." }
-    : { link: "Link to this card", copy: "Copy link", copied: "Copied ✓", share: "Share…", qr: "QR code", dl: "Download QR code", note: "The link and QR code open the card in the language showing above. Switch languages above to get the other one." };
+    : { link: "Link to this card", copy: "Copy link", copied: "Copied ✓", share: "Share…", qr: "QR code", dl: "Download QR code", note: param === "lang"
+        ? "The link and QR code open the card in the language showing above. Switch languages above to get the other one."
+        : "The link and QR code open the side of the card showing above. Switch sides above to get the other one." };
 
   return (
     <details style={{ border: "2px solid var(--surface-alt)", borderRadius: 10, padding: "0 16px", background: "#fff" }}>
@@ -208,7 +219,7 @@ function SharePanel({ slug, lang, label, isEs }) {
             <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-mid)", marginBottom: 8 }}>{words.qr}</div>
             <img src={qr} alt={`${words.qr}: ${url}`} width={220} height={220} style={{ display: "inline-block", border: "1px solid var(--border)", borderRadius: 6 }} />
             <div style={{ marginTop: 10 }}>
-              <a href={qr} download={`${slug}-slate-card-${lang}-qr.png`} style={secondaryBtn}>{words.dl}</a>
+              <a href={qr} download={`${slug}-slate-card-${pageId}-qr.png`} style={secondaryBtn}>{words.dl}</a>
             </div>
           </div>
         )}
