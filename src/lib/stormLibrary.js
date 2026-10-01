@@ -8,7 +8,7 @@
 import { db, auth, storage } from "../firebase";
 import {
   collection, addDoc, updateDoc, deleteDoc, doc, getDoc,
-  getDocs, query, orderBy, serverTimestamp, increment,
+  getDocs, query, orderBy, serverTimestamp, increment, writeBatch,
 } from "firebase/firestore";
 import {
   ref, uploadBytesResumable, uploadBytes, getDownloadURL, deleteObject,
@@ -604,6 +604,57 @@ export async function deletePost(stormId, postId) {
   if (snap.exists()) await deletePostFiles({ id: postId, ...snap.data() });
   await deleteDoc(doc(db, COL, stormId, "posts", postId));
   await updateDoc(doc(db, COL, stormId), { postCount: increment(-1) }).catch(() => {});
+}
+
+// Move a post (text, media links, locks, genParams — everything) from one
+// storm to another. Staff only (Administrator / Manager). Firestore can't
+// move a document, so this writes the post into the target storm under the
+// SAME post id and deletes it from the source, together with both storms'
+// postCount adjustments, in ONE atomic batch — either all four writes land
+// or none do.
+//
+// MEDIA STAYS PUT in Storage (storms/{fromStormId}/{postId}/...). Each
+// media item carries its own url + path, so the moved post keeps working
+// unchanged. deleteStorm() only deletes files for posts still inside the
+// storm being deleted, so deleting the source storm later does not touch a
+// moved post's files. Known limit: the Storage rules key write/delete on
+// the {stormId} in the path, so a non-staff owner of the TARGET storm could
+// not later delete those files (staff can).
+//
+// The post goes to the END of the target storm's order. Firestore rules are
+// unchanged: staff already have create/delete on posts and update on both
+// storm docs (a Manager only within their own org — a cross-org move is
+// rejected by the rules and surfaces as an error to the caller).
+export async function movePost(fromStormId, toStormId, postId, role) {
+  if (!canReview(role)) throw new Error("Only Administrators and Managers can move posts.");
+  if (!fromStormId || !toStormId || fromStormId === toStormId) {
+    throw new Error("Pick a different storm to move this post to.");
+  }
+  const srcRef = doc(db, COL, fromStormId, "posts", postId);
+  const snap = await getDoc(srcRef);
+  if (!snap.exists()) throw new Error("This post no longer exists — refresh and try again.");
+
+  const targetPosts = await loadPosts(toStormId);
+  const nextOrder = targetPosts.reduce((m, p) => Math.max(m, p.order ?? -1), -1) + 1;
+
+  const batch = writeBatch(db);
+  batch.set(doc(db, COL, toStormId, "posts", postId), {
+    ...snap.data(),
+    order: nextOrder,
+    movedFrom: { stormId: fromStormId, movedBy: currentUserStamp(), movedAt: serverTimestamp() },
+    updatedAt: serverTimestamp(),
+  });
+  batch.delete(srcRef);
+  batch.update(doc(db, COL, fromStormId), { postCount: increment(-1) });
+  batch.update(doc(db, COL, toStormId), { postCount: increment(1) });
+  try {
+    await batch.commit();
+  } catch (e) {
+    if (e?.code === "permission-denied") {
+      throw new Error("You don't have permission to move posts into that storm (a Manager can only move posts within their own organization).");
+    }
+    throw e;
+  }
 }
 
 // One-off backfill for storms created before postCount existed: counts
