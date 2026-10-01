@@ -6,7 +6,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  loadPosts, deletePost, MEDIA_TYPES, PUSH_TO_STORM_KEY, PUSH_TO_STORM_TTL_MS,
+  loadPosts, deletePost, movePost, loadAllStorms, isStormExpired, MEDIA_TYPES, PUSH_TO_STORM_KEY, PUSH_TO_STORM_TTL_MS,
   STORM_TO_MM_KEY,
   canReview, STORM_STATUS, MAX_GRAPHIC_MB, PUBLIC_STORM_BASE_URL,
   setStormPublic, setStormPublicCardImage, uploadPublicCardImage, formatGenParams,
@@ -21,7 +21,7 @@ const BORDER     = "var(--border)";
 const SURFACE_ALT = "var(--surface-alt)";
 
 export default function StormPostsPanel({ storm, justCreated, onClose }) {
-  const { role } = useAuth();
+  const { role, profile } = useAuth();
   const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +29,7 @@ export default function StormPostsPanel({ storm, justCreated, onClose }) {
   const [editingPost, setEditingPost] = useState(null);
   const [pendingPush, setPendingPush] = useState(null); // { texts, title } staged from Message Machine
   const [sendError, setSendError] = useState(false);
+  const [movingPost, setMovingPost] = useState(null); // post being moved, or null
 
   useEffect(() => { load(); }, []);
 
@@ -92,6 +93,11 @@ export default function StormPostsPanel({ storm, justCreated, onClose }) {
   async function handleDelete(post) {
     if (!window.confirm(`Delete post "${post.title || "Untitled"}"? This removes its media permanently.`)) return;
     await deletePost(storm.id, post.id);
+    await load();
+  }
+
+  async function handleMoved() {
+    setMovingPost(null);
     await load();
   }
 
@@ -198,6 +204,9 @@ export default function StormPostsPanel({ storm, justCreated, onClose }) {
                 </div>
                 <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                   <button onClick={() => openEdit(post)} style={smallBtnStyle(TEAL)}>Edit</button>
+                  {canReview(role) && (
+                    <button onClick={() => setMovingPost(post)} style={smallBtnStyle(CHARCOAL)}>Move</button>
+                  )}
                   <button onClick={() => handleDelete(post)} style={smallBtnStyle(TERRACOTTA)}>Delete</button>
                 </div>
               </div>
@@ -205,6 +214,17 @@ export default function StormPostsPanel({ storm, justCreated, onClose }) {
           </div>
         )}
       </div>
+
+      {movingPost && (
+        <MovePostModal
+          fromStorm={storm}
+          post={movingPost}
+          role={role}
+          orgId={profile?.orgId || null}
+          onClose={() => setMovingPost(null)}
+          onMoved={handleMoved}
+        />
+      )}
 
       {editorOpen && (
         <StormPostEditor
@@ -220,6 +240,111 @@ export default function StormPostsPanel({ storm, justCreated, onClose }) {
           onSaved={handleSaved}
         />
       )}
+    </div>
+  );
+}
+
+// Staff-only "Move to another storm" picker. Offers every non-archived storm
+// except the current one. A Manager is only offered storms in their own org
+// (or legacy storms with no orgId), mirroring the Firestore rules, so they
+// aren't shown targets the server would reject; Administrators see all.
+// A target that is Active and already started is LIVE — moving a post in
+// shows it to members at once — so that case asks for explicit confirmation.
+function MovePostModal({ fromStorm, post, role, orgId, onClose, onMoved }) {
+  const [storms, setStorms] = useState(null);
+  const [targetId, setTargetId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    loadAllStorms().then(all => {
+      if (cancelled) return;
+      const isAdmin = role === "administrator";
+      setStorms(
+        all
+          .filter(s => s.id !== fromStorm.id && s.status !== STORM_STATUS.ARCHIVED)
+          .filter(s => isAdmin || !s.orgId || s.orgId === orgId)
+          .sort((a, b) => (a.title || "").localeCompare(b.title || ""))
+      );
+    }).catch(() => { if (!cancelled) setError("Couldn't load storms — check your connection and try again."); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const target = storms?.find(s => s.id === targetId) || null;
+  const targetIsLive = !!target && target.status === STORM_STATUS.ACTIVE
+    && !isStormExpired(target.expiresAt)
+    && !(target.startAt && new Date(target.startAt).getTime() > Date.now());
+
+  async function handleMove() {
+    if (!target) return;
+    if (targetIsLive && !window.confirm(
+      `"${target.title || "Untitled storm"}" is LIVE. Members will see this post there immediately.\n\nMove "${post.title || "Untitled post"}" into it?`
+    )) return;
+    setBusy(true);
+    setError("");
+    try {
+      await movePost(fromStorm.id, target.id, post.id, role);
+      onMoved();
+    } catch (e) {
+      setError(e.message || "Couldn't move the post.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1100,
+      display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px", overflowY: "auto",
+    }} onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+      <div style={{ background: "#fff", borderRadius: 14, padding: 24, maxWidth: 480, width: "100%" }}>
+        <h3 style={{ margin: "0 0 4px", fontSize: 18, color: TEAL, fontFamily: "var(--font-display)" }}>Move post to another storm</h3>
+        <p style={{ margin: "0 0 14px", fontSize: 13, color: "#777", lineHeight: 1.5 }}>
+          Moving <strong>{post.title || "Untitled post"}</strong> from <strong>{fromStorm.title || "this storm"}</strong>.
+          The whole post moves — message text and media — and goes to the end of the other storm's list.
+        </p>
+
+        {storms === null && !error ? (
+          <p style={{ color: "#888", fontSize: 13.5 }}>Loading storms…</p>
+        ) : storms && storms.length === 0 ? (
+          <p style={{ color: "#999", fontSize: 13.5 }}>There are no other storms available to move this post into.</p>
+        ) : storms && (
+          <select
+            value={targetId}
+            onChange={e => setTargetId(e.target.value)}
+            disabled={busy}
+            style={{ width: "100%", padding: "10px 12px", fontSize: 14, border: `1.5px solid ${BORDER}`, borderRadius: 8, background: "#fff" }}
+          >
+            <option value="">Choose a storm…</option>
+            {storms.map(s => (
+              <option key={s.id} value={s.id}>
+                {(s.title || "Untitled storm")} — {s.status === STORM_STATUS.PENDING_REVIEW ? "pending review" : s.status}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {targetIsLive && (
+          <p style={{ margin: "10px 0 0", fontSize: 12.5, color: TERRACOTTA, fontWeight: 700 }}>
+            This storm is live — members will see the post right away.
+          </p>
+        )}
+        {error && <p style={{ margin: "10px 0 0", fontSize: 13, color: TERRACOTTA }}>{error}</p>}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+          <button onClick={onClose} disabled={busy} style={smallBtnStyle(CHARCOAL)}>Cancel</button>
+          <button
+            onClick={handleMove}
+            disabled={!target || busy}
+            style={{
+              background: !target || busy ? "#bbb" : TEAL, color: "#fff", border: "none", borderRadius: 7,
+              padding: "7px 16px", fontSize: 13, fontWeight: 800, cursor: !target || busy ? "default" : "pointer",
+            }}
+          >
+            {busy ? "Moving…" : "Move post"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
