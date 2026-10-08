@@ -60,34 +60,53 @@ async function inLibraryByParents(drive, parents) {
   return false;
 }
 
-// Method 2 (works with an API key, same list calls browse-drive uses): every
-// folder id that is reachable DOWNWARD from the library root, cached 10 minutes.
-let folderCache = { at: 0, ids: null };
-async function libraryFolderIds(drive) {
-  if (folderCache.ids && Date.now() - folderCache.at < 10 * 60_000) return folderCache.ids;
-  const ids = new Set([DRIVE_ROOT_FOLDER_ID]);
+// Method 2 (works with an API key, same list call browse-drive uses): walk
+// DOWNWARD from the library root looking for the folder the browser says the
+// file was picked from. One folder at a time; a folder Drive refuses to list is
+// skipped (counted), never fatal. Child lists are cached 10 minutes.
+let childCache = { at: 0, map: new Map() };
+async function childFolders(drive, folderId, stats) {
+  if (Date.now() - childCache.at > 10 * 60_000) childCache = { at: Date.now(), map: new Map() };
+  if (childCache.map.has(folderId)) return childCache.map.get(folderId);
+  const kids = [];
+  try {
+    let pageToken;
+    do {
+      const res = await drive.files.list({
+        q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+        fields: "nextPageToken, files(id)",
+        pageSize: 1000,
+        pageToken,
+      });
+      for (const f of res.data.files || []) kids.push(f.id);
+      pageToken = res.data.nextPageToken;
+    } while (pageToken);
+    childCache.map.set(folderId, kids);
+  } catch (err) {
+    stats.skipped++;
+    stats.lastError = String(err.message).slice(0, 100);
+  }
+  return kids;
+}
+
+// Is `target` the library root or a folder somewhere beneath it?
+async function folderUnderRoot(drive, target, stats) {
+  if (target === DRIVE_ROOT_FOLDER_ID) return true;
+  const seen = new Set([DRIVE_ROOT_FOLDER_ID]);
   let frontier = [DRIVE_ROOT_FOLDER_ID];
-  for (let depth = 0; depth < 10 && frontier.length && ids.size < 5000; depth++) {
+  for (let depth = 0; depth < 10 && frontier.length && seen.size < 5000; depth++) {
     const next = [];
-    for (let i = 0; i < frontier.length; i += 20) {
-      const batch = frontier.slice(i, i + 20).filter((id) => ID_RE.test(id));
-      if (!batch.length) continue;
-      let pageToken;
-      do {
-        const res = await drive.files.list({
-          q: `(${batch.map((id) => `'${id}' in parents`).join(" or ")}) and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-          fields: "nextPageToken, files(id)",
-          pageSize: 1000,
-          pageToken,
-        });
-        for (const f of res.data.files || []) if (!ids.has(f.id)) { ids.add(f.id); next.push(f.id); }
-        pageToken = res.data.nextPageToken;
-      } while (pageToken);
+    for (let i = 0; i < frontier.length; i += 8) {
+      const lists = await Promise.all(frontier.slice(i, i + 8).filter((id) => ID_RE.test(id)).map((id) => childFolders(drive, id, stats)));
+      for (const kids of lists) for (const k of kids) {
+        if (k === target) return true;
+        if (!seen.has(k)) { seen.add(k); next.push(k); }
+      }
     }
     frontier = next;
   }
-  folderCache = { at: Date.now(), ids };
-  return ids;
+  stats.scanned = seen.size;
+  return false;
 }
 
 async function fileIsInFolder(drive, folderId, fileId) {
@@ -110,13 +129,12 @@ async function fileIsInFolder(drive, folderId, fileId) {
 // folderId hint is NEVER trusted on its own: the folder must be reachable from
 // the library root AND Drive must list the file inside that folder.
 async function inLibrary(drive, meta, hintFolderId) {
-  const why = { v: "lib2", parents: (meta.parents || []).length ? "returned" : "none", hint: hintFolderId ? "given" : "missing" };
+  const why = { v: "lib3", parents: (meta.parents || []).length ? "returned" : "none", hint: hintFolderId ? "given" : "missing" };
   if (await inLibraryByParents(drive, meta.parents)) return { ok: true };
   if (hintFolderId && ID_RE.test(hintFolderId)) {
+    const stats = { skipped: 0, scanned: 0, lastError: "" };
     try {
-      const ids = await libraryFolderIds(drive);
-      why.libraryFolders = ids.size;
-      why.hintUnderRoot = ids.has(hintFolderId);
+      why.hintUnderRoot = await folderUnderRoot(drive, hintFolderId, stats);
       if (why.hintUnderRoot) {
         why.fileInHint = await fileIsInFolder(drive, hintFolderId, meta.id);
         if (why.fileInHint) return { ok: true };
@@ -125,6 +143,9 @@ async function inLibrary(drive, meta, hintFolderId) {
       console.error("[socialMedia] library membership check failed:", err.message);
       why.error = String(err.message).slice(0, 120);
     }
+    why.foldersScanned = stats.scanned;
+    why.foldersSkipped = stats.skipped;
+    if (stats.lastError) why.skipError = stats.lastError;
   }
   return { ok: false, why };
 }
