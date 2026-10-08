@@ -846,6 +846,35 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow write: if false;
     }
+    // ── socialPosting/{uid} (Oct 2026) ────────────────────────────────────
+    // The Social Posting subscription record: status ("active" is what
+    // unlocks posting), profilesPaid, Stripe ids, and Upload-Post profile
+    // usernames. WRITES ARE ADMIN-SDK ONLY (`allow write: if false`) — the
+    // Stripe webhook is the only thing that sets status, so a user can never
+    // approve themselves by writing their own doc. This is deliberately NOT a
+    // field on users/{uid}: keeping it in its own collection means it never
+    // has to be added to ownerProtectedFieldsUnchanged() and can't be
+    // reached by any existing users/{uid} update rule. The owner can READ
+    // it (the UI listens to it live so posting unlocks the moment the webhook
+    // lands); it holds no secrets — no API keys, no social tokens, those
+    // live only in Upload-Post.
+    match /socialPosting/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if false;
+      // Per-attempt publish log written by social-publish.mjs.
+      match /log/{logId} {
+        allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+        allow write: if false;
+      }
+    }
+    // ── socialUploads/{id} (Oct 2026) ─────────────────────────────────────
+    // Bookkeeping for temporary device uploads attached to social posts
+    // (bucket, path, deleteAfter). Written by social-publish.mjs and read +
+    // deleted by scheduled-social-cleanup.mjs — both Admin SDK, which
+    // bypasses rules. No client has any reason to touch it.
+    match /socialUploads/{id} {
+      allow read, write: if false;
+    }
     // ── generationJobs/{jobId} ────────────────────────────────────────────
     // Added alongside the Background Functions rearchitecture of Message
     // Machine's generateAll (August 2026, TODO #7 — the 26-second Netlify

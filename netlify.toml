@@ -129,3 +129,18 @@
 
 [functions."stripe-webhook"]
   timeout = 15
+
+# Social Posting (Oct 2026) — Stripe subscription + Upload-Post posting.
+# These call Upload-Post's API over the network, so they get the same 26s
+# ceiling as the other external-API functions.
+[functions."social-billing"]
+  timeout = 26
+
+[functions."social-connect"]
+  timeout = 26
+
+[functions."social-publish"]
+  timeout = 26
+
+[functions."scheduled-social-cleanup"]
+  timeout = 26

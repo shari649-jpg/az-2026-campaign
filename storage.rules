@@ -94,6 +94,27 @@ service firebase.storage {
     // ══════════════════════════════════════════════════════════════════
     // ▲▲▲  END new candidate-headshots block  ▲▲▲
     // ══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+    // ▼▼▼  NEW — Social Posting media from the user's own device  ▼▼▼
+    // ══════════════════════════════════════════════════════════════════
+    // socialUploads/{uid}/{fileName} (Oct 2026): a photo or video someone
+    // picked from their own device to attach to a social post. The browser
+    // uploads it here; social-publish.mjs then downloads (photos) or hands
+    // Upload-Post the download URL (videos), and scheduled-social-cleanup.mjs
+    // deletes it afterwards. Owner-only everything — a user can only touch
+    // their own folder — and only JPG/PNG/WebP under 10 MB, or MP4/MOV/WebM
+    // under 200 MB (the 200 MB ceiling is ours, not a platform limit). New
+    // files only (no overwrite): `create`, never `update`.
+    match /socialUploads/{uid}/{fileName} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isSignedIn() && request.auth.uid == uid
+        && ((request.resource.contentType.matches('image/(jpeg|png|webp)') && request.resource.size < 10 * 1024 * 1024)
+         || (request.resource.contentType.matches('video/(mp4|quicktime|webm)') && request.resource.size < 200 * 1024 * 1024));
+      allow delete: if isSignedIn() && request.auth.uid == uid;
+    }
+    // ══════════════════════════════════════════════════════════════════
+    // ▲▲▲  END socialUploads block  ▲▲▲
+    // ══════════════════════════════════════════════════════════════════
     // Deny everything else in the bucket by default.
     match /{allPaths=**} {
       allow read, write: if false;
