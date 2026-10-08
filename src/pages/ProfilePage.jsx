@@ -4,6 +4,7 @@ import { EmailAuthProvider, linkWithCredential } from "firebase/auth";
 import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import AddonCreditsPurchase from "../components/AddonCreditsPurchase";
+import SocialPostingPanel from "../components/SocialPostingPanel";
 
 const TEAL       = "var(--teal)";
 const GOLD       = "var(--gold)";
@@ -191,6 +192,14 @@ export default function ProfilePage() {
             </div>
           </section>
         )}
+
+        {/* ── Social Posting (Oct 2026) — $5/profile/month, unlocks the
+            "Send to my accounts" buttons in Message Machine. Open to every
+            signed-in user; the paywall is enforced server-side. ── */}
+        <section id="social-posting" style={cardStyle}>
+          <h2 style={sectionTitleStyle}>Social Posting</h2>
+          <SocialPostingPanel />
+        </section>
 
         {/* ── Account info (read-only) ── */}
         <section style={cardStyle}>
