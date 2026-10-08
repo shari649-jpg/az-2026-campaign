@@ -153,7 +153,7 @@ export default function SendToSocialModal({ texts, initialPlatform, onClose }) {
       };
       if (attachments.length) {
         payload.attachments = attachments.map((a) => a.source === "drive"
-          ? { source: "drive", id: a.id, name: a.name }
+          ? { source: "drive", id: a.id, name: a.name, folderId: a.folderId }
           : { source: "upload", url: a.url, name: a.name });
       }
       if (mode === "later") {
@@ -258,7 +258,7 @@ export default function SendToSocialModal({ texts, initialPlatform, onClose }) {
                     <DriveMediaPicker
                       onClose={() => setShowLibrary(false)}
                       canPick={(k) => canAdd(attachments, k)}
-                      onPick={(f) => { setMediaError(""); addAttachment({ source: "drive", id: f.id, name: f.name, kind: f.kind, thumb: f.thumb }); if (f.kind === "video") setShowLibrary(false); }} />
+                      onPick={(f) => { setMediaError(""); addAttachment({ source: "drive", id: f.id, name: f.name, kind: f.kind, thumb: f.thumb, folderId: f.folderId }); if (f.kind === "video") setShowLibrary(false); }} />
                   )}
                   {uploading && (
                     <div role="status" style={{ fontSize: 13, marginTop: 8 }}>Uploading {uploading.name}… {Math.round(uploading.pct * 100)}%</div>

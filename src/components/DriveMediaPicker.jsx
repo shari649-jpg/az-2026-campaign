@@ -5,7 +5,7 @@ import { auth } from "../firebase";
 // Browses the same shared Google Drive library as the Media tool (via
 // browse-drive) and lets the user pick pictures/videos to attach.
 //
-// Props: onPick(file) — file = { id, name, kind: "image"|"video", thumb }
+// Props: onPick(file) — file = { id, name, kind: "image"|"video", thumb, folderId }
 //        canPick(kind) → "" if allowed, otherwise a message to show
 //        onClose
 // GIFs are shown but can't be selected (social networks don't take them here).
@@ -52,7 +52,7 @@ export default function DriveMediaPicker({ onPick, canPick, onClose }) {
     const why = canPick(kind);
     if (why) { setNote(why); return; }
     setNote("");
-    onPick({ id: f.id, name: f.name, kind, thumb: f.thumbnailLink || "" });
+    onPick({ id: f.id, name: f.name, kind, thumb: f.thumbnailLink || "", folderId: stack[stack.length - 1].id });
   }
 
   return (
