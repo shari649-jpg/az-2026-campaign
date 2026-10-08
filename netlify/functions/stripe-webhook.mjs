@@ -45,6 +45,7 @@
 import admin from "firebase-admin";
 import Stripe from "stripe";
 import { readFileSync } from "node:fs";
+import { handleSocialPostingEvent } from "./socialPostingWebhook.mjs";
 
 function getAdminApp() {
   if (admin.apps.length) return admin.app();
@@ -103,6 +104,16 @@ export default async function (req) {
   const db = admin.firestore(app);
 
   try {
+    // Social Posting subscriptions (Oct 2026) — $5/profile/month, handled
+    // entirely in socialPostingWebhook.mjs. Runs FIRST so a subscription
+    // checkout (which has no packId) never reaches the credit-pack branch
+    // below and gets logged as "missing metadata". Returns handled:false for
+    // every other event, leaving the credit-pack flow exactly as it was.
+    const social = await handleSocialPostingEvent(db, event);
+    if (social.handled) {
+      return new Response(JSON.stringify({ received: true }), { status: 200 });
+    }
+
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
       const { uid, orgId, packId } = session.metadata || {};
