@@ -16,6 +16,8 @@ import { auth, db } from "../../firebase";
 import { doc, onSnapshot } from "firebase/firestore";
 import HelpTooltip from "../../components/common/HelpTooltip";
 import { HELP } from "../../lib/helpContent";
+import SendToSocialModal from "../../components/SendToSocialModal";
+import { useSocialPosting, SOCIAL_PLATFORMS } from "../../lib/socialPosting";
 
 const PLATFORMS = [
   { id: "facebook", name: "Facebook", abbr: "FB", maxChars: 63206, bg: "#0a4fa8", text: "#fff" },
@@ -653,7 +655,7 @@ function DesertLoader({ statusMsg }) {
 }
 
 /* ── Platform Message Card ── */
-function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading, contradictionNote, onDismissContradiction }) {
+function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading, contradictionNote, onDismissContradiction, onSend, socialActive }) {
   const [localOpt, setLocalOpt] = useState("");
   const [expanded, setExpanded] = useState(false);
   const charCount = (message || "").length;
@@ -746,6 +748,16 @@ function PlatformCard({ platform: p, message, onUpdate, onCopy, onRegen, loading
           <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:14, flexWrap:"wrap" }}>
             <button style={S.btnDark} onClick={() => onCopy(message || "", p.name)}>Copy Text</button>
             <HelpTooltip text={HELP.messageMachine.copy} label={`Help: Copy ${p.name} text`} />
+            {/* Social Posting (Oct 2026): only for networks Upload-Post can
+                post as text (Facebook, Threads, Bluesky, X). Locked look
+                until the user's $5/profile/month subscription is active;
+                the dialog explains it and the server enforces it. */}
+            {onSend && (
+              <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => onSend(p.id)}
+                title={socialActive ? `Post this to your ${p.name} account` : "Posting straight to your accounts is a $5/profile/month add-on"}>
+                {socialActive ? "Send to my account" : "🔒 Send to my account"}
+              </button>
+            )}
             <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => handleQuick("shorten")} title="Regenerate a shorter version">Shorten</button>
             <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => handleQuick("expand")} title="Regenerate a more detailed version">Expand</button>
             <button style={{ ...S.btnDark, opacity: loading ? 0.5 : 1 }} disabled={loading} onClick={() => onRegen(p.id, "", message)} title="Rephrase this message">Rephrase</button>
@@ -769,6 +781,10 @@ export default function App() {
   // User's own drafts (isStaffPusher = Manager/Admin see every non-archived storm).
   const isStaffPusher = role === "administrator" || role === "manager";
   const canPushToStorm = true;
+  // Social Posting (Oct 2026) — live mirror of socialPosting/{uid}; only
+  // drives the button's look. Enforcement is server-side.
+  const social = useSocialPosting();
+  const [sendPlatform, setSendPlatform] = useState(null); // platform id whose "Send" was clicked
   const [view, setView]             = useState("form");
   const [msgMode, setMsgMode]       = useState("");   // "" (neutral, default) | "az" | "national"
   const [msgFrame, setMsgFrame]     = useState("");      // NATIONAL_FRAMES id or ""
@@ -2638,8 +2654,16 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   onUpdate={(id,text)=>setMessages(prev=>({...prev,[id]:text}))}
                   onCopy={copyText} onRegen={regenPlatform} loading={!!platLoad[p.id]}
                   contradictionNote={contradictionFlags[p.id]}
-                  onDismissContradiction={() => dismissContradiction(p.id)} />
+                  onDismissContradiction={() => dismissContradiction(p.id)}
+                  onSend={SOCIAL_PLATFORMS[p.id] ? setSendPlatform : undefined}
+                  socialActive={social.active} />
               ))}
+              {sendPlatform && (
+                <SendToSocialModal
+                  texts={Object.fromEntries(Object.keys(SOCIAL_PLATFORMS).map((id) => [id, messages[id]]))}
+                  initialPlatform={sendPlatform}
+                  onClose={() => setSendPlatform(null)} />
+              )}
             </div>
 
             {/* Hashtag Section */}
