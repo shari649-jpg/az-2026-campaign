@@ -44,13 +44,80 @@ function getDrive() {
 
 const userError = (message) => Object.assign(new Error(message), { code: "user" });
 
-// Is this Drive file inside the media library folder tree? (Walk up ≤10 levels.)
-async function inLibrary(drive, parents) {
-  let current = parents || [];
-  for (let depth = 0; depth < 10 && current.length; depth++) {
-    if (current.includes(DRIVE_ROOT_FOLDER_ID)) return true;
-    const p = await drive.files.get({ fileId: current[0], fields: "id,parents" });
-    current = p.data.parents || [];
+const ID_RE = /^[A-Za-z0-9_-]{10,100}$/;
+
+// Method 1: walk up the file's `parents`. With an API key Drive may not return
+// `parents` at all for files you can't edit, so this can come back empty.
+async function inLibraryByParents(drive, parents) {
+  try {
+    let current = parents || [];
+    for (let depth = 0; depth < 10 && current.length; depth++) {
+      if (current.includes(DRIVE_ROOT_FOLDER_ID)) return true;
+      const p = await drive.files.get({ fileId: current[0], fields: "id,parents" });
+      current = p.data.parents || [];
+    }
+  } catch { /* fall through to method 2 */ }
+  return false;
+}
+
+// Method 2 (works with an API key, same list calls browse-drive uses): every
+// folder id that is reachable DOWNWARD from the library root, cached 10 minutes.
+let folderCache = { at: 0, ids: null };
+async function libraryFolderIds(drive) {
+  if (folderCache.ids && Date.now() - folderCache.at < 10 * 60_000) return folderCache.ids;
+  const ids = new Set([DRIVE_ROOT_FOLDER_ID]);
+  let frontier = [DRIVE_ROOT_FOLDER_ID];
+  for (let depth = 0; depth < 10 && frontier.length && ids.size < 5000; depth++) {
+    const next = [];
+    for (let i = 0; i < frontier.length; i += 20) {
+      const batch = frontier.slice(i, i + 20).filter((id) => ID_RE.test(id));
+      if (!batch.length) continue;
+      let pageToken;
+      do {
+        const res = await drive.files.list({
+          q: `(${batch.map((id) => `'${id}' in parents`).join(" or ")}) and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+          fields: "nextPageToken, files(id)",
+          pageSize: 1000,
+          pageToken,
+        });
+        for (const f of res.data.files || []) if (!ids.has(f.id)) { ids.add(f.id); next.push(f.id); }
+        pageToken = res.data.nextPageToken;
+      } while (pageToken);
+    }
+    frontier = next;
+  }
+  folderCache = { at: Date.now(), ids };
+  return ids;
+}
+
+async function fileIsInFolder(drive, folderId, fileId) {
+  let pageToken;
+  for (let page = 0; page < 20; page++) {
+    const res = await drive.files.list({
+      q: `'${folderId}' in parents and trashed = false`,
+      fields: "nextPageToken, files(id)",
+      pageSize: 1000,
+      pageToken,
+    });
+    if ((res.data.files || []).some((f) => f.id === fileId)) return true;
+    pageToken = res.data.nextPageToken;
+    if (!pageToken) break;
+  }
+  return false;
+}
+
+// Is this Drive file inside the media library folder tree? The browser's
+// folderId hint is NEVER trusted on its own: the folder must be reachable from
+// the library root AND Drive must list the file inside that folder.
+async function inLibrary(drive, meta, hintFolderId) {
+  if (await inLibraryByParents(drive, meta.parents)) return true;
+  if (hintFolderId && ID_RE.test(hintFolderId)) {
+    try {
+      const ids = await libraryFolderIds(drive);
+      if (ids.has(hintFolderId) && await fileIsInFolder(drive, hintFolderId, meta.id)) return true;
+    } catch (err) {
+      console.error("[socialMedia] library membership check failed:", err.message);
+    }
   }
   return false;
 }
@@ -71,7 +138,7 @@ export async function resolveAttachments(attachments, uid) {
         throw userError("Couldn't find one of the library files you picked.");
       }
       if (meta.trashed) throw userError("One of the library files was deleted.");
-      if (!(await inLibrary(drive, meta.parents))) throw userError("That file isn't in the media library.");
+      if (!(await inLibrary(drive, meta, a.folderId))) throw userError("That file isn't in the media library.");
       const kind = kindFromMime(meta.mimeType);
       if (!kind) throw userError(`"${meta.name}" is a ${meta.mimeType}, which can't be posted yet (JPG, PNG, WebP, MP4, MOV and WebM work).`);
       const size = Number.parseInt(meta.size, 10) || 0;

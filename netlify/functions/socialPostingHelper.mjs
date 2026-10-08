@@ -230,7 +230,8 @@ export function validatePublishRequest(body, now = Date.now()) {
   for (const a of rawAtt) {
     const name = typeof a?.name === "string" ? a.name.slice(0, 200) : "";
     if (a?.source === "drive" && typeof a.id === "string" && /^[A-Za-z0-9_-]{10,100}$/.test(a.id)) {
-      attachments.push({ source: "drive", id: a.id, name });
+      const folderId = typeof a.folderId === "string" && /^[A-Za-z0-9_-]{10,100}$/.test(a.folderId) ? a.folderId : null;
+      attachments.push({ source: "drive", id: a.id, name, folderId });
     } else if (a?.source === "upload" && typeof a.url === "string" && a.url.length < 2048) {
       attachments.push({ source: "upload", url: a.url, name });
     } else {
