@@ -155,6 +155,11 @@ export default async function (req) {
     return reply(req, 400, { error: "Unknown action." });
   } catch (err) {
     console.error("[social-billing] error:", err);
-    return reply(req, 500, { error: "Something went wrong with billing. Please try again." });
+    // Stripe's own messages are safe to show (they mask keys) and are what
+    // actually tells you what to fix; anything else gets only a short code.
+    const detail = typeof err?.type === "string" && err.type.startsWith("Stripe") && err.message
+      ? `Stripe said: ${String(err.message).slice(0, 300)}`
+      : (err?.code ? `Error code: ${String(err.code).slice(0, 60)}` : "");
+    return reply(req, 500, { error: `Something went wrong with billing. Please try again.${detail ? " " + detail : ""}` });
   }
 }
