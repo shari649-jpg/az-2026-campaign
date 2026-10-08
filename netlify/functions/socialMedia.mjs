@@ -110,16 +110,23 @@ async function fileIsInFolder(drive, folderId, fileId) {
 // folderId hint is NEVER trusted on its own: the folder must be reachable from
 // the library root AND Drive must list the file inside that folder.
 async function inLibrary(drive, meta, hintFolderId) {
-  if (await inLibraryByParents(drive, meta.parents)) return true;
+  const why = { v: "lib2", parents: (meta.parents || []).length ? "returned" : "none", hint: hintFolderId ? "given" : "missing" };
+  if (await inLibraryByParents(drive, meta.parents)) return { ok: true };
   if (hintFolderId && ID_RE.test(hintFolderId)) {
     try {
       const ids = await libraryFolderIds(drive);
-      if (ids.has(hintFolderId) && await fileIsInFolder(drive, hintFolderId, meta.id)) return true;
+      why.libraryFolders = ids.size;
+      why.hintUnderRoot = ids.has(hintFolderId);
+      if (why.hintUnderRoot) {
+        why.fileInHint = await fileIsInFolder(drive, hintFolderId, meta.id);
+        if (why.fileInHint) return { ok: true };
+      }
     } catch (err) {
       console.error("[socialMedia] library membership check failed:", err.message);
+      why.error = String(err.message).slice(0, 120);
     }
   }
-  return false;
+  return { ok: false, why };
 }
 
 // Look up what each attachment really is. Returns resolved items:
@@ -138,7 +145,11 @@ export async function resolveAttachments(attachments, uid) {
         throw userError("Couldn't find one of the library files you picked.");
       }
       if (meta.trashed) throw userError("One of the library files was deleted.");
-      if (!(await inLibrary(drive, meta, a.folderId))) throw userError("That file isn't in the media library.");
+      const lib = await inLibrary(drive, meta, a.folderId);
+      if (!lib.ok) {
+        console.error("[socialMedia] not in library:", JSON.stringify(lib.why));
+        throw userError(`That file isn't in the media library. (${Object.entries(lib.why).map(([k, v]) => `${k}=${v}`).join(", ")})`);
+      }
       const kind = kindFromMime(meta.mimeType);
       if (!kind) throw userError(`"${meta.name}" is a ${meta.mimeType}, which can't be posted yet (JPG, PNG, WebP, MP4, MOV and WebM work).`);
       const size = Number.parseInt(meta.size, 10) || 0;
