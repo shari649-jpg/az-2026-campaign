@@ -142,5 +142,8 @@
 [functions."social-publish"]
   timeout = 26
 
+[functions."social-posts"]
+  timeout = 26
+
 [functions."scheduled-social-cleanup"]
   timeout = 26

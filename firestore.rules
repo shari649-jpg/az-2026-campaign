@@ -866,6 +866,12 @@ service cloud.firestore {
         allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
         allow write: if false;
       }
+      // Drafts, scheduled and sent posts. Written only by social-posts.mjs /
+      // social-publish.mjs; the owner can read them.
+      match /posts/{postId} {
+        allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+        allow write: if false;
+      }
     }
     // ── socialUploads/{id} (Oct 2026) ─────────────────────────────────────
     // Bookkeeping for temporary device uploads attached to social posts
