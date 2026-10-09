@@ -5,6 +5,7 @@ import { db, auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import AddonCreditsPurchase from "../components/AddonCreditsPurchase";
 import SocialPostingPanel from "../components/SocialPostingPanel";
+import SocialPostsPanel from "../components/SocialPostsPanel";
 
 const TEAL       = "var(--teal)";
 const GOLD       = "var(--gold)";
@@ -199,6 +200,12 @@ export default function ProfilePage() {
         <section id="social-posting" style={cardStyle}>
           <h2 style={sectionTitleStyle}>Social Posting</h2>
           <SocialPostingPanel />
+        </section>
+
+        {/* ── My social posts (drafts, scheduled, recent) ── */}
+        <section id="social-posts" style={cardStyle}>
+          <h2 style={sectionTitleStyle}>My social posts</h2>
+          <SocialPostsPanel />
         </section>
 
         {/* ── Account info (read-only) ── */}
