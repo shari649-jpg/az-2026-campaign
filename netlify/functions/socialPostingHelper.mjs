@@ -146,6 +146,13 @@ export function parseStorageUrl(url, uid) {
   return { bucket: m[1], path };
 }
 
+// A storm media URL comes from OUR Firestore (storms/{id}/posts/{id}.media[].url),
+// never from the browser, but we still only fetch Firebase Storage hosts.
+export function isStorageHost(url) {
+  try { const u = new URL(url); return u.protocol === "https:" && u.hostname === "firebasestorage.googleapis.com"; }
+  catch { return false; }
+}
+
 export function mapStripeStatus(stripeStatus) {
   switch (stripeStatus) {
     case "active":
@@ -203,7 +210,12 @@ export function connectedKeys(socialAccounts) {
 // Shape-checks everything the browser sent. What an attachment actually IS
 // (image vs video, in the media library or not) is decided later, server-side,
 // by socialMedia.mjs — the client's claims are never trusted for that.
-export function validatePublishRequest(body, now = Date.now()) {
+const ID_OK = /^[A-Za-z0-9_-]{5,100}$/;
+
+// opts.draft: this is a saved draft, not a send — empty text and over-limit text
+// are allowed (the person is still working on it); every real send re-validates
+// strictly.
+export function validatePublishRequest(body, now = Date.now(), opts = {}) {
   const slot = Number.parseInt(body?.slot, 10);
   if (!Number.isInteger(slot) || slot < 0 || slot >= MAX_PROFILES) {
     return { error: "Pick which profile to post from." };
@@ -216,8 +228,9 @@ export function validatePublishRequest(body, now = Date.now()) {
     const cfg = PLATFORMS[id];
     if (!cfg) return { error: `"${id}" isn't a network we can post to.` };
     const t = typeof body.texts?.[id] === "string" ? body.texts[id].trim() : "";
-    if (!t) return { error: `There's no text for ${cfg.label}.` };
-    if (t.length > cfg.maxChars) {
+    if (t.length > 70_000) return { error: `The ${cfg.label} text is far too long.` };
+    if (!t && !opts.draft) return { error: `There's no text for ${cfg.label}.` };
+    if (t.length > cfg.maxChars && !opts.draft) {
       return { error: `The ${cfg.label} text is ${t.length} characters; its limit is ${cfg.maxChars}.` };
     }
     texts[id] = t;
@@ -234,6 +247,12 @@ export function validatePublishRequest(body, now = Date.now()) {
       attachments.push({ source: "drive", id: a.id, name, folderId });
     } else if (a?.source === "upload" && typeof a.url === "string" && a.url.length < 2048) {
       attachments.push({ source: "upload", url: a.url, name });
+    } else if (a?.source === "storm" && ID_OK.test(a.stormId || "") && ID_OK.test(a.postId || "")
+      && typeof a.path === "string" && a.path.length < 512 && !a.path.includes("..")
+      && a.path.startsWith(`storms/${a.stormId}/${a.postId}/`)) {
+      // A file on a coalition storm post. Whether that post really lists this
+      // file is checked server-side against Firestore (socialMedia.mjs).
+      attachments.push({ source: "storm", stormId: a.stormId, postId: a.postId, path: a.path, name });
     } else {
       return { error: "One of the attachments isn't valid." };
     }
@@ -259,7 +278,9 @@ export function validatePublishRequest(body, now = Date.now()) {
     facebookPageId = String(body.facebookPageId);
   }
 
-  return { value: { slot, platforms, texts, attachments, scheduledDate, timezone, facebookPageId } };
+  const draftId = typeof body.draftId === "string" && /^[A-Za-z0-9]{10,40}$/.test(body.draftId) ? body.draftId : null;
+
+  return { value: { slot, platforms, texts, attachments, scheduledDate, timezone, facebookPageId, draftId } };
 }
 
 // Given the resolved kinds of the attachments, what kind of post is this?

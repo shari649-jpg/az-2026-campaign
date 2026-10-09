@@ -29,7 +29,7 @@
 import admin from "firebase-admin";
 import { google } from "googleapis";
 import {
-  PLATFORMS, platformValue, kindFromMime, kindFromName, parseStorageUrl,
+  PLATFORMS, platformValue, kindFromMime, kindFromName, parseStorageUrl, isStorageHost,
   MAX_IMAGE_BYTES, MAX_DRIVE_VIDEO_BYTES,
 } from "./socialPostingHelper.mjs";
 
@@ -154,7 +154,7 @@ async function inLibrary(drive, meta, hintFolderId) {
 //   { source, kind, name, id? (drive), url?/bucket?/path? (upload), size?, mime? }
 // Throws a { code: "user" } error with a plain-English message on anything
 // invalid, out of bounds, or outside the user's own files.
-export async function resolveAttachments(attachments, uid) {
+export async function resolveAttachments(attachments, uid, db) {
   const out = [];
   for (const a of attachments) {
     if (a.source === "drive") {
@@ -179,6 +179,22 @@ export async function resolveAttachments(attachments, uid) {
         throw userError(`"${meta.name}" is too big to send straight from the library. Download it and use "From my device" instead.`);
       }
       out.push({ source: "drive", id: meta.id, name: meta.name, mime: meta.mimeType, size, kind });
+    } else if (a.source === "storm") {
+      // A file on a storm post. Accepted only if that post's own record lists
+      // this exact path (and its URL is a Firebase Storage URL).
+      if (!db) throw userError("Storm files can't be posted right now.");
+      let item = null;
+      try {
+        const snap = await db.doc(`storms/${a.stormId}/posts/${a.postId}`).get();
+        item = (snap.exists ? snap.data().media || [] : []).find((m) => m && m.path === a.path) || null;
+      } catch { /* treated as not found */ }
+      if (!item || !isStorageHost(item.url)) throw userError("One of the storm post's files is no longer available.");
+      const kind = kindFromName(item.path);
+      if (!kind) throw userError("That storm file type can't be posted yet (JPG, PNG, WebP, MP4, MOV and WebM work).");
+      const size = Math.round((Number(item.sizeMB) || 0) * 1048576);
+      if (kind === "image" && size > MAX_IMAGE_BYTES) throw userError(`"${item.name || "A storm image"}" is over ${MAX_IMAGE_BYTES / 1048576} MB, which is too big to post.`);
+      if (kind === "video" && size > 200 * 1048576) throw userError(`"${item.name || "The storm video"}" is over 200 MB, which is too big to post.`);
+      out.push({ source: "storm", url: item.url, path: item.path, name: item.name || item.path.split("/").pop(), size, kind });
     } else {
       const loc = parseStorageUrl(a.url, uid);
       if (!loc) throw userError("One of your uploaded files isn't valid. Please upload it again.");
@@ -247,15 +263,18 @@ export function endpointFor(kind) {
   return kind === "image" ? "/upload_photos" : kind === "video" ? "/upload" : "/upload_text";
 }
 
-// Remember device uploads so the cleanup job can delete them later.
-export async function recordTempUploads(db, uid, resolved, scheduledDate) {
+// Remember device uploads so the cleanup job can delete them later. One
+// record per file (id derived from its path), so saving a draft and posting it
+// later UPDATE the same record. `keepDays` = how long to keep the file at
+// least (drafts keep theirs 30 days).
+export async function recordTempUploads(db, uid, resolved, scheduledDate, keepDays = 0) {
   const uploads = resolved.filter((a) => a.source === "upload");
   if (!uploads.length) return;
   const base = scheduledDate ? Math.max(Date.now(), new Date(scheduledDate).getTime()) : Date.now();
   // Photos are copied to Upload-Post immediately (1 day is plenty). Videos are
   // fetched by URL, possibly at publish time, so keep them 2 days past it.
-  const days = (a) => (a.kind === "video" ? 2 : 1);
-  await Promise.all(uploads.map((a) => db.collection("socialUploads").add({
+  const days = (a) => Math.max(keepDays, a.kind === "video" ? 2 : 1);
+  await Promise.all(uploads.map((a) => db.collection("socialUploads").doc(Buffer.from(a.path).toString("base64url")).set({
     uid,
     bucket: a.bucket,
     path: a.path,

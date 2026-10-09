@@ -51,6 +51,36 @@ async function sendWithXFallback(kind, platforms, makeForm) {
   return r;
 }
 
+// Keep what was sent in the user's own list (socialPosting/{uid}/posts/{id}).
+async function saveSentRecord({ ref, draftId, platforms, texts, attachments, resolved, slot, scheduledDate, timezone, r }) {
+  const FieldValue = admin.firestore.FieldValue;
+  const jobId = r.data?.job_id || null;
+  const requestId = r.data?.request_id || null;
+  const status = scheduledDate ? "scheduled" : requestId ? "processing" : "sent";
+  const fields = {
+    status,
+    slot,
+    platforms,
+    texts,
+    attachments: attachments.map((a, i) => ({ ...a, kind: resolved[i]?.kind || null })),
+    preview: texts[platforms[0]].slice(0, 140),
+    scheduledDate: scheduledDate || null,
+    timezone: scheduledDate ? timezone : null,
+    jobId,
+    requestId,
+    error: null,
+    lastError: null,
+    notice: null,
+    updatedAt: FieldValue.serverTimestamp(),
+    sentAt: scheduledDate ? null : FieldValue.serverTimestamp(),
+  };
+  if (draftId) {
+    const d = ref.collection("posts").doc(draftId);
+    if ((await d.get()).exists) { await d.set(fields, { merge: true }); return; }
+  }
+  await ref.collection("posts").add({ ...fields, createdAt: FieldValue.serverTimestamp() });
+}
+
 export default async function (req) {
   if (req.method === "OPTIONS") return new Response("", { status: 200, headers: corsHeaders(req) });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
@@ -80,7 +110,7 @@ export default async function (req) {
 
     const v = validatePublishRequest(body);
     if (v.error) return reply(req, 400, { error: v.error });
-    const { slot, platforms, texts, attachments, scheduledDate, timezone, facebookPageId } = v.value;
+    const { slot, platforms, texts, attachments, scheduledDate, timezone, facebookPageId, draftId } = v.value;
 
     if (slot >= profilesPaid) return reply(req, 400, { error: "That profile isn't part of your subscription." });
     const username = social.uploadPostProfiles?.[String(slot)];
@@ -102,7 +132,7 @@ export default async function (req) {
 
     // ── what is being posted, and can every network take it? ───────────────
     let resolved;
-    try { resolved = await resolveAttachments(attachments, uid); }
+    try { resolved = await resolveAttachments(attachments, uid, db); }
     catch (err) {
       if (err.code === "user") return reply(req, 400, { error: err.message });
       throw err;
@@ -157,6 +187,16 @@ export default async function (req) {
     } else {
       // Device uploads are deleted by scheduled-social-cleanup.mjs later.
       await recordTempUploads(db, uid, resolved, scheduledDate).catch((e) => console.error("[social-publish] temp-upload bookkeeping failed:", e.message));
+      // The "My social posts" record: turns a draft into a scheduled/sent
+      // post, or creates a new one. Best-effort — the post already went out.
+      await saveSentRecord({ ref, draftId, platforms, texts, attachments, resolved, slot, scheduledDate, timezone, r })
+        .catch((e) => console.error("[social-publish] post record failed:", e.message));
+    }
+
+    // A failed attempt from a saved draft keeps the draft and notes why.
+    if (!r.ok && draftId) {
+      await ref.collection("posts").doc(draftId).set({ lastError: String(message).slice(0, 300), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+        .catch(() => {});
     }
 
     await ref.collection("log").add({
