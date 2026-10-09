@@ -26,6 +26,8 @@ import { FACTUAL_ACCURACY_GUARDRAIL } from "../../lib/guardrails";
 import { AI_TELL_PHRASING_BAN } from "../../lib/messageRules";
 import { keyDatesBlock } from "../../lib/electionCalendar";
 import { auth } from "../../firebase";
+import { useSocialPosting } from "../../lib/socialPosting";
+import SendToSocialModal from "../../components/SendToSocialModal";
 
 const TEAL       = "var(--teal)";
 const CHARCOAL   = "var(--charcoal)";
@@ -81,6 +83,29 @@ export default function PostDisplayCard({ post, hashtag, storm, isPublic, public
   // posts an enormous scroll, especially on mobile, even for someone who
   // only cares about one platform.
   const [openPlatform, setOpenPlatform] = useState(null);
+
+  // ── Send to my own accounts (signed-in member views only — never on the
+  // public no-login page). The dialog + server re-check the subscription. ──
+  const { active: socialActive } = useSocialPosting();
+  const [sendOpen, setSendOpen] = useState(false);
+  const canSend = !!storm?.id && !!post.id && !isPublic;
+  function sendTexts() {
+    const out = {};
+    for (const k of ["facebook", "instagram", "twitter", "threads", "tiktok", "bluesky"]) {
+      const t = regenTexts[k] ?? post.texts?.[k];
+      if (typeof t === "string" && t.trim()) out[k] = t;
+    }
+    return out;
+  }
+  function sendMedia() {
+    const all = post.media || [];
+    const chosenMedia = post.mediaType === MEDIA_TYPES.VIDEO ? all.slice(0, 1) : all.filter((_, i) => selected.has(i)).slice(0, 4);
+    return chosenMedia.map((m) => ({
+      source: "storm", stormId: storm.id, postId: post.id, path: m.path,
+      name: m.name || String(m.path).split("/").pop(),
+      kind: post.mediaType === MEDIA_TYPES.VIDEO ? "video" : "image",
+    }));
+  }
 
   // ── Regenerate (Handoff #19/#22) — always ephemeral, never saved ──────
   const [regenTexts, setRegenTexts] = useState({}); // { [platformKey]: "alternate text" } — local-only
@@ -287,6 +312,14 @@ Format: {"${platformKey}": "rewritten post text"}`;
         }}>
           {downloadLabel}
         </button>
+        {canSend && (
+          <button onClick={() => setSendOpen(true)} style={{
+            background: "#fff", color: TEAL, border: `2px solid ${TEAL}`, borderRadius: 8,
+            padding: "7px 16px", fontWeight: 800, fontSize: 13.5, cursor: "pointer",
+          }}>
+            {socialActive ? "📤 Send to my account" : "🔒 Send to my account"}
+          </button>
+        )}
         {formatGenParams(post.genParams) && (
           <span style={{ fontSize: 11.5, color: "#888", lineHeight: 1.3 }}>
             {formatGenParams(post.genParams)}
@@ -401,6 +434,9 @@ Format: {"${platformKey}": "rewritten post text"}`;
           </div>
         );
       })()}
+      {sendOpen && canSend && (
+        <SendToSocialModal texts={sendTexts()} stormMedia={sendMedia()} onClose={() => setSendOpen(false)} />
+      )}
     </div>
   );
 }
