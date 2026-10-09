@@ -183,7 +183,7 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
         payload.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
       }
       const r = await callSocial("social-publish", user, payload);
-      setResult({ scheduled: !!r.scheduled, count: chosen.length, processing: !!r.processing });
+      setResult({ scheduled: !!r.scheduled, count: Array.isArray(r.sent) ? r.sent.length : chosen.length, processing: !!r.processing, failures: Array.isArray(r.failures) ? r.failures : [] });
     } catch (err) {
       setError(err.message);
       setConfirming(false);
@@ -251,6 +251,11 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
                 : result.processing ? "✓ Sent — your video is being processed and will appear shortly." : "✓ Sent."}{" "}
               {!result.draft && <>{result.count} network{result.count > 1 ? "s" : ""}.</>}
             </div>
+            {result.failures?.length > 0 && (
+              <div role="alert" style={{ background: "#fdf2f2", border: "1px solid #f5c6c6", color: "#c41e1e", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginTop: 12, lineHeight: 1.5 }}>
+                These didn't go through: {result.failures.map((f) => `${SOCIAL_PLATFORMS[f.platform]?.label || f.platform} (${f.error})`).join("; ")}. The others were sent.
+              </div>
+            )}
             <button style={{ ...primaryBtn(false), marginTop: 16 }} onClick={onClose}>Done</button>
           </div>
         )}
