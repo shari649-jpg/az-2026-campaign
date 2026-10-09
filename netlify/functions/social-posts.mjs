@@ -187,7 +187,7 @@ export default async function (req) {
         const s = await postsCol.doc(body.id).get();
         docs = s.exists ? [s] : [];
       } else {
-        const q = await postsCol.where("status", "in", ["processing", "scheduled", "sent", "failed"]).limit(30).get();
+        const q = await postsCol.where("status", "in", ["processing", "scheduled", "sent", "partial", "failed"]).limit(30).get();
         docs = q.docs;
       }
       let updated = 0;
@@ -229,6 +229,32 @@ export default async function (req) {
         } else {
           await s.ref.set({ ...common, status: "sent", error: null, sentAt: p.sentAt || FieldValue.serverTimestamp() }, { merge: true });
         }
+        updated++;
+      }
+      // TikTok hands back a short link (tiktok.com/t/<id>) that only lands on
+      // TikTok's home page. Confirmed by the account owner: the same id works as
+      // tiktok.com/@<handle>/video/<id>, so rewrite it using the connected
+      // account's handle (looked up once per refresh).
+      let tiktokHandle;
+      for (const s of docs) {
+        const fresh = (await s.ref.get()).data?.() || null;
+        const u = fresh?.networkResults?.tiktok?.url;
+        const m = typeof u === "string" && u.match(/^https:\/\/(?:www\.)?tiktok\.com\/t\/(\d{10,25})\/?$/);
+        if (!m) continue;
+        if (tiktokHandle === undefined) {
+          tiktokHandle = null;
+          const social = (await ref.get()).data() || {};
+          const uname = social.uploadPostProfiles?.[String(fresh.slot ?? 0)];
+          if (uname) {
+            const pr = await uploadPostRequest(`/uploadposts/users/${encodeURIComponent(uname)}`);
+            const tt = pr.data?.profile?.social_accounts?.tiktok;
+            const h = typeof tt === "object" && tt ? (tt.username || tt.handle || tt.display_name) : null;
+            const clean = typeof h === "string" ? h.replace(/^@/, "") : "";
+            if (/^[A-Za-z0-9._]{1,40}$/.test(clean)) tiktokHandle = clean;
+          }
+        }
+        if (!tiktokHandle) continue;
+        await s.ref.set({ networkResults: { tiktok: { ...fresh.networkResults.tiktok, url: `https://www.tiktok.com/@${tiktokHandle}/video/${m[1]}` } } }, { merge: true });
         updated++;
       }
       return reply(req, 200, { ok: true, updated });
