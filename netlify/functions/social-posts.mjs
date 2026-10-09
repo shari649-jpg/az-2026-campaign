@@ -152,7 +152,14 @@ export default async function (req) {
       }
       // Only ever cancel a job THIS user's record owns (the doc lives under
       // their uid and jobId was written by social-publish.mjs).
-      const r = await uploadPostRequest(`/uploadposts/schedule/${encodeURIComponent(post.jobId)}`, { method: "DELETE" });
+      // A post sent to several networks is several jobs (one per network).
+      const ids = (Array.isArray(post.jobIds) && post.jobIds.length ? post.jobIds : [post.jobId]).filter((x) => typeof x === "string");
+      let r = { ok: true, status: 200 };
+      for (const jid of ids) {
+        const one = await uploadPostRequest(`/uploadposts/schedule/${encodeURIComponent(jid)}`, { method: "DELETE" });
+        if (!one.ok && one.status !== 404) r = one;
+        else if (one.status === 404 && r.ok) r = { ok: false, status: 404 };
+      }
       if (!r.ok && r.status !== 404) {
         console.error("[social-posts] cancel failed:", r.status, JSON.stringify(r.data)?.slice(0, 300));
         return reply(req, 502, { error: "Couldn't cancel that post. Please try again in a moment." });
@@ -162,6 +169,7 @@ export default async function (req) {
       await d.set({
         status: "draft",
         jobId: null,
+        jobIds: [],
         scheduledDate: null,
         timezone: null,
         notice: r.ok ? "Schedule cancelled. Your post is saved here as a draft." : "That scheduled post was no longer queued. It's saved here as a draft.",
@@ -187,12 +195,13 @@ export default async function (req) {
         const p = s.data();
         const due = p.status === "processing" || (p.status === "scheduled" && p.scheduledDate && new Date(p.scheduledDate).getTime() <= Date.now());
         if (!due) continue;
-        const qs = p.requestId ? `request_id=${encodeURIComponent(p.requestId)}` : p.jobId ? `job_id=${encodeURIComponent(p.jobId)}` : null;
-        if (!qs) continue;
-        const r = await uploadPostRequest(`/uploadposts/status?${qs}`);
-        if (!r.ok || !r.data) continue;
-        if (r.data.status !== "completed") continue;
-        const results = Array.isArray(r.data.results) ? r.data.results : [];
+        const qsList = (Array.isArray(p.requestIds) && p.requestIds.length ? p.requestIds.map((x) => `request_id=${encodeURIComponent(x)}`)
+          : Array.isArray(p.jobIds) && p.jobIds.length ? p.jobIds.map((x) => `job_id=${encodeURIComponent(x)}`)
+          : p.requestId ? [`request_id=${encodeURIComponent(p.requestId)}`] : p.jobId ? [`job_id=${encodeURIComponent(p.jobId)}`] : []);
+        if (!qsList.length) continue;
+        const rs = await Promise.all(qsList.map((qs) => uploadPostRequest(`/uploadposts/status?${qs}`)));
+        if (rs.some((r) => !r.ok || !r.data || r.data.status !== "completed")) continue;
+        const results = rs.flatMap((r) => (Array.isArray(r.data.results) ? r.data.results : []));
         const failed = results.filter((x) => x && x.success === false);
         if (failed.length) {
           const msg = failed.map((x) => `${x.platform}: ${String(x.message || "failed").slice(0, 120)}`).join("; ").slice(0, 400);

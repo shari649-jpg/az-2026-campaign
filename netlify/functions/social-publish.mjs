@@ -54,8 +54,10 @@ async function sendWithXFallback(kind, platforms, makeForm) {
 // Keep what was sent in the user's own list (socialPosting/{uid}/posts/{id}).
 async function saveSentRecord({ ref, draftId, platforms, texts, attachments, resolved, slot, scheduledDate, timezone, r }) {
   const FieldValue = admin.firestore.FieldValue;
-  const jobId = r.data?.job_id || null;
-  const requestId = r.data?.request_id || null;
+  const jobIds = r.data?.job_ids || (r.data?.job_id ? [r.data.job_id] : []);
+  const requestIds = r.data?.request_ids || (r.data?.request_id ? [r.data.request_id] : []);
+  const jobId = jobIds[0] || null;
+  const requestId = requestIds[0] || null;
   const status = scheduledDate ? "scheduled" : requestId ? "processing" : "sent";
   const fields = {
     status,
@@ -68,6 +70,8 @@ async function saveSentRecord({ ref, draftId, platforms, texts, attachments, res
     timezone: scheduledDate ? timezone : null,
     jobId,
     requestId,
+    jobIds,
+    requestIds,
     error: null,
     lastError: null,
     notice: null,
@@ -165,31 +169,51 @@ export default async function (req) {
       if (err.code === "user") return reply(req, 400, { error: err.message });
       throw err;
     }
-    const makeForm = (altX) => buildPostForm({
-      kind, username, platforms, texts, scheduledDate, timezone, facebookPageId, images, video, altX,
-    });
-
-    const r = await sendWithXFallback(kind, platforms, makeForm);
+    // ONE REQUEST PER NETWORK. Upload-Post has a global `title` plus
+    // per-network overrides, but in live use (Oct 9 2026) Bluesky posted the
+    // global title (our first network's text) and TikTok/Instagram were
+    // validated against it. Sending each network alone, with its own text as
+    // the only `title`, removes any reliance on the overrides.
+    const sendOne = (id) => sendWithXFallback(kind, [id], (altX) => buildPostForm({
+      kind, username, platforms: [id], texts, scheduledDate, timezone, facebookPageId, images, video, altX,
+    }));
+    const per = await Promise.all(platforms.map(async (id) => ({ id, r: await sendOne(id) })));
+    const okOnes = per.filter((x) => x.r.ok);
+    const failedOnes = per.filter((x) => !x.r.ok);
+    const failMsg = (x) => {
+      const r0 = x.r;
+      if (r0.status === 401 || r0.status === 403) {
+        console.error("[social-publish] Upload-Post rejected our API key / plan:", r0.status, r0.data);
+        return "The posting service isn't available right now. Contact an Administrator.";
+      }
+      if (r0.status === 429) return "The posting service's monthly limit has been reached. Contact an Administrator.";
+      return (typeof r0.data?.message === "string" && r0.data.message) ||
+             (typeof r0.data?.error === "string" && r0.data.error) || "The post didn't go through.";
+    };
+    const sentPlatforms = okOnes.map((x) => x.id);
+    const failures = failedOnes.map((x) => ({ platform: x.id, error: String(failMsg(x)).slice(0, 300) }));
+    // Combined result shaped like a single response.
+    const r = okOnes.length ? {
+      ok: true, status: 200,
+      data: {
+        job_id: okOnes.find((x) => x.r.data?.job_id)?.r.data.job_id || null,
+        request_id: okOnes.find((x) => x.r.data?.request_id)?.r.data.request_id || null,
+        job_ids: okOnes.map((x) => x.r.data?.job_id).filter(Boolean),
+        request_ids: okOnes.map((x) => x.r.data?.request_id).filter(Boolean),
+        results: Object.fromEntries(okOnes.map((x) => [x.id, x.r.data?.results || null])),
+      },
+    } : { ...failedOnes[0].r, ok: false };
 
     // Don't leak upstream internals to the browser; give a useful message.
     let message = null;
     if (!r.ok) {
-      if (r.status === 401 || r.status === 403) {
-        console.error("[social-publish] Upload-Post rejected our API key / plan:", r.status, r.data);
-        message = "The posting service isn't available right now. Contact an Administrator.";
-      } else if (r.status === 429) {
-        message = "The posting service's monthly limit has been reached. Contact an Administrator.";
-      } else {
-        message = (typeof r.data?.message === "string" && r.data.message) ||
-                  (typeof r.data?.error === "string" && r.data.error) ||
-                  "The post didn't go through.";
-      }
+      message = failMsg(failedOnes[0]);
     } else {
       // Device uploads are deleted by scheduled-social-cleanup.mjs later.
       await recordTempUploads(db, uid, resolved, scheduledDate).catch((e) => console.error("[social-publish] temp-upload bookkeeping failed:", e.message));
       // The "My social posts" record: turns a draft into a scheduled/sent
       // post, or creates a new one. Best-effort — the post already went out.
-      await saveSentRecord({ ref, draftId, platforms, texts, attachments, resolved, slot, scheduledDate, timezone, r })
+      await saveSentRecord({ ref, draftId, platforms: sentPlatforms, texts: Object.fromEntries(sentPlatforms.map((id) => [id, texts[id]])), attachments, resolved, slot, scheduledDate, timezone, r })
         .catch((e) => console.error("[social-publish] post record failed:", e.message));
     }
 
@@ -201,6 +225,8 @@ export default async function (req) {
 
     await ref.collection("log").add({
       platforms,
+      sentPlatforms,
+      failures,
       kind,
       attachments: resolved.length,
       scheduled: !!scheduledDate,
@@ -225,6 +251,8 @@ export default async function (req) {
       processing: !!r.data?.request_id && !scheduledDate, // video: finishes in the background
       jobId: r.data?.job_id || null,
       results: r.data?.results || null,
+      sent: sentPlatforms,
+      failures,
     });
   } catch (err) {
     if (err.code === "not_configured") {
