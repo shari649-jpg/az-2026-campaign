@@ -56,7 +56,7 @@ function NetIcon({ id, result }) {
   const style = { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: "50%", background: "#fff",
     border: `2px solid ${bad ? "#c41e1e" : result?.url ? TEAL : CHROME}`, padding: 0, textDecoration: "none" };
   if (result?.url) {
-    return <a href={result.url} target="_blank" rel="noopener noreferrer" style={style} title={`View on ${label}`} aria-label={`View post on ${label}`}>{body}</a>;
+    return <a href={result.url} target="_blank" rel="noopener noreferrer" style={style} title={id === "tiktok" && !/\/video\//.test(result.url) ? "Opens TikTok (a direct link to this video isn't available)" : `View on ${label}`} aria-label={`View post on ${label}`}>{body}</a>;
   }
   return <span style={style} title={bad ? `${label}: ${result.message || "failed"}` : label} aria-label={label}>{body}</span>;
 }
@@ -184,14 +184,24 @@ export default function SocialPostsPanel() {
           </Card>
         )}
         {shownDays.map((g) => {
-          const counts = {};
-          for (const p of g.items) counts[p.status] = (counts[p.status] || 0) + 1;
-          const bits = [counts.scheduled && `${counts.scheduled} scheduled`, (counts.sent || 0) + (counts.partial || 0) + (counts.processing || 0) > 0 && `${(counts.sent || 0) + (counts.partial || 0) + (counts.processing || 0)} sent`].filter(Boolean);
-          const bad = (counts.failed || 0) + (counts.partial || 0);
+          // A "post" = one message to one network (what a person would count).
+          const c = { sent: 0, failed: 0, scheduled: 0, processing: 0 };
+          for (const p of g.items) {
+            const nets = p.platforms || [];
+            const results = p.networkResults || {};
+            const badNets = nets.filter((id) => results[id]?.ok === false).length;
+            if (p.status === "scheduled") c.scheduled += nets.length;
+            else if (p.status === "processing") c.processing += nets.length;
+            else if (p.status === "failed" && !Object.keys(results).length) c.failed += nets.length;
+            else { c.failed += badNets; c.sent += nets.length - badNets; }
+          }
+          const total = c.sent + c.failed + c.scheduled + c.processing;
+          const bits = [c.sent && `${c.sent} sent`, c.scheduled && `${c.scheduled} scheduled`, c.processing && `${c.processing} processing`, c.failed && `${c.failed} failed`].filter(Boolean);
+          const bad = c.failed;
           return (
             <Card key={g.key} o={isOpen(g.key, g.key === todayK)} onToggle={() => toggle(g.key, g.key === todayK)} title={dayLabel(g.date)}
-              summary={`${g.items.length} post${g.items.length > 1 ? "s" : ""}${bits.length ? " · " + bits.join(", ") : ""}`}
-              attention={bad ? `${bad} need${bad > 1 ? "" : "s"} a look` : null}>
+              summary={`${total} post${total === 1 ? "" : "s"}${bits.length ? " · " + bits.join(" · ") : ""}`}
+              attention={bad ? `${bad} failed` : null}>
               {g.items.map((p) => renderItem(p))}
             </Card>
           );
