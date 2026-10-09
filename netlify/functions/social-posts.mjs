@@ -187,19 +187,24 @@ export default async function (req) {
         const s = await postsCol.doc(body.id).get();
         docs = s.exists ? [s] : [];
       } else {
-        const q = await postsCol.where("status", "in", ["processing", "scheduled", "sent"]).limit(30).get();
+        const q = await postsCol.where("status", "in", ["processing", "scheduled", "sent", "failed"]).limit(30).get();
         docs = q.docs;
       }
       let updated = 0;
       for (const s of docs) {
         const p = s.data();
-        // "sent" posts are checked once, to pick up post links / late failures.
-        if (p.status === "sent" && (p.linksChecked || !(p.requestIds?.length || p.jobIds?.length))) continue;
-        if (p.status === "sent") {
+        // Finished posts (sent, or marked failed by an older version) are
+        // re-checked every 10 minutes for up to 3 days until every network that
+        // went out has a real post link (TikTok's is often late), then left alone.
+        if (p.status === "sent" || p.status === "failed") {
+          if (!(p.requestIds?.length || p.jobIds?.length)) continue;
           const t = p.sentAt?.toMillis ? p.sentAt.toMillis() : p.sentAt?._seconds ? p.sentAt._seconds * 1000 : 0;
-          if (t && Date.now() - t > 3 * 86_400_000) { await s.ref.set({ linksChecked: true }, { merge: true }); continue; } // stop asking after 3 days
+          const nets = Object.values(p.networkResults || {});
+          const complete = nets.length > 0 && nets.every((n) => !n.ok || n.url);
+          if (p.linksChecked && (complete || (t && Date.now() - t > 3 * 86_400_000))) continue;
+          if (p.lastLinkCheck && Date.now() - p.lastLinkCheck < 600_000) continue;
         }
-        const due = p.status === "sent" || p.status === "processing" || (p.status === "scheduled" && p.scheduledDate && new Date(p.scheduledDate).getTime() <= Date.now());
+        const due = p.status === "sent" || p.status === "failed" || p.status === "processing" || (p.status === "scheduled" && p.scheduledDate && new Date(p.scheduledDate).getTime() <= Date.now());
         if (!due) continue;
         const qsList = (Array.isArray(p.requestIds) && p.requestIds.length ? p.requestIds.map((x) => `request_id=${encodeURIComponent(x)}`)
           : Array.isArray(p.jobIds) && p.jobIds.length ? p.jobIds.map((x) => `job_id=${encodeURIComponent(x)}`)
@@ -216,7 +221,7 @@ export default async function (req) {
         }
         const failedE = ents.filter((e) => !e.ok);
         const okCount = ents.filter((e) => e.ok).length;
-        const common = { networkResults: nets, resultKeys: [...keySet].slice(0, 30), linksChecked: true, updatedAt: FieldValue.serverTimestamp() };
+        const common = { networkResults: nets, resultKeys: [...keySet].slice(0, 30), linksChecked: true, lastLinkCheck: Date.now(), updatedAt: FieldValue.serverTimestamp() };
         if (failedE.length) {
           const msg = failedE.map((e) => `${e.platform}: ${(e.message || "failed").slice(0, 160)}`).join("; ").slice(0, 500);
           // Some networks went out, some didn't: say so instead of "failed".
