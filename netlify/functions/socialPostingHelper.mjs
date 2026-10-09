@@ -323,11 +323,19 @@ const netId = (n) => { const k = String(n || "").toLowerCase(); return NET_ID[k]
 
 // A link to the published post, if the response carries one. UNCONFIRMED which
 // field name Upload-Post uses, so look under the likely ones; https only.
+// TikTok's short link (tiktok.com/t/<id>) only lands on TikTok's home feed.
+// Verified by the account owner: tiktok.com/@/video/<id> opens the video with
+// no handle needed, so use that form.
+export function fixTikTokUrl(u) {
+  const m = typeof u === "string" && u.match(/^https:\/\/(?:www\.|vm\.)?tiktok\.com\/t\/(\d{10,25})\/?(?:\?.*)?$/);
+  return m ? `https://www.tiktok.com/@/video/${m[1]}` : u;
+}
+
 export function pickPostUrl(o) {
   if (!o || typeof o !== "object") return null;
   for (const k of ["post_url", "postUrl", "url", "permalink", "link", "post_link", "public_url"]) {
     const v = o[k];
-    if (typeof v === "string" && /^https:\/\//i.test(v) && v.length < 600) return v;
+    if (typeof v === "string" && /^https:\/\//i.test(v) && v.length < 600) return fixTikTokUrl(v);
   }
   return null;
 }
