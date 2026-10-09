@@ -2658,6 +2658,15 @@ Each array: 4–8 hashtags. Only include relevant categories. Include "arizona" 
                   onSend={SOCIAL_PLATFORMS[p.id] ? setSendPlatform : undefined}
                   socialActive={social.active} />
               ))}
+              {/* Send everything at once: opens the dialog with every network ticked. */}
+              {PLATFORMS.some((p) => messages[p.id] !== undefined && SOCIAL_PLATFORMS[p.id]) && (
+                <div style={{ display:"flex", justifyContent:"center", marginTop:8 }}>
+                  <button style={{ ...S.btnPrimary, fontSize:18, padding:"15px 26px" }} onClick={() => setSendPlatform("__all__")}
+                    title="Open the send dialog with every network selected">
+                    {social.active ? "Send to all my accounts" : "🔒 Send to all my accounts"}
+                  </button>
+                </div>
+              )}
               {sendPlatform && (
                 <SendToSocialModal
                   texts={Object.fromEntries(Object.keys(SOCIAL_PLATFORMS).map((id) => [id, messages[id]]))}
