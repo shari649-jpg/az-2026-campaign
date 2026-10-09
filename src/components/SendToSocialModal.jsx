@@ -178,12 +178,15 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
       };
       if (attachments.length) payload.attachments = attachments.map(toPayload);
       if (draftId) payload.draftId = draftId;
+      // Anything that has text but isn't going out right now goes back to a draft.
+      const left = platformIds.filter((id) => !chosen.includes(id) && hasText(id));
+      if (left.length) payload.leftover = { platforms: left, texts: Object.fromEntries(left.map((id) => [id, texts[id].trim()])) };
       if (mode === "later") {
         payload.scheduledDate = new Date(when).toISOString();
         payload.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
       }
       const r = await callSocial("social-publish", user, payload);
-      setResult({ scheduled: !!r.scheduled, count: Array.isArray(r.sent) ? r.sent.length : chosen.length, processing: !!r.processing, failures: Array.isArray(r.failures) ? r.failures : [] });
+      setResult({ scheduled: !!r.scheduled, count: Array.isArray(r.sent) ? r.sent.length : chosen.length, processing: !!r.processing, failures: Array.isArray(r.failures) ? r.failures : [], kept: [...(payload.leftover?.platforms || []), ...(Array.isArray(r.failures) ? r.failures.map((f) => f.platform) : [])] });
     } catch (err) {
       setError(err.message);
       setConfirming(false);
@@ -254,6 +257,11 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
             <div style={{ fontSize: 12.5, color: "#777", marginTop: 10, lineHeight: 1.5 }}>
               Some networks only accept or reject a post at its send time. If one fails later, it shows up under “My social posts” on your Profile page with the reason.
             </div>
+            {result.kept?.length > 0 && (
+              <div style={{ fontSize: 13, marginTop: 10, lineHeight: 1.5 }}>
+                Not sent: {result.kept.map((id) => SOCIAL_PLATFORMS[id]?.label || id).join(", ")}. Saved as a draft in “My social posts”.
+              </div>
+            )}
             {result.failures?.length > 0 && (
               <div role="alert" style={{ background: "#fdf2f2", border: "1px solid #f5c6c6", color: "#c41e1e", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginTop: 12, lineHeight: 1.5 }}>
                 These didn't go through: {result.failures.map((f) => `${SOCIAL_PLATFORMS[f.platform]?.label || f.platform} (${f.error})`).join("; ")}. The others were sent.
