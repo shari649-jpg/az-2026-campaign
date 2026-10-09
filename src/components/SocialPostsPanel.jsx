@@ -46,6 +46,13 @@ function dayLabel(d) {
   return base;
 }
 
+// TikTok's short link (tiktok.com/t/<id>) only opens TikTok's home feed; this
+// form opens the video (checked by the account owner). Also fixes old records.
+function fixTikTokUrl(u) {
+  const m = typeof u === "string" && u.match(/^https:\/\/(?:www\.|vm\.)?tiktok\.com\/t\/(\d{10,25})\/?(?:\?.*)?$/);
+  return m ? `https://www.tiktok.com/@/video/${m[1]}` : u;
+}
+
 function NetIcon({ id, result }) {
   const [failed, setFailed] = useState(false);
   const label = SOCIAL_PLATFORMS[id]?.label || id;
@@ -56,7 +63,7 @@ function NetIcon({ id, result }) {
   const style = { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: "50%", background: "#fff",
     border: `2px solid ${bad ? "#c41e1e" : result?.url ? TEAL : CHROME}`, padding: 0, textDecoration: "none" };
   if (result?.url) {
-    return <a href={result.url} target="_blank" rel="noopener noreferrer" style={style} title={id === "tiktok" && !/\/video\//.test(result.url) ? "Opens TikTok (a direct link to this video isn't available)" : `View on ${label}`} aria-label={`View post on ${label}`}>{body}</a>;
+    return <a href={fixTikTokUrl(result.url)} target="_blank" rel="noopener noreferrer" style={style} title={id === "tiktok" && !/\/video\//.test(fixTikTokUrl(result.url)) ? "Opens TikTok (a direct link to this video isn't available)" : `View on ${label}`} aria-label={`View post on ${label}`}>{body}</a>;
   }
   return <span style={style} title={bad ? `${label}: ${result.message || "failed"}` : label} aria-label={label}>{body}</span>;
 }
