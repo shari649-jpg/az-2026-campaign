@@ -77,7 +77,7 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
     (typeof textsProp?.[id] === "string" && textsProp[id].trim()) || (typeof draft?.texts?.[id] === "string" && draft.texts[id].trim()) || draft?.platforms?.includes(id)));
   const [draftId, setDraftId] = useState(draft?.id || null);
   const [saving, setSaving] = useState(false);
-  const [selected, setSelected] = useState(() => new Set(draft?.platforms || (initialPlatform ? [initialPlatform] : [])));
+  const [selected, setSelected] = useState(() => new Set(draft?.platforms || (initialPlatform === "__all__" ? platformIds : initialPlatform ? [initialPlatform] : [])));
   const [mode, setMode] = useState("now"); // "now" | "later"
   const [when, setWhen] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -126,7 +126,7 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
   const draftIds = platformIds.filter((id) => selected.has(id) && canPostTo(id));
   const overLimit = chosen.filter((id) => texts[id].trim().length > SOCIAL_PLATFORMS[id].maxChars);
   const igNonJpeg = chosen.includes("instagram") && attachments.some((a) => /\.(png|webp)$/i.test(a.name || ""));
-  const xHasLink = chosen.includes("twitter") && /https?:\/\/|www\./i.test(texts.twitter || "");
+  const xHasLink = chosen.includes("twitter") && /https?:\/\/|www\.|\b[a-z0-9-]+\.(org|com|net|gov|edu|us|io|co|vote|info|app|news|az)\b/i.test(texts.twitter || "");
   const whenOk = mode === "now" || (when && new Date(when).getTime() > Date.now() + 60000);
   const canSave = draftIds.length > 0 && !saving && !sending && !uploading;
   const canSend = chosen.length > 0 && overLimit.length === 0 && whenOk && !sending && !uploading;
@@ -251,6 +251,9 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
                 : result.processing ? "✓ Sent — your video is being processed and will appear shortly." : "✓ Sent."}{" "}
               {!result.draft && <>{result.count} network{result.count > 1 ? "s" : ""}.</>}
             </div>
+            <div style={{ fontSize: 12.5, color: "#777", marginTop: 10, lineHeight: 1.5 }}>
+              Some networks only accept or reject a post at its send time. If one fails later, it shows up under “My social posts” on your Profile page with the reason.
+            </div>
             {result.failures?.length > 0 && (
               <div role="alert" style={{ background: "#fdf2f2", border: "1px solid #f5c6c6", color: "#c41e1e", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginTop: 12, lineHeight: 1.5 }}>
                 These didn't go through: {result.failures.map((f) => `${SOCIAL_PLATFORMS[f.platform]?.label || f.platform} (${f.error})`).join("; ")}. The others were sent.
@@ -367,7 +370,7 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
                 )}
                 {xHasLink && (
                   <div style={{ background: "#fff7ed", border: "1px solid #f5c842", color: "#7a4f00", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, marginTop: 10, lineHeight: 1.5 }}>
-                    Heads up: X's API charges extra for posts with links, so links in X posts may be removed unless the link add-on is enabled on the posting account.
+                    Heads up: this X post contains a link or web address. X can refuse or strip posts with links unless the posting account allows them (not confirmed as the cause of any specific failure). If X rejects it, you'll see the reason under "My social posts" on your Profile page.
                   </div>
                 )}
 

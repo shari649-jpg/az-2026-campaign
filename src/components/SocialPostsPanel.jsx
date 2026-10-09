@@ -17,6 +17,7 @@ const BADGE = {
   scheduled: ["Scheduled", "#fff", TEAL],
   processing: ["Processing", "#7a4f00", "#fdf0c4"],
   sent: ["Sent", "#fff", "#2d7d46"],
+  partial: ["Sent, some failed", "#7a4f00", "#fdf0c4"],
   failed: ["Failed", "#fff", "#c41e1e"],
 };
 
@@ -37,7 +38,10 @@ export default function SocialPostsPanel() {
   // Ask Upload-Post how processing / past-due scheduled posts ended up.
   useEffect(() => {
     if (!user) return;
-    callSocial("social-posts", user, { action: "refresh" }).catch(() => {});
+    const go = () => callSocial("social-posts", user, { action: "refresh" }).catch(() => {});
+    go();
+    const t = setInterval(go, 60000); // picks up networks that fail after sending (e.g. a scheduled time passing)
+    return () => clearInterval(t);
   }, [user]);
 
   async function act(id, action, confirmMsg) {
@@ -55,7 +59,7 @@ export default function SocialPostsPanel() {
     </p>;
   }
 
-  const sent = posts.filter((p) => ["sent", "failed", "processing"].includes(p.status));
+  const sent = posts.filter((p) => ["sent", "partial", "failed", "processing"].includes(p.status));
   const rows = [
     ...posts.filter((p) => p.status === "draft"),
     ...posts.filter((p) => p.status === "scheduled"),
@@ -83,7 +87,7 @@ export default function SocialPostsPanel() {
               </div>
               {(p.attachments?.length > 0) && <div style={{ fontSize: 12, color: "#888" }}>📎 {p.attachments.length} file{p.attachments.length > 1 ? "s" : ""}</div>}
               {p.notice && <div style={{ fontSize: 12.5, color: PLUM, marginTop: 4 }}>{p.notice}</div>}
-              {p.status === "failed" && p.error && <div style={{ fontSize: 12.5, color: "#c41e1e", marginTop: 4 }}>{p.error}</div>}
+              {(p.status === "failed" || p.status === "partial") && p.error && <div style={{ fontSize: 12.5, color: "#c41e1e", marginTop: 4 }}>{p.error}</div>}
               {p.status === "draft" && p.lastError && <div style={{ fontSize: 12.5, color: "#c41e1e", marginTop: 4 }}>Last attempt: {p.lastError}</div>}
               <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                 {p.status === "draft" && (
