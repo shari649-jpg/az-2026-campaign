@@ -18,6 +18,12 @@ import DriveMediaPicker from "./DriveMediaPicker";
 // Firebase Storage folder). Instagram and TikTok need media; the server
 // re-checks every rule here.
 //   initialPlatform platform id whose card the user clicked — preselected
+//   draft           a saved draft ({id, slot, platforms, texts, attachments})
+//                   to continue editing
+//   stormMedia      [{source:"storm", stormId, postId, path, name, kind}] —
+//                   a storm post's own pictures/video, pre-attached
+// Texts are editable here (needed when opened from a storm or a draft). "Save
+// draft" stores the post in the user's "My social posts" list.
 //   onClose
 //
 // If the subscription isn't active this shows the paywall explanation and a
@@ -47,21 +53,38 @@ function minLocalDateTime() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function SendToSocialModal({ texts, initialPlatform, onClose }) {
+// Attachment <-> what the server wants / returns.
+function toPayload(a) {
+  if (a.source === "drive") return { source: "drive", id: a.id, name: a.name, folderId: a.folderId };
+  if (a.source === "storm") return { source: "storm", stormId: a.stormId, postId: a.postId, path: a.path, name: a.name };
+  return { source: "upload", url: a.url, name: a.name };
+}
+function fromSaved(a) {
+  return { ...a, kind: a.kind || kindFromFileName(a.name || a.path || "") || "image" };
+}
+
+export default function SendToSocialModal({ texts: textsProp, initialPlatform, draft = null, stormMedia = null, onClose }) {
   const { user } = useAuth();
   const { loading, active, status, profilesPaid } = useSocialPosting();
 
   const [conn, setConn] = useState(null);
   const [connError, setConnError] = useState("");
-  const [slot, setSlot] = useState(0);
-  const [selected, setSelected] = useState(() => new Set(initialPlatform ? [initialPlatform] : []));
+  const [slot, setSlot] = useState(draft?.slot || 0);
+  const [txt, setTxt] = useState(() => ({ ...(textsProp || {}), ...(draft?.texts || {}) }));
+  const texts = txt;
+  // Which network cards exist: those that had text when the dialog opened.
+  const [platformIds] = useState(() => Object.keys(SOCIAL_PLATFORMS).filter((id) =>
+    (typeof textsProp?.[id] === "string" && textsProp[id].trim()) || (typeof draft?.texts?.[id] === "string" && draft.texts[id].trim()) || draft?.platforms?.includes(id)));
+  const [draftId, setDraftId] = useState(draft?.id || null);
+  const [saving, setSaving] = useState(false);
+  const [selected, setSelected] = useState(() => new Set(draft?.platforms || (initialPlatform ? [initialPlatform] : [])));
   const [mode, setMode] = useState("now"); // "now" | "later"
   const [when, setWhen] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
-  const [attachments, setAttachments] = useState([]); // {source,id|url,name,kind,thumb?}
+  const [attachments, setAttachments] = useState(() => (draft?.attachments ? draft.attachments.map(fromSaved) : (stormMedia || []).map(fromSaved)));
   const [showLibrary, setShowLibrary] = useState(false);
   const [uploading, setUploading] = useState(null);   // {name, pct}
   const [mediaError, setMediaError] = useState("");
@@ -84,7 +107,7 @@ export default function SendToSocialModal({ texts, initialPlatform, onClose }) {
         setConn(d);
         // Start on the first profile that has anything connected.
         const first = d.profiles?.find((p) => p.connected.length > 0);
-        if (first) setSlot(first.slot);
+        if (first && !draft) setSlot(first.slot);
       })
       .catch((e) => { if (!cancelled) setConnError(e.message); });
     return () => { cancelled = true; };
@@ -95,15 +118,17 @@ export default function SendToSocialModal({ texts, initialPlatform, onClose }) {
     [conn, slot],
   );
 
-  const platformIds = Object.keys(SOCIAL_PLATFORMS).filter((id) => typeof texts?.[id] === "string" && texts[id].trim());
   const kind = attachmentKind(attachments); // "text" | "image" | "video" | "mixed"
   const takesKind = (id) => SOCIAL_PLATFORMS[id].caps.includes(kind);
   const canPostTo = (id) => isPostable(id, connectedHere) && takesKind(id);
-  const chosen = platformIds.filter((id) => selected.has(id) && canPostTo(id));
+  const hasText = (id) => typeof texts[id] === "string" && texts[id].trim().length > 0;
+  const chosen = platformIds.filter((id) => selected.has(id) && canPostTo(id) && hasText(id));
+  const draftIds = platformIds.filter((id) => selected.has(id) && canPostTo(id));
   const overLimit = chosen.filter((id) => texts[id].trim().length > SOCIAL_PLATFORMS[id].maxChars);
   const igNonJpeg = chosen.includes("instagram") && attachments.some((a) => /\.(png|webp)$/i.test(a.name || ""));
   const xHasLink = chosen.includes("twitter") && /https?:\/\/|www\./i.test(texts.twitter || "");
   const whenOk = mode === "now" || (when && new Date(when).getTime() > Date.now() + 60000);
+  const canSave = draftIds.length > 0 && !saving && !sending && !uploading;
   const canSend = chosen.length > 0 && overLimit.length === 0 && whenOk && !sending && !uploading;
 
   function addAttachment(a) {
@@ -151,11 +176,8 @@ export default function SendToSocialModal({ texts, initialPlatform, onClose }) {
         platforms: chosen,
         texts: Object.fromEntries(chosen.map((id) => [id, texts[id].trim()])),
       };
-      if (attachments.length) {
-        payload.attachments = attachments.map((a) => a.source === "drive"
-          ? { source: "drive", id: a.id, name: a.name, folderId: a.folderId }
-          : { source: "upload", url: a.url, name: a.name });
-      }
+      if (attachments.length) payload.attachments = attachments.map(toPayload);
+      if (draftId) payload.draftId = draftId;
       if (mode === "later") {
         payload.scheduledDate = new Date(when).toISOString();
         payload.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -167,6 +189,24 @@ export default function SendToSocialModal({ texts, initialPlatform, onClose }) {
       setConfirming(false);
     }
     setSending(false);
+  }
+
+  async function saveDraft() {
+    setSaving(true);
+    setError("");
+    try {
+      const d = {
+        slot,
+        platforms: draftIds,
+        texts: Object.fromEntries(draftIds.map((id) => [id, (texts[id] || "").trim()])),
+        attachments: attachments.map(toPayload),
+      };
+      if (draftId) d.id = draftId;
+      const r = await callSocial("social-posts", user, { action: "save_draft", draft: d });
+      setDraftId(r.id);
+      setResult({ draft: true });
+    } catch (err) { setError(err.message); }
+    setSaving(false);
   }
 
   const names = (ids) => ids.map((id) => SOCIAL_PLATFORMS[id].label).join(", ");
@@ -204,10 +244,12 @@ export default function SendToSocialModal({ texts, initialPlatform, onClose }) {
         {active && result && (
           <div style={{ marginTop: 14 }}>
             <div style={{ background: "#eef7f9", border: "1px solid #b9dde3", borderRadius: 10, padding: "14px 16px", fontSize: 15, lineHeight: 1.6 }}>
-              {result.scheduled
+              {result.draft
+                ? "✓ Draft saved. Find it under “My social posts” on your Profile page."
+                : result.scheduled
                 ? `✓ Scheduled for ${new Date(when).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.`
                 : result.processing ? "✓ Sent — your video is being processed and will appear shortly." : "✓ Sent."}{" "}
-              {result.count} network{result.count > 1 ? "s" : ""}.
+              {!result.draft && <>{result.count} network{result.count > 1 ? "s" : ""}.</>}
             </div>
             <button style={{ ...primaryBtn(false), marginTop: 16 }} onClick={onClose}>Done</button>
           </div>
@@ -293,29 +335,29 @@ export default function SendToSocialModal({ texts, initialPlatform, onClose }) {
                     const connectedOk = isPostable(id, connectedHere);
                     const kindOk = takesKind(id);
                     const ok = connectedOk && kindOk;
-                    const len = texts[id].trim().length;
+                    const len = (texts[id] || "").trim().length;
                     const over = len > cfg.maxChars;
                     return (
-                      <label key={id} style={{ display: "flex", gap: 10, alignItems: "flex-start", border: `1.5px solid ${selected.has(id) && ok ? TEAL : CHROME}`, borderRadius: 10, padding: "10px 12px", opacity: ok ? 1 : 0.55, cursor: ok ? "pointer" : "not-allowed" }}>
-                        <input type="checkbox" disabled={!ok} checked={selected.has(id) && ok} onChange={() => toggle(id)} style={{ marginTop: 3 }} />
+                      <div key={id} style={{ display: "flex", gap: 10, alignItems: "flex-start", border: `1.5px solid ${selected.has(id) && ok ? TEAL : CHROME}`, borderRadius: 10, padding: "10px 12px", opacity: ok ? 1 : 0.7 }}>
+                        <input type="checkbox" aria-label={`Post to ${cfg.label}`} disabled={!ok} checked={selected.has(id) && ok} onChange={() => toggle(id)} style={{ marginTop: 3 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontWeight: 800, fontSize: 14 }}>
                             <span>{cfg.label}{!connectedOk && <span style={{ fontWeight: 600, color: "#999" }}> — not connected on this profile</span>}
                               {connectedOk && !kindOk && <span style={{ fontWeight: 600, color: "#999" }}> — {cfg.caps.length === 1 ? "video only" : "needs a picture or video"}{kind === "mixed" ? "" : ""}</span>}</span>
                             <span style={{ fontFamily: "monospace", fontSize: 12, color: over ? "#c41e1e" : "#888" }}>{len.toLocaleString()} / {cfg.maxChars.toLocaleString()}</span>
                           </div>
-                          <div style={{ fontSize: 13, color: "#555", marginTop: 4, whiteSpace: "pre-wrap", maxHeight: 64, overflow: "hidden" }}>
-                            {texts[id].trim().slice(0, 220)}{texts[id].trim().length > 220 ? "…" : ""}
-                          </div>
+                          <textarea aria-label={`${cfg.label} text`} value={texts[id] || ""} rows={3}
+                            onChange={(e) => { setConfirming(false); setTxt((t) => ({ ...t, [id]: e.target.value })); }}
+                            style={{ width: "100%", boxSizing: "border-box", marginTop: 6, padding: "7px 9px", borderRadius: 8, border: `1.5px solid ${CHROME}`, fontFamily: "inherit", fontSize: 13, color: "#555", resize: "vertical" }} />
                         </div>
-                      </label>
+                      </div>
                     );
                   })}
                 </div>
 
                 {overLimit.length > 0 && (
                   <div style={{ color: "#c41e1e", fontSize: 13, marginTop: 10 }}>
-                    {names(overLimit)} {overLimit.length > 1 ? "are" : "is"} over the character limit — shorten it in Message Machine first.
+                    {names(overLimit)} {overLimit.length > 1 ? "are" : "is"} over the character limit — shorten it above first.
                   </div>
                 )}
                 {xHasLink && (
@@ -353,6 +395,12 @@ export default function SendToSocialModal({ texts, initialPlatform, onClose }) {
                       <button style={primaryBtn(sending)} disabled={sending} onClick={send}>{sending ? "Sending…" : "Yes, confirm"}</button>
                       <button style={ghostBtn} disabled={sending} onClick={() => setConfirming(false)}>Back</button>
                     </>
+                  )}
+                  {!confirming && (
+                    <button style={{ ...ghostBtn, marginLeft: "auto" }} disabled={!canSave} onClick={saveDraft}
+                      title="Keep this in My social posts without sending it">
+                      {saving ? "Saving…" : "Save draft"}
+                    </button>
                   )}
                 </div>
               </>
