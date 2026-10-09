@@ -41,6 +41,18 @@ import {
 // Upload-Post's docs disagree on how to spell X ("x" vs "twitter") depending
 // on the endpoint. If it rejects the platform value with a 400, retry once
 // with the other spelling.
+// Upload-Post can answer HTTP 200 while saying the network itself refused the
+// post ({success:false} or a results entry with success:false). One network per
+// request now, so any explicit false means this network failed.
+function softFailures(r) {
+  if (!r.ok) return r;
+  const d = r.data || {};
+  const res = d.results && typeof d.results === "object" ? (Array.isArray(d.results) ? d.results : Object.values(d.results)) : [];
+  const bad = d.success === false ? d : res.find((x) => x && x.success === false);
+  if (!bad) return r;
+  return { ok: false, status: 422, data: { message: String(bad.message || bad.error || d.message || "The network refused this post.").slice(0, 300) } };
+}
+
 async function sendWithXFallback(kind, platforms, makeForm) {
   let r = await uploadPostRequest(endpointFor(kind), { method: "POST", form: makeForm(false) });
   const msg = JSON.stringify(r.data || "").toLowerCase();
@@ -177,7 +189,16 @@ export default async function (req) {
     const sendOne = (id) => sendWithXFallback(kind, [id], (altX) => buildPostForm({
       kind, username, platforms: [id], texts, scheduledDate, timezone, facebookPageId, images, video, altX,
     }));
-    const per = await Promise.all(platforms.map(async (id) => ({ id, r: await sendOne(id) })));
+    // A network whose request throws (timeout, network error) counts as a
+    // failure of that network only — it must not hide that the others went out.
+    const per = await Promise.all(platforms.map(async (id) => {
+      try { return { id, r: softFailures(await sendOne(id)) }; }
+      catch (err) {
+        if (err.code === "not_configured") throw err;
+        console.error(`[social-publish] request for ${id} threw:`, err);
+        return { id, r: { ok: false, status: 0, data: { message: `Couldn't reach the posting service for this network (${String(err.message).slice(0, 80)}).` } } };
+      }
+    }));
     const okOnes = per.filter((x) => x.r.ok);
     const failedOnes = per.filter((x) => !x.r.ok);
     const failMsg = (x) => {
@@ -238,7 +259,7 @@ export default async function (req) {
       preview: texts[platforms[0]].slice(0, 140),
       error: r.ok ? null : String(message).slice(0, 300),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    }).catch((e) => console.error("[social-publish] log write failed:", e.message));
 
     if (!r.ok) {
       console.error("[social-publish] Upload-Post error:", r.status, JSON.stringify(r.data)?.slice(0, 500));
@@ -260,6 +281,9 @@ export default async function (req) {
       return reply(req, 503, { error: "Posting isn't switched on yet. Contact an Administrator." });
     }
     console.error("[social-publish] error:", err);
-    return reply(req, 500, { error: "Something went wrong. Please try again." });
+    // Short technical note so a screenshot is enough to diagnose (no secrets:
+    // only the error's own name/message, trimmed).
+    const note = `${err?.name || "Error"}: ${String(err?.message || "").replace(/\s+/g, " ").slice(0, 140)}`;
+    return reply(req, 500, { error: `Something went wrong. Please try again. (${note})` });
   }
 }

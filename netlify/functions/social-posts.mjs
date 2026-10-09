@@ -203,11 +203,15 @@ export default async function (req) {
         if (rs.some((r) => !r.ok || !r.data || r.data.status !== "completed")) continue;
         const results = rs.flatMap((r) => (Array.isArray(r.data.results) ? r.data.results : []));
         const failed = results.filter((x) => x && x.success === false);
+        const okCount = results.filter((x) => x && x.success !== false).length;
+        const nets = {};
+        for (const x of results) if (x && x.platform) nets[x.platform] = x.success === false ? { ok: false, message: String(x.message || "failed").slice(0, 200) } : { ok: true };
         if (failed.length) {
-          const msg = failed.map((x) => `${x.platform}: ${String(x.message || "failed").slice(0, 120)}`).join("; ").slice(0, 400);
-          await s.ref.set({ status: "failed", error: msg, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+          const msg = failed.map((x) => `${x.platform}: ${String(x.message || "failed").slice(0, 160)}`).join("; ").slice(0, 500);
+          // Some networks went out, some didn't: say so instead of "failed".
+          await s.ref.set({ status: okCount ? "partial" : "failed", error: msg, networkResults: nets, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         } else {
-          await s.ref.set({ status: "sent", error: null, sentAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+          await s.ref.set({ status: "sent", error: null, networkResults: nets, sentAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         }
         updated++;
       }
