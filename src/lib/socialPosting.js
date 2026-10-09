@@ -12,7 +12,7 @@
 // editing anything here can't bypass the paywall.
 
 import { useEffect, useState } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, collection, query, orderBy, limit } from "firebase/firestore";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
 import { useAuth } from "../context/AuthContext";
@@ -145,4 +145,21 @@ export function useSocialPosting() {
     active: state.data?.status === "active",
     profilesPaid: Number(state.data?.profilesPaid) || 0,
   };
+}
+
+// Live list of the user's own drafts / scheduled / recent posts
+// (socialPosting/{uid}/posts — read-only here; changes go through the
+// social-posts function).
+export function useMySocialPosts() {
+  const { user } = useAuth();
+  const uid = user?.uid;
+  const [state, setState] = useState({ loading: true, posts: [] });
+  useEffect(() => {
+    if (!uid) { setState({ loading: false, posts: [] }); return undefined; }
+    const q = query(collection(db, "socialPosting", uid, "posts"), orderBy("updatedAt", "desc"), limit(60));
+    return onSnapshot(q,
+      (snap) => setState({ loading: false, posts: snap.docs.map((d) => ({ id: d.id, ...d.data() })) }),
+      () => setState({ loading: false, posts: [] }));
+  }, [uid]);
+  return state;
 }
