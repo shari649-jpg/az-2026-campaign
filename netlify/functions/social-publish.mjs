@@ -31,7 +31,7 @@ import admin from "firebase-admin";
 import {
   corsHeaders, reply, getAdminApp, requireSignedIn,
   uploadPostRequest, connectedKeys, validatePublishRequest,
-  postKind, checkCapabilities,
+  postKind, checkCapabilities, normalizeResults, pickPostUrl,
   PLATFORMS, MAX_PROFILES, DAILY_PUBLISH_LIMIT,
 } from "./socialPostingHelper.mjs";
 import {
@@ -64,7 +64,7 @@ async function sendWithXFallback(kind, platforms, makeForm) {
 }
 
 // Keep what was sent in the user's own list (socialPosting/{uid}/posts/{id}).
-async function saveSentRecord({ ref, draftId, platforms, texts, attachments, resolved, slot, scheduledDate, timezone, r }) {
+async function saveSentRecord({ ref, draftId, platforms, texts, attachments, resolved, slot, scheduledDate, timezone, r, networkResults, resultKeys }) {
   const FieldValue = admin.firestore.FieldValue;
   const jobIds = r.data?.job_ids || (r.data?.job_id ? [r.data.job_id] : []);
   const requestIds = r.data?.request_ids || (r.data?.request_id ? [r.data.request_id] : []);
@@ -84,6 +84,8 @@ async function saveSentRecord({ ref, draftId, platforms, texts, attachments, res
     requestId,
     jobIds,
     requestIds,
+    networkResults: networkResults || {},
+    resultKeys: resultKeys || [],
     error: null,
     lastError: null,
     notice: null,
@@ -126,7 +128,7 @@ export default async function (req) {
 
     const v = validatePublishRequest(body);
     if (v.error) return reply(req, 400, { error: v.error });
-    const { slot, platforms, texts, attachments, scheduledDate, timezone, facebookPageId, draftId } = v.value;
+    const { slot, platforms, texts, attachments, scheduledDate, timezone, facebookPageId, draftId, leftover } = v.value;
 
     if (slot >= profilesPaid) return reply(req, 400, { error: "That profile isn't part of your subscription." });
     const username = social.uploadPostProfiles?.[String(slot)];
@@ -234,7 +236,33 @@ export default async function (req) {
       await recordTempUploads(db, uid, resolved, scheduledDate).catch((e) => console.error("[social-publish] temp-upload bookkeeping failed:", e.message));
       // The "My social posts" record: turns a draft into a scheduled/sent
       // post, or creates a new one. Best-effort — the post already went out.
-      await saveSentRecord({ ref, draftId, platforms: sentPlatforms, texts: Object.fromEntries(sentPlatforms.map((id) => [id, texts[id]])), attachments, resolved, slot, scheduledDate, timezone, r })
+      const networkResults = {}; const keySet = new Set();
+      for (const x of okOnes) {
+        const ents = normalizeResults(x.r.data);
+        const mine = ents.find((e) => e.platform === x.id) || ents[0];
+        networkResults[x.id] = { ok: true, ...(mine?.url || pickPostUrl(x.r.data) ? { url: mine?.url || pickPostUrl(x.r.data) } : {}) };
+        for (const e of ents) e.keys.forEach((k) => keySet.add(k));
+      }
+      for (const f of failures) networkResults[f.platform] = { ok: false, message: f.error };
+      // Networks not sent (unticked / not connected / failed) go straight back
+      // to a draft — no question asked.
+      const backIds = [...new Set([...(leftover?.platforms || []), ...failures.map((f) => f.platform)])];
+      if (backIds.length) {
+        const backTexts = Object.fromEntries(backIds.map((id) => [id, texts[id] ?? leftover.texts[id] ?? ""]));
+        const FV = admin.firestore.FieldValue;
+        await ref.collection("posts").add({
+          status: "draft", slot, platforms: backIds, texts: backTexts, attachments,
+          preview: (Object.values(backTexts).find((t) => t) || "").slice(0, 140),
+          scheduledDate: null, timezone: null, jobId: null, requestId: null, jobIds: [], requestIds: [],
+          error: null, lastError: null,
+          notice: `Not sent yet: ${backIds.map((id) => PLATFORMS[id].label).join(", ")}. Saved here as a draft.`,
+          createdAt: FV.serverTimestamp(), updatedAt: FV.serverTimestamp(),
+        }).catch((e) => console.error("[social-publish] leftover draft failed:", e.message));
+        if (attachments.some((a) => a.source === "upload")) {
+          await recordTempUploads(db, uid, resolved, null, 30).catch(() => {});
+        }
+      }
+      await saveSentRecord({ networkResults, resultKeys: [...keySet], ref, draftId, platforms: sentPlatforms, texts: Object.fromEntries(sentPlatforms.map((id) => [id, texts[id]])), attachments, resolved, slot, scheduledDate, timezone, r })
         .catch((e) => console.error("[social-publish] post record failed:", e.message));
     }
 

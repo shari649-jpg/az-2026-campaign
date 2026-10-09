@@ -280,7 +280,17 @@ export function validatePublishRequest(body, now = Date.now(), opts = {}) {
 
   const draftId = typeof body.draftId === "string" && /^[A-Za-z0-9]{10,40}$/.test(body.draftId) ? body.draftId : null;
 
-  return { value: { slot, platforms, texts, attachments, scheduledDate, timezone, facebookPageId, draftId } };
+  // Networks the person had text for but did not send (unticked or not
+  // connected). They go back to a draft automatically — see social-publish.mjs.
+  const leftover = { platforms: [], texts: {} };
+  if (Array.isArray(body.leftover?.platforms)) {
+    for (const id of [...new Set(body.leftover.platforms)]) {
+      const t = typeof body.leftover.texts?.[id] === "string" ? body.leftover.texts[id].trim() : "";
+      if (PLATFORMS[id] && !platforms.includes(id) && t && t.length <= 70_000) { leftover.platforms.push(id); leftover.texts[id] = t; }
+    }
+  }
+
+  return { value: { slot, platforms, texts, attachments, scheduledDate, timezone, facebookPageId, draftId, leftover } };
 }
 
 // Given the resolved kinds of the attachments, what kind of post is this?
@@ -304,4 +314,37 @@ export function checkCapabilities(kind, platforms) {
       : `${cfg.label} can't take ${kind === "image" ? "images" : "a video"} from here yet.` };
   }
   return {};
+}
+
+// ── Upload-Post result parsing (pure) ───────────────────────────────────
+// Upload-Post names X "x" in some places and "twitter" in others.
+const NET_ID = { x: "twitter", twitter: "twitter" };
+const netId = (n) => { const k = String(n || "").toLowerCase(); return NET_ID[k] || k; };
+
+// A link to the published post, if the response carries one. UNCONFIRMED which
+// field name Upload-Post uses, so look under the likely ones; https only.
+export function pickPostUrl(o) {
+  if (!o || typeof o !== "object") return null;
+  for (const k of ["post_url", "postUrl", "url", "permalink", "link", "post_link", "public_url"]) {
+    const v = o[k];
+    if (typeof v === "string" && /^https:\/\//i.test(v) && v.length < 600) return v;
+  }
+  return null;
+}
+
+// Normalise a status/publish response's `results` (array, or object keyed by
+// network) into [{platform, ok, message, url, keys}]. `keys` = the field names
+// seen, so a diagnostic can show what Upload-Post really sends (names only).
+export function normalizeResults(data) {
+  const r = data?.results;
+  let entries = [];
+  if (Array.isArray(r)) entries = r.map((x) => [x?.platform, x]);
+  else if (r && typeof r === "object") entries = Object.entries(r).map(([k, x]) => [x?.platform || k, x]);
+  return entries.filter(([, x]) => x && typeof x === "object").map(([plat, x]) => ({
+    platform: netId(plat),
+    ok: x.success !== false,
+    message: typeof x.message === "string" ? x.message.slice(0, 200) : "",
+    url: pickPostUrl(x),
+    keys: Object.keys(x).slice(0, 20),
+  }));
 }

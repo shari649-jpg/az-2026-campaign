@@ -23,7 +23,7 @@
 import admin from "firebase-admin";
 import {
   corsHeaders, reply, getAdminApp, requireSignedIn, uploadPostRequest,
-  validatePublishRequest, parseStorageUrl, kindFromName, MAX_PROFILES,
+  validatePublishRequest, parseStorageUrl, kindFromName, MAX_PROFILES, normalizeResults,
 } from "./socialPostingHelper.mjs";
 import { recordTempUploads } from "./socialMedia.mjs";
 
@@ -187,13 +187,19 @@ export default async function (req) {
         const s = await postsCol.doc(body.id).get();
         docs = s.exists ? [s] : [];
       } else {
-        const q = await postsCol.where("status", "in", ["processing", "scheduled"]).limit(20).get();
+        const q = await postsCol.where("status", "in", ["processing", "scheduled", "sent"]).limit(30).get();
         docs = q.docs;
       }
       let updated = 0;
       for (const s of docs) {
         const p = s.data();
-        const due = p.status === "processing" || (p.status === "scheduled" && p.scheduledDate && new Date(p.scheduledDate).getTime() <= Date.now());
+        // "sent" posts are checked once, to pick up post links / late failures.
+        if (p.status === "sent" && (p.linksChecked || !(p.requestIds?.length || p.jobIds?.length))) continue;
+        if (p.status === "sent") {
+          const t = p.sentAt?.toMillis ? p.sentAt.toMillis() : p.sentAt?._seconds ? p.sentAt._seconds * 1000 : 0;
+          if (t && Date.now() - t > 3 * 86_400_000) { await s.ref.set({ linksChecked: true }, { merge: true }); continue; } // stop asking after 3 days
+        }
+        const due = p.status === "sent" || p.status === "processing" || (p.status === "scheduled" && p.scheduledDate && new Date(p.scheduledDate).getTime() <= Date.now());
         if (!due) continue;
         const qsList = (Array.isArray(p.requestIds) && p.requestIds.length ? p.requestIds.map((x) => `request_id=${encodeURIComponent(x)}`)
           : Array.isArray(p.jobIds) && p.jobIds.length ? p.jobIds.map((x) => `job_id=${encodeURIComponent(x)}`)
@@ -201,17 +207,22 @@ export default async function (req) {
         if (!qsList.length) continue;
         const rs = await Promise.all(qsList.map((qs) => uploadPostRequest(`/uploadposts/status?${qs}`)));
         if (rs.some((r) => !r.ok || !r.data || r.data.status !== "completed")) continue;
-        const results = rs.flatMap((r) => (Array.isArray(r.data.results) ? r.data.results : []));
-        const failed = results.filter((x) => x && x.success === false);
-        const okCount = results.filter((x) => x && x.success !== false).length;
-        const nets = {};
-        for (const x of results) if (x && x.platform) nets[x.platform] = x.success === false ? { ok: false, message: String(x.message || "failed").slice(0, 200) } : { ok: true };
-        if (failed.length) {
-          const msg = failed.map((x) => `${x.platform}: ${String(x.message || "failed").slice(0, 160)}`).join("; ").slice(0, 500);
+        const ents = rs.flatMap((r) => normalizeResults(r.data));
+        const keySet = new Set(p.resultKeys || []);
+        const nets = { ...(p.networkResults || {}) };
+        for (const e of ents) {
+          e.keys.forEach((k) => keySet.add(k));
+          nets[e.platform] = e.ok ? { ok: true, ...(e.url || nets[e.platform]?.url ? { url: e.url || nets[e.platform].url } : {}) } : { ok: false, message: e.message || "failed" };
+        }
+        const failedE = ents.filter((e) => !e.ok);
+        const okCount = ents.filter((e) => e.ok).length;
+        const common = { networkResults: nets, resultKeys: [...keySet].slice(0, 30), linksChecked: true, updatedAt: FieldValue.serverTimestamp() };
+        if (failedE.length) {
+          const msg = failedE.map((e) => `${e.platform}: ${(e.message || "failed").slice(0, 160)}`).join("; ").slice(0, 500);
           // Some networks went out, some didn't: say so instead of "failed".
-          await s.ref.set({ status: okCount ? "partial" : "failed", error: msg, networkResults: nets, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+          await s.ref.set({ ...common, status: okCount ? "partial" : "failed", error: msg }, { merge: true });
         } else {
-          await s.ref.set({ status: "sent", error: null, networkResults: nets, sentAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+          await s.ref.set({ ...common, status: "sent", error: null, sentAt: p.sentAt || FieldValue.serverTimestamp() }, { merge: true });
         }
         updated++;
       }
