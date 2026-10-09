@@ -200,8 +200,8 @@ export default function SocialPostingPanel() {
           </div>
 
           <p style={{ fontSize: 12.5, color: "#777", lineHeight: 1.6, margin: "14px 0" }}>
-            From Message Machine you can currently send to <strong>Facebook, Threads, Bluesky and X</strong> (text posts).
-            Instagram and TikTok need an image or video, which isn't supported yet.
+            From Message Machine you can send to <strong>Facebook, Instagram, Threads, Bluesky, X and TikTok</strong>,
+            as text, with up to 4 pictures, or with one video (Instagram needs a picture or video; TikTok needs a video).
             Note: X removes clickable links from posts unless the link add-on is enabled on the posting account.
           </p>
 
