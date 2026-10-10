@@ -13,6 +13,7 @@ import PrivacyPage from "./pages/legal/PrivacyPage";
 import AIPolicyPage from "./pages/legal/AIPolicyPage";
 import AdminPage from "./pages/AdminPage";
 import ProfilePage from "./pages/ProfilePage";
+import AmplifyPage from "./pages/AmplifyPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
 import MessagingPage from "./tools/messaging/MessagingPage";
 import RebuttalPage from "./tools/rebuttal/RebuttalPage";
@@ -99,6 +100,7 @@ export default function App() {
             <Route path="/media"           element={<MediaPage />} />
             <Route path="/admin"           element={<AdminPage />} />
             <Route path="/profile"         element={<ProfilePage />} />
+            <Route path="/amplify"         element={<AmplifyPage />} />
             <Route path="/announcements"   element={<AnnouncementsPage />} />
             <Route path="/quick-start"     element={<QuickStartPage />} />
             <Route path="/manual"          element={<ManualPage />} />
