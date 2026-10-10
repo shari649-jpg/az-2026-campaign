@@ -147,6 +147,7 @@ export function useSocialPosting() {
     status: state.data?.status || "none",
     active: state.data?.status === "active",
     profilesPaid: Number(state.data?.profilesPaid) || 0,
+    profileNames: state.data?.profileNames || {},
   };
 }
 
