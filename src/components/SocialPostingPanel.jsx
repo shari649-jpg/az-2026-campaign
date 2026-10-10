@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import {
-  useSocialPosting, callSocial, networkLabel,
+  useSocialPosting, callSocial, networkLabel, profileLabel,
   PRICE_PER_PROFILE, MAX_PROFILES,
 } from "../lib/socialPosting";
 
@@ -97,6 +97,15 @@ export default function SocialPostingPanel() {
   const goTo = (url) => { window.location.href = url; };
   const subscribe = () => run("checkout", async () => goTo((await callSocial("social-billing", user, { action: "checkout", quantity: qty })).url));
   const portal = () => run("portal", async () => goTo((await callSocial("social-billing", user, { action: "portal" })).url));
+  const [renaming, setRenaming] = useState(null); // { slot, value }
+  const saveName = async () => {
+    const { slot, value } = renaming;
+    setRenaming(null);
+    try {
+      const r = await callSocial("social-connect", user, { action: "rename", slot, name: value });
+      setConn((c) => c && { ...c, profiles: c.profiles.map((x) => (x.slot === slot ? { ...x, name: r.name } : x)) });
+    } catch (err) { setError(err.message); }
+  };
   const connect = (slot) => run(`connect-${slot}`, async () => goTo((await callSocial("social-connect", user, { action: "connect", slot })).url));
   const addProfile = () => run("add", async () => {
     await callSocial("social-billing", user, { action: "add_profile" });
@@ -181,7 +190,21 @@ export default function SocialPostingPanel() {
                 <div key={slot} style={{ border: `1.5px solid ${CHROME}`, borderRadius: 10, padding: "14px 16px", background: "#fff" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                     <div>
-                      <div style={{ fontWeight: 800, color: PLUM, fontSize: 15 }}>Profile {slot + 1}</div>
+                      {renaming?.slot === slot ? (
+                        <form onSubmit={(e) => { e.preventDefault(); saveName(); }} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <input autoFocus value={renaming.value} maxLength={30} aria-label="Profile name" placeholder={`Profile ${slot + 1}`}
+                            onChange={(e) => setRenaming({ slot, value: e.target.value })}
+                            style={{ padding: "5px 8px", borderRadius: 7, border: `1.5px solid ${CHROME}`, fontFamily: "inherit", fontSize: 14 }} />
+                          <button type="submit" style={{ ...btn(true, false), padding: "5px 12px", fontSize: 13 }}>Save</button>
+                          <button type="button" style={{ ...btn(false, false), padding: "5px 12px", fontSize: 13 }} onClick={() => setRenaming(null)}>Cancel</button>
+                        </form>
+                      ) : (
+                        <div style={{ fontWeight: 800, color: PLUM, fontSize: 15 }}>
+                          {profileLabel(p || { slot })}{" "}
+                          {conn && <button type="button" onClick={() => setRenaming({ slot, value: p?.name || "" })}
+                            style={{ background: "none", border: "none", color: TEAL, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textDecoration: "underline", fontFamily: "inherit" }}>Rename</button>}
+                        </div>
+                      )}
                       <div style={{ fontSize: 13, color: "#777", marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
                         {!conn ? "Checking…" : connected.length === 0
                           ? "No accounts connected yet"

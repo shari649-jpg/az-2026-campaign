@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import {
-  useSocialPosting, callSocial, isPostable,
+  useSocialPosting, callSocial, isPostable, profileLabel,
   SOCIAL_PLATFORMS, networkLabel,
   attachmentKind, canAdd, uploadDeviceFile, kindFromFileName, MAX_ATTACHMENTS,
 } from "../lib/socialPosting";
@@ -127,6 +127,7 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
     return () => { cancelled = true; };
   }, [active, user, profilesPaid]);
 
+  const labelOf = (s) => profileLabel(conn?.profiles?.find((p) => p.slot === s) || { slot: s });
   const allMode = slot === "all";
   const connectedHere = useMemo(
     () => allMode
@@ -184,6 +185,18 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
     setUploading(null);
   }
 
+  // "Select all": every network that can be posted to right now.
+  const pickable = platformIds.filter((id) => canPostTo(id) && hasText(id));
+  const allPicked = pickable.length > 0 && pickable.every((id) => selected.has(id));
+  function toggleAll() {
+    setConfirming(false);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of pickable) { if (allPicked) next.delete(id); else next.add(id); }
+      return next;
+    });
+  }
+
   function toggle(id) {
     setConfirming(false);
     setSelected((prev) => {
@@ -230,7 +243,7 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
           // This profile's send didn't go through at all: keep its texts as a draft.
           const ids = [...pl.ids, ...(i === 0 ? left : [])];
           const msg = x.reason?.message || "It didn't go through.";
-          failures.push(...pl.ids.map((platform) => ({ platform, error: plan.length > 1 ? `Profile ${pl.slot + 1}: ${msg}` : msg })));
+          failures.push(...pl.ids.map((platform) => ({ platform, error: plan.length > 1 ? `${labelOf(pl.slot)}: ${msg}` : msg })));
           try {
             const d = { slot: pl.slot, platforms: ids, texts: textsOf(ids), attachments: attachments.map(toPayload) };
             if (i === 0 && draftId) d.id = draftId;
@@ -348,7 +361,7 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
                       )}
                       {conn.profiles.map((p) => (
                         <option key={p.slot} value={p.slot}>
-                          Profile {p.slot + 1} — {p.connected.length ? p.connected.map(networkLabel).join(", ") : "nothing connected"}
+                          {profileLabel(p)} — {p.connected.length ? p.connected.map(networkLabel).join(", ") : "nothing connected"}
                         </option>
                       ))}
                     </select>
@@ -400,7 +413,14 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
                   )}
                 </div>
 
-                <div style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: "#777", marginBottom: 8 }}>Networks</div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: "#777" }}>Networks</div>
+                  {pickable.length > 1 && (
+                    <label style={{ fontSize: 13, fontWeight: 700, color: TEAL, display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                      <input type="checkbox" checked={allPicked} onChange={toggleAll} /> Select all
+                    </label>
+                  )}
+                </div>
                 <div style={{ display: "grid", gap: 8 }}>
                   {platformIds.map((id) => {
                     const cfg = SOCIAL_PLATFORMS[id];
@@ -416,7 +436,7 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontWeight: 800, fontSize: 14 }}>
                             <span>{cfg.label}{!connectedOk && <span style={{ fontWeight: 600, color: "#999" }}> — not connected on {allMode ? "any profile" : "this profile"}</span>}
                               {allMode && connectedOk && (conn?.profiles || []).filter((p) => isPostable(id, p.connected)).length > 0 && (
-                                <span style={{ fontWeight: 600, color: "#999" }}> · {(conn?.profiles || []).filter((p) => isPostable(id, p.connected)).map((p) => `Profile ${p.slot + 1}`).join(", ")}</span>
+                                <span style={{ fontWeight: 600, color: "#999" }}> · {(conn?.profiles || []).filter((p) => isPostable(id, p.connected)).map((p) => profileLabel(p)).join(", ")}</span>
                               )}
                               {connectedOk && !kindOk && <span style={{ fontWeight: 600, color: "#999" }}> — {cfg.caps.length === 1 ? "video only" : "needs a picture or video"}{kind === "mixed" ? "" : ""}</span>}</span>
                             <span style={{ fontFamily: "monospace", fontSize: 12, color: over ? "#c41e1e" : "#888" }}>{len.toLocaleString()} / {cfg.maxChars.toLocaleString()}</span>
@@ -478,9 +498,14 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
                     </button>
                   ) : (
                     <>
-                      <span style={{ fontSize: 13.5, fontWeight: 700 }}>
-                        {mode === "now" ? "Publish right now to" : "Schedule for the chosen time on"} {plan.length > 1 ? plan.map((pl) => `${names(pl.ids)} (Profile ${pl.slot + 1})`).join(" and ") : names(chosen)}?
-                      </span>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, flexBasis: "100%" }}>
+                        {mode === "now" ? "Publish right now to" : "Schedule for the chosen time on"} {plan.length > 1 ? "these profiles:" : `${names(chosen)}?`}
+                        {plan.length > 1 && (
+                          <ul style={{ margin: "6px 0 2px", paddingLeft: 20, fontWeight: 600 }}>
+                            {plan.map((pl) => <li key={pl.slot}><strong>{labelOf(pl.slot)}:</strong> {names(pl.ids)}</li>)}
+                          </ul>
+                        )}
+                      </div>
                       <button style={primaryBtn(sending)} disabled={sending} onClick={send}>{sending ? "Sending…" : "Yes, confirm"}</button>
                       <button style={ghostBtn} disabled={sending} onClick={() => setConfirming(false)}>Back</button>
                     </>
