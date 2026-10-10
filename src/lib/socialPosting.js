@@ -99,6 +99,9 @@ export function networkLabel(key) {
   return NETWORK_LABELS[key] || key.charAt(0).toUpperCase() + key.slice(1);
 }
 
+// "Personal" if the user named it, otherwise "Profile 2".
+export const profileLabel = (p) => (p?.name ? p.name : `Profile ${(p?.slot ?? 0) + 1}`);
+
 export function isPostable(platformId, connectedKeys) {
   const cfg = SOCIAL_PLATFORMS[platformId];
   return !!cfg && cfg.accountKeys.some((k) => connectedKeys.includes(k));
