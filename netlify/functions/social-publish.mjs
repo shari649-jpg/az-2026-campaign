@@ -307,7 +307,7 @@ export default async function (req) {
       ok: true,
       kind,
       scheduled: !!scheduledDate,
-      processing: !!r.data?.request_id && !scheduledDate, // video: finishes in the background
+      processing: kind === "video" && !!r.data?.request_id && !scheduledDate, // only videos take a while to appear
       jobId: r.data?.job_id || null,
       results: r.data?.results || null,
       sent: sentPlatforms,

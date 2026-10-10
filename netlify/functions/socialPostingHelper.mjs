@@ -249,8 +249,10 @@ export function validatePublishRequest(body, now = Date.now(), opts = {}) {
       attachments.push({ source: "upload", url: a.url, name });
     } else if (a?.source === "storm" && ID_OK.test(a.stormId || "") && ID_OK.test(a.postId || "")
       && typeof a.path === "string" && a.path.length < 512 && !a.path.includes("..")
-      && a.path.startsWith(`storms/${a.stormId}/${a.postId}/`)) {
-      // A file on a coalition storm post. Whether that post really lists this
+      && a.path.startsWith(`storms/${a.stormId}/`)) {
+      // A file on a coalition storm post. (The folder name after the storm id is
+      // NOT always the post id: files added while creating a post are stored under
+      // "pending-<time>".) Whether that post really lists this
       // file is checked server-side against Firestore (socialMedia.mjs).
       attachments.push({ source: "storm", stormId: a.stormId, postId: a.postId, path: a.path, name });
     } else {

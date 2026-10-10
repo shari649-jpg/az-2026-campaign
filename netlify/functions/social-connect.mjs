@@ -53,9 +53,21 @@ export default async function (req) {
           const r = await uploadPostRequest(`/uploadposts/users/${encodeURIComponent(username)}`);
           if (r.ok) connected = connectedKeys(r.data?.profile?.social_accounts);
         }
-        profiles.push({ slot, created: !!username, connected });
+        const name = typeof social.profileNames?.[String(slot)] === "string" ? social.profileNames[String(slot)] : "";
+        profiles.push({ slot, created: !!username, connected, name });
       }
       return reply(req, 200, { profilesPaid, profiles });
+    }
+
+    // ── rename a profile (a friendly label like "Personal"; empty = default) ──
+    if (body.action === "rename") {
+      const slot = Number.parseInt(body.slot, 10);
+      if (!Number.isInteger(slot) || slot < 0 || slot >= profilesPaid) {
+        return reply(req, 400, { error: "That profile isn't part of your subscription." });
+      }
+      const name = String(body.name ?? "").replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, 30);
+      await ref.set({ profileNames: { [String(slot)]: name } }, { merge: true });
+      return reply(req, 200, { ok: true, name });
     }
 
     // ── connect ────────────────────────────────────────────────────────────
