@@ -26,9 +26,9 @@ function ago(ms) {
   return `${d} day${d === 1 ? "" : "s"} ago`;
 }
 
-function NetButton({ id, url, done, onDone }) {
+function NetButton({ id, url, done, onDone, profile, caption }) {
   const [failed, setFailed] = useState(false);
-  const label = SOCIAL_PLATFORMS[id]?.label || id;
+  const label = (SOCIAL_PLATFORMS[id]?.label || id) + (profile ? ` (${profile})` : "");
   const icon = failed || !ICON[id]
     ? <span style={{ fontSize: 11, fontWeight: 800, color: TEAL }}>{label.slice(0, 2)}</span>
     : <img src={ICON[id]} alt="" onError={() => setFailed(true)} style={{ width: 20, height: 20, display: "block" }} />;
@@ -41,6 +41,7 @@ function NetButton({ id, url, done, onDone }) {
       <label style={{ fontSize: 11.5, color: done ? "#2d7d46" : "#666", display: "inline-flex", alignItems: "center", gap: 3, cursor: "pointer" }}>
         <input type="checkbox" checked={done} onChange={(e) => onDone(e.target.checked)} /> Done
       </label>
+      {caption && <span style={{ fontSize: 11, color: PLUM, fontWeight: 700, maxWidth: 84, textAlign: "center", lineHeight: 1.2 }}>{caption}</span>}
     </span>
   );
 }
@@ -105,7 +106,12 @@ export default function AmplifyPage() {
   const picked = state.platforms;            // null = never chosen
   const filterOn = picked && picked.length > 0;
   const shown = state.entries
-    .map((e) => ({ ...e, nets: ORDER.filter((p) => e.networks[p] && (!filterOn || picked.includes(p))) }))
+    .map((e) => {
+      const nets = e.networks.filter((n) => !filterOn || picked.includes(n.platform))
+        .sort((a, b) => ORDER.indexOf(a.platform) - ORDER.indexOf(b.platform) || a.profile.localeCompare(b.profile));
+      const count = {}; nets.forEach((n) => { count[n.platform] = (count[n.platform] || 0) + 1; });
+      return { ...e, nets: nets.map((n) => ({ ...n, caption: count[n.platform] > 1 ? n.profile : "" })) };
+    })
     .filter((e) => e.nets.length);
 
   return (
@@ -143,9 +149,9 @@ export default function AmplifyPage() {
                 <div style={{ fontSize: 12.5, color: "#777", marginBottom: 6 }}>
                   <strong style={{ color: PLUM }}>{e.mine ? "You" : e.ownerName}</strong> · {ago(e.createdAt)}
                 </div>
-                <div style={{ fontSize: 14, color: "#362A44", whiteSpace: "pre-wrap", marginBottom: 10 }}>{e.preview || <em style={{ color: "#999" }}>(no text)</em>}</div>
+                <div style={{ fontSize: 14, color: "#362A44", marginBottom: 10, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", wordBreak: "break-word" }}>{(e.preview || "").replace(/\s+/g, " ").trim() || <em style={{ color: "#999" }}>(no text)</em>}</div>
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-                  {e.nets.map((p) => <NetButton key={p} id={p} url={e.networks[p].url} done={e.done.includes(p)} onDone={(d) => mark(e.id, p, d)} />)}
+                  {e.nets.map((n) => <NetButton key={n.key} id={n.platform} url={n.url} profile={n.caption ? n.profile : ""} caption={n.caption} done={e.done.includes(n.key)} onDone={(d) => mark(e.id, n.key, d)} />)}
                 </div>
               </div>
             ))}
