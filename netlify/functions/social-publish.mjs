@@ -37,6 +37,7 @@ import {
 import {
   resolveAttachments, fetchImage, videoUrl, buildPostForm, endpointFor, recordTempUploads,
 } from "./socialMedia.mjs";
+import { upsertBoardEntry } from "./socialBoardHelper.mjs";
 
 // Upload-Post's docs disagree on how to spell X ("x" vs "twitter") depending
 // on the endpoint. If it rejects the platform value with a 400, retry once
@@ -64,7 +65,7 @@ async function sendWithXFallback(kind, platforms, makeForm) {
 }
 
 // Keep what was sent in the user's own list (socialPosting/{uid}/posts/{id}).
-async function saveSentRecord({ ref, draftId, platforms, texts, attachments, resolved, slot, scheduledDate, timezone, r, networkResults, resultKeys }) {
+async function saveSentRecord({ ref, draftId, platforms, texts, attachments, resolved, slot, scheduledDate, timezone, r, networkResults, resultKeys, share, shareId }) {
   const FieldValue = admin.firestore.FieldValue;
   const jobIds = r.data?.job_ids || (r.data?.job_id ? [r.data.job_id] : []);
   const requestIds = r.data?.request_ids || (r.data?.request_id ? [r.data.request_id] : []);
@@ -89,6 +90,8 @@ async function saveSentRecord({ ref, draftId, platforms, texts, attachments, res
     error: null,
     lastError: null,
     notice: null,
+    shared: !!share,
+    shareId: share ? shareId || null : null,
     updatedAt: FieldValue.serverTimestamp(),
     sentAt: scheduledDate ? null : FieldValue.serverTimestamp(),
   };
@@ -128,7 +131,7 @@ export default async function (req) {
 
     const v = validatePublishRequest(body);
     if (v.error) return reply(req, 400, { error: v.error });
-    const { slot, platforms, texts, attachments, scheduledDate, timezone, facebookPageId, draftId, leftover } = v.value;
+    const { slot, platforms, texts, attachments, scheduledDate, timezone, facebookPageId, draftId, leftover, share, shareId } = v.value;
 
     if (slot >= profilesPaid) return reply(req, 400, { error: "That profile isn't part of your subscription." });
     const username = social.uploadPostProfiles?.[String(slot)];
@@ -255,15 +258,22 @@ export default async function (req) {
           preview: (Object.values(backTexts).find((t) => t) || "").slice(0, 140),
           scheduledDate: null, timezone: null, jobId: null, requestId: null, jobIds: [], requestIds: [],
           error: null, lastError: null,
-          notice: `Not sent yet: ${backIds.map((id) => PLATFORMS[id].label).join(", ")}. Saved here as a draft.`,
+          notice: `Not sent yet: ${backIds.map((id) => PLATFORMS[id].label).join(", ")}. Saved here as a draft. You can send it from any of your profiles.`,
           createdAt: FV.serverTimestamp(), updatedAt: FV.serverTimestamp(),
         }).catch((e) => console.error("[social-publish] leftover draft failed:", e.message));
         if (attachments.some((a) => a.source === "upload")) {
           await recordTempUploads(db, uid, resolved, null, 30).catch(() => {});
         }
       }
-      await saveSentRecord({ networkResults, resultKeys: [...keySet], ref, draftId, platforms: sentPlatforms, texts: Object.fromEntries(sentPlatforms.map((id) => [id, texts[id]])), attachments, resolved, slot, scheduledDate, timezone, r })
+      await saveSentRecord({ networkResults, resultKeys: [...keySet], ref, draftId, platforms: sentPlatforms, texts: Object.fromEntries(sentPlatforms.map((id) => [id, texts[id]])), attachments, resolved, slot, scheduledDate, timezone, r, share, shareId })
         .catch((e) => console.error("[social-publish] post record failed:", e.message));
+      // Amplify board: only when the sender left "share" on. Best-effort.
+      if (share && sentPlatforms.length) {
+        await upsertBoardEntry(db, {
+          uid, id: shareId, texts, platforms: sentPlatforms, networkResults,
+          jobIds: r.data?.job_ids || [], requestIds: r.data?.request_ids || [], scheduledDate,
+        }).catch((e) => console.error("[social-publish] board entry failed:", e.message));
+      }
     }
 
     // A failed attempt from a saved draft keeps the draft and notes why.

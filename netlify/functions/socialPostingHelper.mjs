@@ -290,7 +290,12 @@ export function validatePublishRequest(body, now = Date.now(), opts = {}) {
     }
   }
 
-  return { value: { slot, platforms, texts, attachments, scheduledDate, timezone, facebookPageId, draftId, leftover } };
+  // Amplify board (Oct 2026): share this send with the poster's org. The id
+  // groups the sends of one click (one request per profile) into one board entry.
+  const share = body.share === true;
+  const shareId = typeof body.shareId === "string" && /^[A-Za-z0-9]{16,40}$/.test(body.shareId) ? body.shareId : null;
+
+  return { value: { slot, platforms, texts, attachments, scheduledDate, timezone, facebookPageId, draftId, leftover, share, shareId } };
 }
 
 // Given the resolved kinds of the attachments, what kind of post is this?
