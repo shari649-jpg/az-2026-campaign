@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
-import { useMySocialPosts, useSocialPosting, callSocial, SOCIAL_PLATFORMS } from "../lib/socialPosting";
+import { useMySocialPosts, useSocialPosting, callSocial, profileLabel, SOCIAL_PLATFORMS } from "../lib/socialPosting";
 import SendToSocialModal from "./SendToSocialModal";
 
 // "My social posts" (Oct 2026): the signed-in user's drafts, scheduled posts
@@ -85,7 +85,7 @@ function Card({ o, onToggle, title, summary, attention, children }) {
 
 export default function SocialPostsPanel() {
   const { user } = useAuth();
-  const { active } = useSocialPosting();
+  const { active, profileNames } = useSocialPosting();
   const { loading, posts } = useMySocialPosts();
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState("");
@@ -145,6 +145,9 @@ export default function SocialPostsPanel() {
       <div key={p.id} style={{ border: `1.5px solid ${CHROME}`, borderRadius: 10, padding: "10px 12px" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12.5 }}>
           <span style={{ background: bg, color: fg, borderRadius: 6, padding: "2px 8px", fontWeight: 800 }}>{label}</span>
+          {Number.isInteger(p.slot) && p.status !== "draft" && (
+            <span style={{ color: PLUM, fontWeight: 800 }}>{profileLabel({ slot: p.slot, name: profileNames?.[String(p.slot)] })}</span>
+          )}
           <span style={{ display: "inline-flex", gap: 5, flexWrap: "wrap" }}>
             {nets.map((id) => <NetIcon key={id} id={id} result={p.status === "draft" || p.status === "scheduled" ? null : p.networkResults?.[id]} />)}
           </span>
