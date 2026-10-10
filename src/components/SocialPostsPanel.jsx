@@ -169,6 +169,16 @@ export default function SocialPostsPanel() {
           {p.status === "processing" && (
             <button style={small} disabled={busy === p.id} onClick={() => act(p.id, "refresh")}>Check status</button>
           )}
+          {p.shared && p.shareId && (
+            <button style={small} disabled={busy === p.id}
+              onClick={async () => {
+                if (!window.confirm("Take this off the Amplify board? Teammates won't see it any more. The post itself stays up.")) return;
+                setBusy(p.id); setError("");
+                try { await callSocial("social-board", user, { action: "unshare", shareId: p.shareId }); }
+                catch (e) { setError(e.message); }
+                setBusy(null);
+              }}>Take off Amplify board</button>
+          )}
           {p.status !== "scheduled" && (
             <button style={{ ...small, color: "#c41e1e", borderColor: "#c41e1e" }} disabled={busy === p.id}
               onClick={() => act(p.id, "delete_draft", p.status === "draft" ? "Delete this draft?" : "Remove this from your list? (It stays posted.)")}>

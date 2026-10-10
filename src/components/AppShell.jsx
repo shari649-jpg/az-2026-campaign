@@ -18,6 +18,7 @@ const MORE_ITEMS = [
   { path: "/library",           short: "Library" },
   { path: "/resources",         short: "Resources" },
   { path: "/misinfo-monitor",   short: "BS Monitor" },
+  { path: "/amplify",            short: "Amplify" },
   { path: "/storms",             short: "Storm Chaser's Hub" },
   { path: "/manual",             short: "Help" },
 ];

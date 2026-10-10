@@ -63,13 +63,26 @@ function fromSaved(a) {
   return { ...a, kind: a.kind || kindFromFileName(a.name || a.path || "") || "image" };
 }
 
+// One id per click, so the sends to several profiles become ONE Amplify entry.
+function newShareId() {
+  const a = new Uint8Array(12);
+  crypto.getRandomValues(a);
+  return Array.from(a, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export default function SendToSocialModal({ texts: textsProp, initialPlatform, draft = null, stormMedia = null, onClose }) {
   const { user } = useAuth();
   const { loading, active, status, profilesPaid } = useSocialPosting();
 
   const [conn, setConn] = useState(null);
   const [connError, setConnError] = useState("");
-  const [slot, setSlot] = useState(draft?.slot || 0);
+  // A draft is not tied to a profile: the dialog always starts on the first
+  // profile that has accounts connected, and the sender can switch it.
+  // A profile number, or "all" = every profile that has accounts connected
+  // (each network goes out through the profile it is connected on).
+  const [slot, setSlot] = useState(0);
+  const [share, setShare] = useState(true); // post to the org's Amplify board
+  const [keepRest, setKeepRest] = useState(true); // keep unsent networks as a draft
   const [txt, setTxt] = useState(() => ({ ...(textsProp || {}), ...(draft?.texts || {}) }));
   const texts = txt;
   // Which network cards exist: those that had text when the dialog opened.
@@ -106,16 +119,20 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
         if (cancelled) return;
         setConn(d);
         // Start on the first profile that has anything connected.
-        const first = d.profiles?.find((p) => p.connected.length > 0);
-        if (first && !draft) setSlot(first.slot);
+        const withAccounts = (d.profiles || []).filter((p) => p.connected.length > 0);
+        if (withAccounts.length > 1) setSlot("all");
+        else if (withAccounts[0]) setSlot(withAccounts[0].slot);
       })
       .catch((e) => { if (!cancelled) setConnError(e.message); });
     return () => { cancelled = true; };
   }, [active, user, profilesPaid]);
 
+  const allMode = slot === "all";
   const connectedHere = useMemo(
-    () => conn?.profiles?.find((p) => p.slot === slot)?.connected || [],
-    [conn, slot],
+    () => allMode
+      ? [...new Set((conn?.profiles || []).flatMap((p) => p.connected))]
+      : conn?.profiles?.find((p) => p.slot === slot)?.connected || [],
+    [conn, slot, allMode],
   );
 
   const kind = attachmentKind(attachments); // "text" | "image" | "video" | "mixed"
@@ -123,6 +140,15 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
   const canPostTo = (id) => isPostable(id, connectedHere) && takesKind(id);
   const hasText = (id) => typeof texts[id] === "string" && texts[id].trim().length > 0;
   const chosen = platformIds.filter((id) => selected.has(id) && canPostTo(id) && hasText(id));
+  // Which profile sends which networks. One profile → one send; "all" → one
+  // send per profile that has any of the chosen networks connected.
+  const plan = allMode
+    ? (conn?.profiles || []).map((p) => ({ slot: p.slot, ids: chosen.filter((id) => isPostable(id, p.connected)) })).filter((x) => x.ids.length)
+    : [{ slot, ids: chosen }];
+  // Networks with text that are not going out right now AND are connected on
+  // some profile (a draft for a network nobody can post to would just be clutter).
+  const connectedAny = (conn?.profiles || []).flatMap((p) => p.connected);
+  const leftIds = platformIds.filter((id) => !chosen.includes(id) && hasText(id) && isPostable(id, connectedAny));
   const draftIds = platformIds.filter((id) => selected.has(id) && canPostTo(id));
   const overLimit = chosen.filter((id) => texts[id].trim().length > SOCIAL_PLATFORMS[id].maxChars);
   const igNonJpeg = chosen.includes("instagram") && attachments.some((a) => /\.(png|webp)$/i.test(a.name || ""));
@@ -171,22 +197,49 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
     setSending(true);
     setError("");
     try {
-      const payload = {
-        slot,
-        platforms: chosen,
-        texts: Object.fromEntries(chosen.map((id) => [id, texts[id].trim()])),
-      };
-      if (attachments.length) payload.attachments = attachments.map(toPayload);
-      if (draftId) payload.draftId = draftId;
-      // Anything that has text but isn't going out right now goes back to a draft.
-      const left = platformIds.filter((id) => !chosen.includes(id) && hasText(id));
-      if (left.length) payload.leftover = { platforms: left, texts: Object.fromEntries(left.map((id) => [id, texts[id].trim()])) };
-      if (mode === "later") {
-        payload.scheduledDate = new Date(when).toISOString();
-        payload.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const textsOf = (ids) => Object.fromEntries(ids.map((id) => [id, texts[id].trim()]));
+      const left = keepRest ? leftIds : [];
+      const shareId = share ? newShareId() : null;
+      const sched = mode === "later"
+        ? { scheduledDate: new Date(when).toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" }
+        : {};
+      const calls = plan.map((pl, i) => {
+        const payload = { slot: pl.slot, platforms: pl.ids, texts: textsOf(pl.ids), ...sched };
+        if (share) { payload.share = true; payload.shareId = shareId; }
+        if (attachments.length) payload.attachments = attachments.map(toPayload);
+        // The draft being sent, and anything not going out, ride on the first send.
+        if (i === 0 && draftId) payload.draftId = draftId;
+        // Anything that has text but isn't going out right now goes back to a draft.
+        if (i === 0 && left.length) payload.leftover = { platforms: left, texts: textsOf(left) };
+        return callSocial("social-publish", user, payload);
+      });
+      const settled = await Promise.allSettled(calls);
+      if (settled.every((x) => x.status === "rejected")) throw settled[0].reason;
+
+      let count = 0; let scheduledAny = false; let processing = false;
+      const failures = []; const kept = [];
+      for (let i = 0; i < settled.length; i += 1) {
+        const x = settled[i]; const pl = plan[i];
+        if (x.status === "fulfilled") {
+          const r = x.value;
+          count += Array.isArray(r.sent) ? r.sent.length : pl.ids.length;
+          scheduledAny = scheduledAny || !!r.scheduled; processing = processing || !!r.processing;
+          if (Array.isArray(r.failures)) { failures.push(...r.failures); kept.push(...r.failures.map((f) => f.platform)); }
+          if (i === 0) kept.push(...left);
+        } else {
+          // This profile's send didn't go through at all: keep its texts as a draft.
+          const ids = [...pl.ids, ...(i === 0 ? left : [])];
+          const msg = x.reason?.message || "It didn't go through.";
+          failures.push(...pl.ids.map((platform) => ({ platform, error: plan.length > 1 ? `Profile ${pl.slot + 1}: ${msg}` : msg })));
+          try {
+            const d = { slot: pl.slot, platforms: ids, texts: textsOf(ids), attachments: attachments.map(toPayload) };
+            if (i === 0 && draftId) d.id = draftId;
+            await callSocial("social-posts", user, { action: "save_draft", draft: d });
+            kept.push(...ids);
+          } catch { /* the failure is still shown below */ }
+        }
       }
-      const r = await callSocial("social-publish", user, payload);
-      setResult({ scheduled: !!r.scheduled, count: Array.isArray(r.sent) ? r.sent.length : chosen.length, processing: !!r.processing, failures: Array.isArray(r.failures) ? r.failures : [], kept: [...(payload.leftover?.platforms || []), ...(Array.isArray(r.failures) ? r.failures.map((f) => f.platform) : [])] });
+      setResult({ scheduled: scheduledAny, count, processing, failures, kept: [...new Set(kept)] });
     } catch (err) {
       setError(err.message);
       setConfirming(false);
@@ -199,7 +252,7 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
     setError("");
     try {
       const d = {
-        slot,
+        slot: typeof slot === "number" ? slot : 0, // a draft isn't tied to a profile
         platforms: draftIds,
         texts: Object.fromEntries(draftIds.map((id) => [id, (texts[id] || "").trim()])),
         attachments: attachments.map(toPayload),
@@ -288,8 +341,11 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
                 {conn.profiles.length > 1 && (
                   <div style={{ marginBottom: 14 }}>
                     <label style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: "#777" }}>Post from</label>
-                    <select value={slot} onChange={(e) => { setSlot(Number(e.target.value)); setConfirming(false); }}
+                    <select value={slot} onChange={(e) => { setSlot(e.target.value === "all" ? "all" : Number(e.target.value)); setConfirming(false); }}
                       style={{ display: "block", marginTop: 6, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${CHROME}`, fontFamily: "inherit", fontSize: 14 }}>
+                      {conn.profiles.filter((p) => p.connected.length > 0).length > 1 && (
+                        <option value="all">All my profiles — {[...new Set(conn.profiles.flatMap((p) => p.connected))].map(networkLabel).join(", ")}</option>
+                      )}
                       {conn.profiles.map((p) => (
                         <option key={p.slot} value={p.slot}>
                           Profile {p.slot + 1} — {p.connected.length ? p.connected.map(networkLabel).join(", ") : "nothing connected"}
@@ -358,7 +414,10 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
                         <input type="checkbox" aria-label={`Post to ${cfg.label}`} disabled={!ok} checked={selected.has(id) && ok} onChange={() => toggle(id)} style={{ marginTop: 3 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontWeight: 800, fontSize: 14 }}>
-                            <span>{cfg.label}{!connectedOk && <span style={{ fontWeight: 600, color: "#999" }}> — not connected on this profile</span>}
+                            <span>{cfg.label}{!connectedOk && <span style={{ fontWeight: 600, color: "#999" }}> — not connected on {allMode ? "any profile" : "this profile"}</span>}
+                              {allMode && connectedOk && (conn?.profiles || []).filter((p) => isPostable(id, p.connected)).length > 0 && (
+                                <span style={{ fontWeight: 600, color: "#999" }}> · {(conn?.profiles || []).filter((p) => isPostable(id, p.connected)).map((p) => `Profile ${p.slot + 1}`).join(", ")}</span>
+                              )}
                               {connectedOk && !kindOk && <span style={{ fontWeight: 600, color: "#999" }}> — {cfg.caps.length === 1 ? "video only" : "needs a picture or video"}{kind === "mixed" ? "" : ""}</span>}</span>
                             <span style={{ fontFamily: "monospace", fontSize: 12, color: over ? "#c41e1e" : "#888" }}>{len.toLocaleString()} / {cfg.maxChars.toLocaleString()}</span>
                           </div>
@@ -396,6 +455,20 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
                   )}
                 </div>
 
+                {!confirming && (
+                  <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, color: "#555", marginTop: 14, lineHeight: 1.45 }}>
+                    <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} style={{ marginTop: 2 }} />
+                    <span>Share to my org's Amplify board so teammates can boost it. It shows up there once it's posted.</span>
+                  </label>
+                )}
+
+                {leftIds.length > 0 && !confirming && (
+                  <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, color: "#555", marginTop: 14, lineHeight: 1.45 }}>
+                    <input type="checkbox" checked={keepRest} onChange={(e) => setKeepRest(e.target.checked)} style={{ marginTop: 2 }} />
+                    <span>Keep {names(leftIds)} as a draft in My social posts. You can send it later from any of your profiles.</span>
+                  </label>
+                )}
+
                 {error && <div role="alert" style={{ background: "#fdf2f2", border: "1px solid #f5c6c6", color: "#c41e1e", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginTop: 14, lineHeight: 1.5 }}>{error}</div>}
 
                 <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap", alignItems: "center" }}>
@@ -406,7 +479,7 @@ export default function SendToSocialModal({ texts: textsProp, initialPlatform, d
                   ) : (
                     <>
                       <span style={{ fontSize: 13.5, fontWeight: 700 }}>
-                        {mode === "now" ? "Publish right now to" : "Schedule for the chosen time on"} {names(chosen)}?
+                        {mode === "now" ? "Publish right now to" : "Schedule for the chosen time on"} {plan.length > 1 ? plan.map((pl) => `${names(pl.ids)} (Profile ${pl.slot + 1})`).join(" and ") : names(chosen)}?
                       </span>
                       <button style={primaryBtn(sending)} disabled={sending} onClick={send}>{sending ? "Sending…" : "Yes, confirm"}</button>
                       <button style={ghostBtn} disabled={sending} onClick={() => setConfirming(false)}>Back</button>
