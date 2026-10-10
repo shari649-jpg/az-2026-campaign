@@ -8,9 +8,9 @@
 // goes through social-board.mjs / social-publish.mjs with the Admin SDK.
 //
 // Entry shape:
-//   { orgId, ownerUid, ownerName, preview, networks: { facebook: {ok, url?} },
-//     requestIds[], jobIds[], scheduledDate|null, createdAt, expiresAt (ms),
-//     lastCheck (ms) }
+//   { orgId, ownerUid, ownerName, preview, networks: { "facebook__0": {ok, profile, url?} },
+//     sends: { "0": {requestIds[], jobIds[]} }, scheduledDate|null, createdAt,
+//     expiresAt (ms), lastCheck (ms) }
 // Links often arrive late (video, TikTok), so list-time code asks Upload-Post
 // for them (see social-board.mjs) — it does not depend on the poster's page.
 
@@ -23,10 +23,17 @@ const DAY = 86_400_000;
 
 export const safeUrl = (u) => (typeof u === "string" && /^https:\/\//.test(u) && u.length < 1000 ? fixTikTokUrl(u) : null);
 
-// Create or extend the entry for one send. `id` is the client's shareId; if it
+// A network on the board is keyed "<platform>__<profile slot>" so the same
+// network on two of the poster's profiles (two Instagram accounts) stays two
+// separate buttons. Older entries used the bare platform name.
+export const netKey = (platform, slot) => `${platform}__${slot}`;
+export const platformOf = (key) => String(key).split("__")[0];
+export const BOARD_KEY_OK = /^[a-z]{3,20}(__[0-4])?$/;
+
+// Create or extend the entry for one send (one profile). `id` is the client's
+// shareId, so the sends to several profiles merge into ONE entry; if it
 // already belongs to someone else, a fresh id is used instead.
-export async function upsertBoardEntry(db, { uid, id, texts, platforms, networkResults, jobIds, requestIds, scheduledDate }) {
-  const FV = admin.firestore.FieldValue;
+export async function upsertBoardEntry(db, { uid, id, texts, platforms, networkResults, jobIds, requestIds, scheduledDate, slot = 0 }) {
   const okPlatforms = platforms.filter((p) => PLATFORMS[p] && networkResults?.[p]?.ok !== false);
   if (!okPlatforms.length) return null;
   const col = db.collection("amplifyPosts");
@@ -34,11 +41,13 @@ export async function upsertBoardEntry(db, { uid, id, texts, platforms, networkR
   const existing = await ref.get();
   if (existing.exists && existing.data().ownerUid !== uid) ref = col.doc();
   const user = (await db.doc(`users/${uid}`).get()).data() || {};
+  const social = (await db.doc(`socialPosting/${uid}`).get()).data() || {};
+  const profile = String(social.profileNames?.[String(slot)] || `Profile ${slot + 1}`).slice(0, 30);
   const when = scheduledDate ? new Date(scheduledDate).getTime() : Date.now();
   const networks = {};
   for (const p of okPlatforms) {
     const url = safeUrl(networkResults?.[p]?.url);
-    networks[p] = { ok: true, ...(url ? { url } : {}) };
+    networks[netKey(p, slot)] = { ok: true, profile, ...(url ? { url } : {}) };
   }
   const data = {
     orgId: user.orgId || null,
@@ -46,37 +55,44 @@ export async function upsertBoardEntry(db, { uid, id, texts, platforms, networkR
     ownerName: String(user.fullName || "A teammate").slice(0, 80),
     preview: String(texts[okPlatforms[0]] || "").slice(0, 280),
     networks,
+    sends: { [String(slot)]: { requestIds: requestIds || [], jobIds: jobIds || [] } },
     scheduledDate: scheduledDate || null,
     expiresAt: when + BOARD_DAYS * DAY,
-    createdAt: FV.serverTimestamp(),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
     lastCheck: 0,
   };
-  if (requestIds?.length) data.requestIds = FV.arrayUnion(...requestIds);
-  if (jobIds?.length) data.jobIds = FV.arrayUnion(...jobIds);
   await ref.set(data, { merge: true });
   return ref.id;
 }
 
 // Ask Upload-Post whether an entry's posts finished and pick up their links.
-// Returns true if the entry changed.
+// Each profile's send is checked on its own, because the same network can
+// appear on two profiles. Returns true if the entry changed.
 export async function refreshEntryLinks(ref, e) {
-  const qs = (Array.isArray(e.requestIds) && e.requestIds.length ? e.requestIds.map((x) => `request_id=${encodeURIComponent(x)}`)
-    : Array.isArray(e.jobIds) && e.jobIds.length ? e.jobIds.map((x) => `job_id=${encodeURIComponent(x)}`) : []);
   const FV = admin.firestore.FieldValue;
-  if (!qs.length) { await ref.set({ lastCheck: Date.now() }, { merge: true }); return false; }
-  const rs = await Promise.all(qs.map((q) => uploadPostRequest(`/uploadposts/status?${q}`)));
-  if (rs.some((r) => !r.ok || !r.data || r.data.status !== "completed")) {
-    await ref.set({ lastCheck: Date.now() }, { merge: true });
-    return false;
-  }
+  const sends = e.sends && Object.keys(e.sends).length ? e.sends
+    : { legacy: { requestIds: e.requestIds || [], jobIds: e.jobIds || [] } }; // entries from before profiles were tracked
   const nets = { ...(e.networks || {}) };
-  for (const r of rs) for (const x of normalizeResults(r.data)) {
-    if (!PLATFORMS[x.platform] || !nets[x.platform]) continue;
-    if (!x.ok) nets[x.platform] = { ok: false };
-    else { const url = safeUrl(x.url) || nets[x.platform].url; nets[x.platform] = { ok: true, ...(url ? { url } : {}) }; }
+  let changed = false;
+  for (const [slot, s] of Object.entries(sends)) {
+    const qs = Array.isArray(s.requestIds) && s.requestIds.length ? s.requestIds.map((x) => `request_id=${encodeURIComponent(x)}`)
+      : Array.isArray(s.jobIds) && s.jobIds.length ? s.jobIds.map((x) => `job_id=${encodeURIComponent(x)}`) : [];
+    if (!qs.length) continue;
+    const rs = await Promise.all(qs.map((q) => uploadPostRequest(`/uploadposts/status?${q}`)));
+    if (rs.some((r) => !r.ok || !r.data || r.data.status !== "completed")) continue;
+    for (const r of rs) for (const x of normalizeResults(r.data)) {
+      if (!PLATFORMS[x.platform]) continue;
+      const key = slot === "legacy" ? x.platform : netKey(x.platform, slot);
+      if (!nets[key]) continue;
+      if (!x.ok) nets[key] = { ...nets[key], ok: false, url: undefined };
+      else { const url = safeUrl(x.url) || nets[key].url; nets[key] = { ok: true, ...(nets[key].profile ? { profile: nets[key].profile } : {}), ...(url ? { url } : {}) }; }
+      changed = true;
+    }
   }
-  await ref.set({ networks: nets, lastCheck: Date.now(), updatedAt: FV.serverTimestamp() }, { merge: true });
-  return true;
+  // Firestore rejects undefined values.
+  for (const k of Object.keys(nets)) for (const f of Object.keys(nets[k])) if (nets[k][f] === undefined) delete nets[k][f];
+  await ref.set({ ...(changed ? { networks: nets, updatedAt: FV.serverTimestamp() } : {}), lastCheck: Date.now() }, { merge: true });
+  return changed;
 }
 
 // Which entries still need their links (due, has an ok network without a link,

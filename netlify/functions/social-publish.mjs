@@ -271,7 +271,7 @@ export default async function (req) {
       if (share && sentPlatforms.length) {
         await upsertBoardEntry(db, {
           uid, id: shareId, texts, platforms: sentPlatforms, networkResults,
-          jobIds: r.data?.job_ids || [], requestIds: r.data?.request_ids || [], scheduledDate,
+          jobIds: r.data?.job_ids || [], requestIds: r.data?.request_ids || [], scheduledDate, slot,
         }).catch((e) => console.error("[social-publish] board entry failed:", e.message));
       }
     }

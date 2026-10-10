@@ -7,7 +7,7 @@
 // POST JSON { action, ... }
 //   list           → { entries, platforms, me }        paid users only
 //   set_platforms  { platforms: ["facebook", ...] }    which networks I want to see
-//   mark           { id, platform, done }              "I amplified this"
+//   mark           { id, platform (a network key), done }   "I amplified this"
 //   unshare        { shareId }                         owner takes an entry down
 //
 // Access: viewing needs socialPosting/{uid}.status === "active" (the same flag
@@ -18,7 +18,7 @@
 
 import admin from "firebase-admin";
 import { corsHeaders, reply, getAdminApp, requireSignedIn, PLATFORMS } from "./socialPostingHelper.mjs";
-import { BOARD_ID_OK, needsLinks, refreshEntryLinks, safeUrl } from "./socialBoardHelper.mjs";
+import { BOARD_ID_OK, BOARD_KEY_OK, needsLinks, platformOf, refreshEntryLinks, safeUrl } from "./socialBoardHelper.mjs";
 
 const MAX_ENTRIES = 60;
 const MAX_REFRESH = 5; // entries asked about Upload-Post per list call
@@ -70,7 +70,7 @@ export default async function (req) {
 
     // ── "I amplified this" ─────────────────────────────────────────────────
     if (body.action === "mark") {
-      if (!BOARD_ID_OK.test(body.id || "") || !PLATFORMS[body.platform]) return reply(req, 400, { error: "Unknown post." });
+      if (!BOARD_ID_OK.test(body.id || "") || !BOARD_KEY_OK.test(body.platform || "") || !PLATFORMS[platformOf(body.platform)]) return reply(req, 400, { error: "Unknown post." });
       await socialRef.collection("amplified").doc(body.id).set({
         platforms: { [body.platform]: body.done ? true : FV.delete() },
         updatedAt: FV.serverTimestamp(),
@@ -109,16 +109,19 @@ export default async function (req) {
 
       const entries = live.map((d) => {
         const e = d.data();
-        const networks = {};
-        for (const [p, n] of Object.entries(e.networks || {})) {
-          if (PLATFORMS[p] && n && n.ok) networks[p] = { url: safeUrl(n.url) };
+        // One button per network per profile: [{ key, platform, profile, url }]
+        const networks = [];
+        for (const [key, n] of Object.entries(e.networks || {})) {
+          if (BOARD_KEY_OK.test(key) && PLATFORMS[platformOf(key)] && n && n.ok) {
+            networks.push({ key, platform: platformOf(key), profile: typeof n.profile === "string" ? n.profile : "", url: safeUrl(n.url) });
+          }
         }
         const ts = e.createdAt?.toMillis ? e.createdAt.toMillis() : e.createdAt?._seconds ? e.createdAt._seconds * 1000 : 0;
         return {
           id: d.id, ownerName: e.ownerName || "A teammate", mine: e.ownerUid === uid,
           preview: e.preview || "", createdAt: ts, networks,
         };
-      }).filter((e) => Object.keys(e.networks).length)
+      }).filter((e) => e.networks.length)
         .sort((a, b) => b.createdAt - a.createdAt)
         .slice(0, MAX_ENTRIES);
       entries.forEach((e) => { e.done = done[e.id] || []; });
